@@ -2,8 +2,9 @@
 title: 'Plugin manifest foundation'
 type: 'feature'
 created: '2026-08-24'
-status: 'ready-for-dev'
+status: 'done'
 review_loop_iteration: 0
+baseline_commit: '56acbeacf5355a0dff7f464152a65acd5ffbf269'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
 ---
@@ -48,7 +49,7 @@ Target layout to create:
 
 - `pnpm-workspace.yaml`, root `package.json`, `tsconfig.base.json`, `.gitignore` -- monorepo bootstrap
 - `eslint.config.js` (root) -- flat config wired through `@typescript/typescript6` alias (TS 7 incompatible with current ESLint TypeScript API)
-- `vitest.workspace.ts` (root) -- Vitest 4 project discovery
+- per-package `vitest run` scripts (root `pnpm -r test`) -- Vitest 4 test strategy (workspace file dropped in review: defineWorkspace was removed in Vitest 4 and nothing loaded it)
 - `packages/contracts/src/errors.ts` -- `PandaError` base + canonical `PANDA_*` code constants (kernel-independent, zero deps)
 - `packages/kernel/src/manifest.ts` -- manifest type + Standard Schema v1 validation interface
 - `packages/kernel/src/loader.ts` -- eager validate -> resolve service graph -> cycle check (both names) -> readiness gate on hard consumption
@@ -58,10 +59,10 @@ Target layout to create:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Root scaffold (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.workspace.ts`, `eslint.config.js`, `.gitignore`) -- bootstrap per stack decisions -- everything else mounts on this
-- [ ] `packages/contracts` (`package.json`, `src/errors.ts`, `src/index.ts`) -- canonical error-code home per AD-7 -- all later packages assert against these literals
-- [ ] `packages/kernel` (`src/manifest.ts`, `src/loader.ts`, `src/errors.ts`, `src/index.ts`) -- manifest model + loader per FR-1/AD-5 -- the story's core deliverable
-- [ ] `packages/kernel/test/*.test.ts` + `packages/contracts/test/*.test.ts` -- lock I/O matrix rows + kernel zero-dep/import guard -- regression protection for Stories 1.2-1.3
+- [x] Root scaffold (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `eslint.config.js`, `.gitignore`) -- bootstrap per stack decisions -- everything else mounts on this
+- [x] `packages/contracts` (`package.json`, `src/errors.ts`, `src/index.ts`) -- canonical error-code home per AD-7 -- all later packages assert against these literals
+- [x] `packages/kernel` (`src/manifest.ts`, `src/loader.ts`, `src/errors.ts`, `src/index.ts`) -- manifest model + loader per FR-1/AD-5 -- the story's core deliverable
+- [x] `packages/kernel/test/*.test.ts` + `packages/contracts/test/*.test.ts` -- lock I/O matrix rows + kernel zero-dep/import guard -- regression protection for Stories 1.2-1.3
 
 **Acceptance Criteria:**
 - Given a manifest declaring one provided service and one hard-consumed service with the consumed service available, when the kernel loads both plugins, then the consuming plugin reaches ready state
@@ -87,3 +88,43 @@ Scope note (documented decision): remaining Structural Seed packages are created
 - `pnpm -r typecheck` -- expected: zero errors under TS 7.0.x
 - `pnpm -r test` -- expected: all suites green, including cycle-naming, missing-field, readiness-gate, and zero-dep guard tests
 - `pnpm -r lint` -- expected: zero warnings
+
+## Suggested Review Order
+
+**Manifest validation (eager, I/O-free)**
+
+- Entry point: synchronous validation, all fields required before any I/O
+  [manifest.ts:74](../../packages/kernel/src/manifest.ts#L74)
+
+- Duplicate provides/consumes entries rejected naming field + service
+  [manifest.ts:66](../../packages/kernel/src/manifest.ts#L66)
+
+**Loading pipeline & readiness**
+
+- Throw-vs-collect failure contract documented in JSDoc
+  [loader.ts:40](../../packages/kernel/src/loader.ts#L40)
+
+- Soft-consumed absence resolves typed { kind: 'absent' }, never undefined
+  [loader.ts:6](../../packages/kernel/src/loader.ts#L6)
+
+**Error model across the AD-1 boundary**
+
+- Canonical code constants (AD-7 home), kernel-independent
+  [rrors.ts:1](../../packages/contracts/src/errors.ts#L1)
+
+- Kernel-local coded errors, structurally compatible by string code
+  [rrors.ts:8](../../packages/kernel/src/errors.ts#L8)
+
+**Guards & tests**
+
+- Parity suite pins all four codes against canonical constants
+  [kernel-code-parity.test.ts:27](../../packages/contracts/test/kernel-code-parity.test.ts#L27)
+
+- Zero-dependency invariant incl. relative-path escape detection
+  [guard.test.ts:20](../../packages/kernel/test/guard.test.ts#L20)
+
+- I/O matrix happy path locked end-to-end
+  [loader.test.ts:13](../../packages/kernel/test/loader.test.ts#L13)
+
+- Lint-level AD-1 enforcement for kernel sources
+  [slint.config.js:16](../../eslint.config.js#L16)
