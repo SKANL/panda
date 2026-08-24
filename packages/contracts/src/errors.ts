@@ -3,6 +3,9 @@ export const PANDA_ERROR_CODES = {
   kernelCycleDetected: 'PANDA_KERNEL_CYCLE_DETECTED',
   kernelServiceNotProvided: 'PANDA_KERNEL_SERVICE_NOT_PROVIDED',
   kernelServiceConflict: 'PANDA_KERNEL_SERVICE_CONFLICT',
+  kernelPluginInactive: 'PANDA_KERNEL_PLUGIN_INACTIVE',
+  kernelPluginStartFailed: 'PANDA_KERNEL_PLUGIN_START_FAILED',
+  kernelSwapRejected: 'PANDA_KERNEL_SWAP_REJECTED',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

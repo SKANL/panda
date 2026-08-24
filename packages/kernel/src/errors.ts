@@ -3,6 +3,9 @@ export const KERNEL_ERROR_CODES = {
   cycleDetected: 'PANDA_KERNEL_CYCLE_DETECTED',
   serviceNotProvided: 'PANDA_KERNEL_SERVICE_NOT_PROVIDED',
   serviceConflict: 'PANDA_KERNEL_SERVICE_CONFLICT',
+  pluginInactive: 'PANDA_KERNEL_PLUGIN_INACTIVE',
+  pluginStartFailed: 'PANDA_KERNEL_PLUGIN_START_FAILED',
+  swapRejected: 'PANDA_KERNEL_SWAP_REJECTED',
 } as const
 
 export class PandaKernelError extends Error {
@@ -71,5 +74,41 @@ export class ServiceConflictError extends PandaKernelError {
     this.service = service
     this.existingProviderId = existingProviderId
     this.conflictingProviderId = conflictingProviderId
+  }
+}
+
+export class PluginInactiveError extends PandaKernelError {
+  readonly pluginId: string
+
+  constructor(pluginId: string, detail: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.pluginInactive, `plugin '${pluginId}' is inactive: ${detail}`, options)
+    this.name = 'PluginInactiveError'
+    this.pluginId = pluginId
+  }
+}
+
+export class PluginStartFailedError extends PandaKernelError {
+  readonly pluginId: string
+
+  constructor(pluginId: string, detail: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.pluginStartFailed, `plugin '${pluginId}' failed to start: ${detail}`, options)
+    this.name = 'PluginStartFailedError'
+    this.pluginId = pluginId
+  }
+}
+
+export class SwapRejectedError extends PandaKernelError {
+  readonly pluginId: string
+  readonly issues: readonly string[]
+
+  constructor(pluginId: string, issues: readonly string[], options?: ErrorOptions) {
+    super(
+      KERNEL_ERROR_CODES.swapRejected,
+      `swap rejected for plugin '${pluginId}': candidate validation failed (${issues.join('; ')})`,
+      options,
+    )
+    this.name = 'SwapRejectedError'
+    this.pluginId = pluginId
+    this.issues = issues
   }
 }

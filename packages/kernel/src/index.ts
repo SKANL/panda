@@ -1,4 +1,14 @@
-export { PandaKernelError, ManifestInvalidError, CycleDetectedError, ServiceNotProvidedError, ServiceConflictError, KERNEL_ERROR_CODES } from './errors'
+export {
+  PandaKernelError,
+  ManifestInvalidError,
+  CycleDetectedError,
+  ServiceNotProvidedError,
+  ServiceConflictError,
+  PluginInactiveError,
+  PluginStartFailedError,
+  SwapRejectedError,
+  KERNEL_ERROR_CODES,
+} from './errors'
 export {
   validateManifest,
   type PluginManifest,
@@ -14,3 +24,16 @@ export {
   type PluginLoadResult,
   type ServiceResolution,
 } from './loader'
+export {
+  createKernel,
+  type ActivationContext,
+  type ConsumedService,
+  type DisposalFailure,
+  type KernelOptions,
+  type KernelStartResult,
+  type PandaKernel,
+  type PluginFactory,
+  type PluginFactoryResult,
+  type StopResult,
+  type SwapResult,
+} from './lifecycle'

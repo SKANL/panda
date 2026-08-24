@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   CycleDetectedError,
   ManifestInvalidError,
+  PluginInactiveError,
+  PluginStartFailedError,
   ServiceConflictError,
   ServiceNotProvidedError,
+  SwapRejectedError,
   loadPlugins,
   validateManifest,
 } from '@panda/kernel'
@@ -82,5 +85,23 @@ describe('kernel error-code parity with canonical contracts constants', () => {
       expect((error as { code: string }).code).toBe(PANDA_ERROR_CODES.kernelServiceConflict)
       expect((error as { code: string }).code).toBe('PANDA_KERNEL_SERVICE_CONFLICT')
     }
+  })
+
+  it('pins PANDA_KERNEL_PLUGIN_INACTIVE to the canonical constant', () => {
+    const error = new PluginInactiveError('p', 'detail')
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelPluginInactive)
+    expect(error.code).toBe('PANDA_KERNEL_PLUGIN_INACTIVE')
+  })
+
+  it('pins PANDA_KERNEL_PLUGIN_START_FAILED to the canonical constant', () => {
+    const error = new PluginStartFailedError('p', 'detail')
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelPluginStartFailed)
+    expect(error.code).toBe('PANDA_KERNEL_PLUGIN_START_FAILED')
+  })
+
+  it('pins PANDA_KERNEL_SWAP_REJECTED to the canonical constant', () => {
+    const error = new SwapRejectedError('p', ['issue'])
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelSwapRejected)
+    expect(error.code).toBe('PANDA_KERNEL_SWAP_REJECTED')
   })
 })

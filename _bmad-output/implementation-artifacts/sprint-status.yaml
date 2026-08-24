@@ -37,7 +37,7 @@ story_location: C:\code\panda\_bmad-output\implementation-artifacts
 development_status:
   epic-1: in-progress
   1-1-plugin-manifest-foundation: done
-  1-2-injection-disposal-and-atomic-swaps: backlog
+  1-2-injection-disposal-and-atomic-swaps: in-progress
   1-3-scoped-event-bus-and-layered-configuration: backlog
   1-4-executoradapter-port-with-contract-test-harness: backlog
   1-5-first-execution-claude-code-driven-headlessly: backlog
