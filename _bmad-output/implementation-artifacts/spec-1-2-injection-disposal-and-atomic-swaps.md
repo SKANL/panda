@@ -2,7 +2,7 @@
 title: 'Injection, disposal, and atomic swaps'
 type: 'feature'
 created: '2026-08-24'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: 'c5ec49ed8de1218e6e96060d259f68b4c8933747'
 context:
