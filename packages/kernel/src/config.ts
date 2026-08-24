@@ -1,4 +1,4 @@
-import { InvalidLayerError } from './errors'
+import { InvalidLayerError } from './errors.ts'
 
 /** Resolution order, widest to narrowest: earlier layers are overridden by later ones. */
 export const CONFIG_LAYERS = ['defaults', 'global', 'project', 'agent', 'invocation'] as const

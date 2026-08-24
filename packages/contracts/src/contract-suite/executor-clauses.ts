@@ -1,10 +1,10 @@
-import { PandaError, PANDA_ERROR_CODES } from '../errors'
-import { RESULT_ENVELOPE_SCHEMA } from '../executor'
-import type { ExecutorAdapter, RunRequest } from '../executor'
-import { validateRunRequest } from '../executor'
-import { describeThrown, failWith, pass } from './clause'
-import type { Clause } from './clause'
-import type { WorkspaceHandle } from '../workspace'
+import { PandaError, PANDA_ERROR_CODES } from '../errors.ts'
+import { validateEnvelope } from '../executor.ts'
+import type { ExecutorAdapter, RunRequest } from '../executor.ts'
+import { validateRunRequest } from '../executor.ts'
+import { describeThrown, failWith, pass } from './clause.ts'
+import type { Clause } from './clause.ts'
+import type { WorkspaceHandle } from '../workspace.ts'
 
 export const EXECUTOR_SUITE = 'executor-adapter'
 
@@ -27,13 +27,19 @@ const MALFORMED_REQUEST = Object.freeze({
   workspace: { id: '', rootPath: '', capabilities: [] },
 })
 
-async function invoke(adapter: ExecutorAdapter): Promise<{ ok: true; envelopePromise: Promise<unknown> } | { ok: false; detail: string }> {
+// Deliberately synchronous: callers that need to abort in the same tick as the
+// run() invocation (the cancellation clause) must get the envelope promise back
+// before any microtask runs, so the adapter cannot resolve ahead of the abort.
+function invoke(
+  adapter: ExecutorAdapter,
+  request: RunRequest = CONTRACT_PROBE_REQUEST,
+): { ok: true; envelopePromise: Promise<unknown> } | { ok: false; detail: string } {
   if (typeof adapter.run !== 'function') {
     return { ok: false, detail: 'adapter exposes no run(request) method' }
   }
   let pending: Promise<unknown>
   try {
-    pending = adapter.run(CONTRACT_PROBE_REQUEST)
+    pending = adapter.run(request)
   } catch (error) {
     return { ok: false, detail: `run threw synchronously instead of returning a promise: ${describeThrown(error)}` }
   }
@@ -75,7 +81,7 @@ export const EXECUTOR_CLAUSES: readonly Clause<ExecutorAdapter>[] = [
   {
     name: 'envelope-conformance',
     check: async (adapter) => {
-      const invoked = await invoke(adapter)
+      const invoked = invoke(adapter)
       if (!invoked.ok) return failWith(invoked.detail)
       let envelope: unknown
       try {
@@ -83,10 +89,12 @@ export const EXECUTOR_CLAUSES: readonly Clause<ExecutorAdapter>[] = [
       } catch (error) {
         return failWith(`run rejected instead of returning an envelope: ${describeThrown(error)}`)
       }
-      const result = await RESULT_ENVELOPE_SCHEMA['~standard'].validate(envelope)
-      if (result.issues) {
-        const codeName = PANDA_ERROR_CODES.contractEnvelopeInvalid
-        return failWith(`envelope violates the result envelope schema (${codeName}): ${result.issues.map((entry) => entry.message).join('; ')}`)
+      try {
+        validateEnvelope(envelope)
+      } catch (error) {
+        return failWith(
+          `envelope violates the result envelope schema (${PANDA_ERROR_CODES.contractEnvelopeInvalid}): ${describeThrown(error)}`,
+        )
       }
       return pass()
     },
@@ -126,6 +134,38 @@ export const EXECUTOR_CLAUSES: readonly Clause<ExecutorAdapter>[] = [
       const errors = (envelope as Record<string, unknown>)['errors']
       if (!Array.isArray(errors) || errors.length === 0) {
         return failWith("failed envelope carries no 'errors' entries")
+      }
+      return pass()
+    },
+  },
+  {
+    // Cancellation is contractual (FR-6): aborting the run's signal must resolve
+    // a typed 'cancelled' envelope instead of hanging or throwing. The seam is
+    // the standard AbortSignal on RunRequest — stub-friendly by construction,
+    // and real adapters terminate their process tree behind it. The abort lands
+    // synchronously after run() is invoked, so any adapter that observes the
+    // signal after its first await sees it deterministically.
+    name: 'cancel-yields-cancelled-envelope',
+    check: async (adapter) => {
+      const controller = new AbortController()
+      const invoked = invoke(adapter, { ...CONTRACT_PROBE_REQUEST, signal: controller.signal })
+      if (!invoked.ok) return failWith(invoked.detail)
+      controller.abort()
+      let envelope: unknown
+      try {
+        envelope = await invoked.envelopePromise
+      } catch (error) {
+        return failWith(`run rejected after cancellation: ${describeThrown(error)}`)
+      }
+      try {
+        validateEnvelope(envelope)
+      } catch (error) {
+        return failWith(
+          `cancelled run must resolve a schema-conformant envelope (${PANDA_ERROR_CODES.contractEnvelopeInvalid}): ${describeThrown(error)}`,
+        )
+      }
+      if ((envelope as { status?: unknown }).status !== 'cancelled') {
+        return failWith(`adapter resolved status '${(envelope as { status?: unknown }).status}' after cancellation instead of 'cancelled'`)
       }
       return pass()
     },

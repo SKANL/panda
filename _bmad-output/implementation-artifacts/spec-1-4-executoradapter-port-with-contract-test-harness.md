@@ -2,7 +2,7 @@
 title: 'ExecutorAdapter port with contract-test harness'
 type: 'feature'
 created: '2026-08-24'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: 'a75bcad82c4a5b60fd2332238a52b3bc259333fc'
 context:

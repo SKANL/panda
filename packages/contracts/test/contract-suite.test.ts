@@ -5,6 +5,7 @@ import {
   EXECUTOR_CLAUSES,
   PANDA_ERROR_CODES,
   PandaError,
+  RESULT_ENVELOPE_SCHEMA,
   runExecutorContractSuite,
 } from '../src'
 import type { ClauseResult } from '../src'
@@ -12,11 +13,22 @@ import { validateRunRequest } from '../src'
 import type { WorkspaceCapability } from '../src'
 import type { ExecutorAdapter, ResultEnvelope } from '../src'
 
+const CANCELLED_ENVELOPE: ResultEnvelope = {
+  status: 'cancelled',
+  data: null,
+  summary: 'run cancelled',
+  errors: [{ message: 'cancelled by caller', code: 'PANDA_EXECUTOR_CANCELLED' }],
+}
+
 function stubAdapter(envelope: ResultEnvelope): ExecutorAdapter {
   return {
-    async run() {
+    async run(request) {
+      // Yield first so a synchronously-issued abort (as the cancellation clause
+      // does) is observed before resolution, like any real out-of-process executor.
+      await Promise.resolve()
+      if (request.signal?.aborted) return CANCELLED_ENVELOPE
       return envelope
-    }
+    },
   }
 }
 
@@ -48,6 +60,7 @@ describe('executor contract suite', () => {
       'envelope-conformance',
       'ok-envelope-completeness',
       'failure-envelope-completeness',
+      'cancel-yields-cancelled-envelope',
     ])
     for (const violation of report.violations) {
       expect(violation.detail).toMatch(/no run\(request\) method/)
@@ -59,8 +72,11 @@ describe('executor contract suite', () => {
       run: async () => ({ status: 'nope', data: null, summary: '' }) as unknown as ResultEnvelope,
     })
     expect(report.passed).toBe(false)
-    expect(report.violations.map((violation) => violation.clause)).toEqual(['envelope-conformance'])
-    expect(report.violations[0]?.detail).toContain("'status' must be 'ok' or 'failed'")
+    expect(report.violations.map((violation) => violation.clause)).toEqual([
+      'envelope-conformance',
+      'cancel-yields-cancelled-envelope',
+    ])
+    expect(report.violations[0]?.detail).toContain("'status' must be 'ok', 'failed' or 'cancelled'")
     expect(report.violations[0]?.detail).toContain(PANDA_ERROR_CODES.contractEnvelopeInvalid)
   })
 
@@ -68,18 +84,44 @@ describe('executor contract suite', () => {
     const report = await runExecutorContractSuite({
       run: async () => ({ status: 'failed', data: null, summary: 'boom' }),
     })
+    expect(report.passed).toBe(false)
     expect(report.violations.map((violation) => violation.clause)).toEqual([
       'envelope-conformance',
       'failure-envelope-completeness',
+      'cancel-yields-cancelled-envelope',
     ])
     const schemaDetail = report.violations.find((violation) => violation.clause === 'envelope-conformance')
     expect(schemaDetail?.detail).toContain("status 'failed' requires a non-empty 'errors' array")
   })
 
+  it('fails a cancelled-envelope without errors on exactly the schema clause', async () => {
+    const report = await runExecutorContractSuite(
+      stubAdapter({ status: 'cancelled', data: null, summary: 'cancelled without reason' }),
+    )
+    expect(report.violations.map((violation) => violation.clause)).toEqual(['envelope-conformance'])
+    expect(report.violations[0]?.detail).toContain("status 'cancelled' requires a non-empty 'errors' array")
+  })
+
+  it('passes a signal-ignoring adapter on every clause EXCEPT cancellation', async () => {
+    const report = await runExecutorContractSuite({
+      run: async () => ({ status: 'ok', data: null, summary: 'ignored the abort' }),
+    })
+    expect(report.passed).toBe(false)
+    expect(report.violations.map((violation) => violation.clause)).toEqual([
+      'cancel-yields-cancelled-envelope',
+    ])
+    expect(report.violations[0]?.detail).toContain("resolved status 'ok' after cancellation")
+  })
+
   it('fails an ok-envelope without data naming exactly the conformance + ok-completeness clauses', async () => {
     const report = await runExecutorContractSuite({
-      run: async () => ({ status: 'ok', summary: 'done' }) as unknown as ResultEnvelope,
+      run: async (request) => {
+        await Promise.resolve()
+        if (request.signal?.aborted) return CANCELLED_ENVELOPE
+        return { status: 'ok', summary: 'done' } as unknown as ResultEnvelope
+      },
     })
+    expect(report.passed).toBe(false)
     expect(report.violations.map((violation) => violation.clause)).toEqual([
       'envelope-conformance',
       'ok-envelope-completeness',
@@ -97,6 +139,7 @@ describe('executor contract suite', () => {
       'envelope-conformance',
       'ok-envelope-completeness',
       'failure-envelope-completeness',
+      'cancel-yields-cancelled-envelope',
     ])
     for (const violation of report.violations) {
       expect(violation.detail).toContain('adapter exploded')
@@ -114,6 +157,7 @@ describe('executor contract suite', () => {
       'envelope-conformance (timeout)',
       'ok-envelope-completeness (timeout)',
       'failure-envelope-completeness (timeout)',
+      'cancel-yields-cancelled-envelope (timeout)',
     ])
     for (const violation of report.violations) {
       expect(violation.detail).toContain('time budget')
@@ -147,6 +191,32 @@ describe('programmatic validators raise coded schema violations', () => {
       expect(error).toBeInstanceOf(PandaError)
       expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.contractEnvelopeInvalid)
     }
+  })
+
+  it('rejects a non-AbortSignal run signal with PANDA_CONTRACT_ENVELOPE_INVALID', () => {
+    try {
+      validateRunRequest({
+        prompt: 'ok',
+        workspace: CONTRACT_PROBE_WORKSPACE_HANDLE,
+        signal: 'not-a-signal' as unknown as AbortSignal,
+      })
+      expect.unreachable()
+    } catch (error) {
+      expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.contractEnvelopeInvalid)
+      expect((error as PandaError).message).toContain("'signal' must be an AbortSignal")
+    }
+    expect(() =>
+      validateRunRequest({
+        prompt: 'ok',
+        workspace: CONTRACT_PROBE_WORKSPACE_HANDLE,
+        signal: new AbortController().signal,
+      }),
+    ).not.toThrow()
+  })
+
+  it('accepts a cancelled envelope carrying a cancellation reason', async () => {
+    const result = await RESULT_ENVELOPE_SCHEMA['~standard'].validate(CANCELLED_ENVELOPE)
+    expect(result.issues).toBeUndefined()
   })
 
   it('accepts the probe request', () => {

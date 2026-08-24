@@ -1,5 +1,5 @@
-import { CycleDetectedError, ManifestInvalidError, PandaKernelError, ServiceConflictError, ServiceNotProvidedError } from './errors'
-import { validateManifest, type PluginManifest } from './manifest'
+import { CycleDetectedError, ManifestInvalidError, PandaKernelError, ServiceConflictError, ServiceNotProvidedError } from './errors.ts'
+import { validateManifest, type PluginManifest } from './manifest.ts'
 
 export type ServiceResolution =
   | { readonly kind: 'provided'; readonly providerId: string }

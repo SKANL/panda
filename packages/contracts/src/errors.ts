@@ -15,6 +15,9 @@ export const PANDA_ERROR_CODES = {
   contractWorkspaceDoubleRelease: 'PANDA_CONTRACT_WORKSPACE_DOUBLE_RELEASE',
   contractWorkspaceUnavailable: 'PANDA_CONTRACT_WORKSPACE_UNAVAILABLE',
   contractProviderDisposed: 'PANDA_CONTRACT_PROVIDER_DISPOSED',
+  executorUnavailable: 'PANDA_EXECUTOR_UNAVAILABLE',
+  executorRunFailed: 'PANDA_EXECUTOR_RUN_FAILED',
+  executorCancelled: 'PANDA_EXECUTOR_CANCELLED',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

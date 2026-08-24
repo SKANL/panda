@@ -1,7 +1,7 @@
-import { PandaError, PANDA_ERROR_CODES } from './errors'
-import { defineStandardSchema } from './standard-schema'
-import type { StandardSchemaIssue, StandardSchemaResult, StandardSchemaV1 } from './standard-schema'
-import { isNonEmptyString, isRecord, issue } from './validation'
+import { PandaError, PANDA_ERROR_CODES } from './errors.ts'
+import { defineStandardSchema } from './standard-schema.ts'
+import type { StandardSchemaIssue, StandardSchemaResult, StandardSchemaV1 } from './standard-schema.ts'
+import { isNonEmptyString, isRecord, issue } from './validation.ts'
 
 export type WorkspaceCapability = 'read' | 'write'
 

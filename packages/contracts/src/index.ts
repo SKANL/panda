@@ -1,27 +1,29 @@
-export { PandaError, PANDA_ERROR_CODES, type PandaErrorCode } from './errors'
+export { PandaError, PANDA_ERROR_CODES, type PandaErrorCode } from './errors.ts'
 export {
   type StandardSchemaIssue,
   type StandardSchemaResult,
   type StandardSchemaV1,
   defineStandardSchema,
-} from './standard-schema'
+} from './standard-schema.ts'
 export {
   WORKSPACE_HANDLE_SCHEMA,
   validateWorkspaceHandle,
   type WorkspaceCapability,
   type WorkspaceHandle,
   type WorkspaceProvider,
-} from './workspace'
+} from './workspace.ts'
 export {
   RESULT_ENVELOPE_SCHEMA,
   RUN_REQUEST_SCHEMA,
+  validateEnvelope,
   validateRunRequest,
   type EnvelopeError,
   type ExecutorAdapter,
   type ResultEnvelope,
   type ResultStatus,
   type RunRequest,
-} from './executor'
+} from './executor.ts'
+export { isRecord } from './validation.ts'
 export {
   CONTRACT_PROBE_REQUEST,
   CONTRACT_PROBE_WORKSPACE_HANDLE,
@@ -38,4 +40,4 @@ export {
   type ClauseViolation,
   type RunOptions,
   type SuiteReport,
-} from './contract-suite'
+} from './contract-suite/index.ts'

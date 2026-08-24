@@ -1,4 +1,4 @@
-import { InvalidScopeError, PluginInactiveError, ReemitDuringFanoutError } from './errors'
+import { InvalidScopeError, PluginInactiveError, ReemitDuringFanoutError } from './errors.ts'
 
 export const BUS_SCOPES = ['global', 'project', 'agent'] as const
 

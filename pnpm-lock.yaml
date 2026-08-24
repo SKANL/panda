@@ -23,6 +23,9 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.9.0)
+      '@panda/cli':
+        specifier: workspace:*
+        version: link:packages/cli
       '@typescript/typescript6':
         specifier: ^6.0.2
         version: 6.0.2
@@ -35,6 +38,44 @@ importers:
       typescript-eslint:
         specifier: ^8.67.0
         version: 8.67.0(eslint@10.9.0)(typescript@6.0.3)
+
+  packages/adapter-claude:
+    dependencies:
+      '@panda/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
+
+  packages/cli:
+    dependencies:
+      '@panda/adapter-claude':
+        specifier: workspace:*
+        version: link:../adapter-claude
+      '@panda/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@panda/workspace-local':
+        specifier: workspace:*
+        version: link:../workspace-local
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
 
   packages/contracts:
     devDependencies:

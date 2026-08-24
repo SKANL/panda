@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { PandaError, PANDA_ERROR_CODES } from '../errors'
-import { WORKSPACE_HANDLE_SCHEMA } from '../workspace'
-import type { WorkspaceHandle, WorkspaceProvider } from '../workspace'
-import { describeThrown, failWith, pass } from './clause'
-import type { Clause, ClauseOutcome } from './clause'
+import { PandaError, PANDA_ERROR_CODES } from '../errors.ts'
+import { WORKSPACE_HANDLE_SCHEMA } from '../workspace.ts'
+import type { WorkspaceHandle, WorkspaceProvider } from '../workspace.ts'
+import { describeThrown, failWith, pass } from './clause.ts'
+import type { Clause, ClauseOutcome } from './clause.ts'
 
 export const WORKSPACE_SUITE = 'workspace-provider'
 

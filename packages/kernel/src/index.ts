@@ -11,7 +11,7 @@ export {
   InvalidScopeError,
   InvalidLayerError,
   KERNEL_ERROR_CODES,
-} from './errors'
+} from './errors.ts'
 export {
   validateManifest,
   type PluginManifest,
@@ -19,14 +19,14 @@ export {
   type StandardSchemaIssue,
   type StandardSchemaResult,
   type StandardSchemaV1Like,
-} from './manifest'
+} from './manifest.ts'
 export {
   loadPlugins,
   type LoadedPlugin,
   type PluginFailure,
   type PluginLoadResult,
   type ServiceResolution,
-} from './loader'
+} from './loader.ts'
 export {
   createKernel,
   type ActivationContext,
@@ -40,7 +40,7 @@ export {
   type PluginFactoryResult,
   type StopResult,
   type SwapResult,
-} from './lifecycle'
+} from './lifecycle.ts'
 export {
   createEventBus,
   BUS_SCOPES,
@@ -52,7 +52,7 @@ export {
   type EventOrigin,
   type ScopedEventBus,
   type Unsubscribe,
-} from './events'
+} from './events.ts'
 export {
   createLayeredConfig,
   CONFIG_LAYERS,
@@ -60,4 +60,4 @@ export {
   type ConfigEntry,
   type ConfigLayer,
   type LayeredConfig,
-} from './config'
+} from './config.ts'

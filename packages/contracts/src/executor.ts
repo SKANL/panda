@@ -1,11 +1,11 @@
-import { PandaError, PANDA_ERROR_CODES } from './errors'
-import { defineStandardSchema } from './standard-schema'
-import type { StandardSchemaIssue, StandardSchemaResult, StandardSchemaV1 } from './standard-schema'
-import { isNonEmptyString, isRecord, issue } from './validation'
-import type { WorkspaceHandle } from './workspace'
-import { workspaceHandleIssues } from './workspace'
+import { PandaError, PANDA_ERROR_CODES } from './errors.ts'
+import { defineStandardSchema } from './standard-schema.ts'
+import type { StandardSchemaIssue, StandardSchemaResult, StandardSchemaV1 } from './standard-schema.ts'
+import { isNonEmptyString, isRecord, issue } from './validation.ts'
+import type { WorkspaceHandle } from './workspace.ts'
+import { workspaceHandleIssues } from './workspace.ts'
 
-export type ResultStatus = 'ok' | 'failed'
+export type ResultStatus = 'ok' | 'failed' | 'cancelled'
 
 export interface EnvelopeError {
   readonly message: string
@@ -15,10 +15,11 @@ export interface EnvelopeError {
 // The typed structured result envelope every adapter returns.
 //
 // Layering: the schema below is the single source of truth for envelope shape —
-// including the invariant that status 'failed' REQUIRES a non-empty errors array.
-// The contract-suite completeness clauses stay as behavioral checks on envelopes
-// adapters actually return at runtime; they exist to produce clause-named
-// diagnostics, not to redefine shape.
+// including the per-status invariants that status 'failed' and status
+// 'cancelled' each REQUIRE a non-empty errors array (a failure or cancellation
+// must always say why). The contract-suite completeness clauses stay as
+// behavioral checks on envelopes adapters actually return at runtime; they exist
+// to produce clause-named diagnostics, not to redefine shape.
 export interface ResultEnvelope {
   readonly status: ResultStatus
   readonly data: unknown
@@ -31,6 +32,9 @@ export interface RunRequest {
   readonly prompt: string
   // Adapters receive the abstract workspace handle, never a bare cwd.
   readonly workspace: WorkspaceHandle
+  // Abort the run; the adapter must terminate the executor process tree and
+  // resolve a 'cancelled' envelope. Absent means the run is not cancellable.
+  readonly signal?: AbortSignal
 }
 
 export interface ExecutorAdapter {
@@ -48,8 +52,8 @@ function envelopeIssues(value: unknown): StandardSchemaIssue[] {
   if (!isRecord(value)) return [issue('result envelope must be an object')]
   const issues: StandardSchemaIssue[] = []
   const status = value['status']
-  if (status !== 'ok' && status !== 'failed') {
-    issues.push(issue("'status' must be 'ok' or 'failed'"))
+  if (status !== 'ok' && status !== 'failed' && status !== 'cancelled') {
+    issues.push(issue("'status' must be 'ok', 'failed' or 'cancelled'"))
   }
   if (!('data' in value)) issues.push(issue("'data' is required (use null when there is no payload)"))
   if (!isNonEmptyString(value['summary'])) issues.push(issue("'summary' must be a non-empty string"))
@@ -63,6 +67,9 @@ function envelopeIssues(value: unknown): StandardSchemaIssue[] {
   }
   if (status === 'failed' && (!Array.isArray(errors) || errors.length === 0)) {
     issues.push(issue("status 'failed' requires a non-empty 'errors' array"))
+  }
+  if (status === 'cancelled' && (!Array.isArray(errors) || errors.length === 0)) {
+    issues.push(issue("status 'cancelled' requires a non-empty 'errors' array"))
   }
   if (Array.isArray(errors)) {
     errors.forEach((entry, index) => {
@@ -83,10 +90,21 @@ export const RESULT_ENVELOPE_SCHEMA: StandardSchemaV1<ResultEnvelope> = defineSt
   },
 )
 
+// Programmatic validation: raises a coded PandaError on schema violations.
+export function validateEnvelope(value: unknown): ResultEnvelope {
+  const issues = envelopeIssues(value)
+  if (issues.length > 0) throwSchemaViolation(issues)
+  return value as ResultEnvelope
+}
+
 function runRequestIssues(value: unknown): StandardSchemaIssue[] {
   if (!isRecord(value)) return [issue('run request must be an object')]
   const issues: StandardSchemaIssue[] = []
   if (!isNonEmptyString(value['prompt'])) issues.push(issue("'prompt' must be a non-empty string"))
+  const signal = value['signal']
+  if (signal !== undefined && !(signal instanceof AbortSignal)) {
+    issues.push(issue("'signal' must be an AbortSignal when present"))
+  }
   for (const handleIssue of workspaceHandleIssues(value['workspace'])) {
     issues.push(issue(`'workspace' is not a valid handle: ${handleIssue.message}`))
   }

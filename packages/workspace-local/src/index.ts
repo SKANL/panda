@@ -1,1 +1,1 @@
-export { LocalWorkspaceProvider, type LocalWorkspaceProviderOptions } from './local-workspace-provider'
+export { LocalWorkspaceProvider, type LocalWorkspaceProviderOptions } from './local-workspace-provider.ts'

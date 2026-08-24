@@ -1,4 +1,4 @@
-import { ManifestInvalidError } from './errors'
+import { ManifestInvalidError } from './errors.ts'
 
 // Validation performs no I/O in kernel-owned code: no fs, network, env reads, or dynamic imports.
 // Plugin-supplied Standard Schema validators necessarily execute plugin code; their side effects are

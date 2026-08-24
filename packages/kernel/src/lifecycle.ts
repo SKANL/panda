@@ -1,14 +1,14 @@
-import { createLayeredConfig, type LayeredConfig } from './config'
+import { createLayeredConfig, type LayeredConfig } from './config.ts'
 import {
   CycleDetectedError,
   PluginInactiveError,
   PluginStartFailedError,
   ServiceNotProvidedError,
   SwapRejectedError,
-} from './errors'
-import { createEventBus, type ScopedEventBus } from './events'
-import { loadPlugins, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader'
-import { validateManifest, type PluginManifest } from './manifest'
+} from './errors.ts'
+import { createEventBus, type ScopedEventBus } from './events.ts'
+import { loadPlugins, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader.ts'
+import { validateManifest, type PluginManifest } from './manifest.ts'
 
 /**
  * Soft-consumption imposes no activation ordering by design: soft services resolve

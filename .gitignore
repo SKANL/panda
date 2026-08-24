@@ -1,4 +1,5 @@
 .scratch/
+.panda/
 node_modules/
 dist/
 *.tsbuildinfo
