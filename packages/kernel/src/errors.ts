@@ -6,6 +6,9 @@ export const KERNEL_ERROR_CODES = {
   pluginInactive: 'PANDA_KERNEL_PLUGIN_INACTIVE',
   pluginStartFailed: 'PANDA_KERNEL_PLUGIN_START_FAILED',
   swapRejected: 'PANDA_KERNEL_SWAP_REJECTED',
+  reemitDuringFanout: 'PANDA_KERNEL_REEMIT_DURING_FANOUT',
+  invalidScope: 'PANDA_KERNEL_INVALID_SCOPE',
+  invalidLayer: 'PANDA_KERNEL_INVALID_LAYER',
 } as const
 
 export class PandaKernelError extends Error {
@@ -110,5 +113,36 @@ export class SwapRejectedError extends PandaKernelError {
     this.name = 'SwapRejectedError'
     this.pluginId = pluginId
     this.issues = issues
+  }
+}
+
+export class ReemitDuringFanoutError extends PandaKernelError {
+  constructor(options?: ErrorOptions) {
+    super(
+      KERNEL_ERROR_CODES.reemitDuringFanout,
+      'handlers must not synchronously re-emit into the bus during fan-out',
+      options,
+    )
+    this.name = 'ReemitDuringFanoutError'
+  }
+}
+
+export class InvalidScopeError extends PandaKernelError {
+  readonly scope: string
+
+  constructor(scope: string, detail: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.invalidScope, `'${scope}' is not a valid scope: ${detail}`, options)
+    this.name = 'InvalidScopeError'
+    this.scope = scope
+  }
+}
+
+export class InvalidLayerError extends PandaKernelError {
+  readonly layer: string
+
+  constructor(layer: string, detail: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.invalidLayer, `invalid configuration layer '${layer}': ${detail}`, options)
+    this.name = 'InvalidLayerError'
+    this.layer = layer
   }
 }

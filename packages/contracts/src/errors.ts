@@ -6,6 +6,9 @@ export const PANDA_ERROR_CODES = {
   kernelPluginInactive: 'PANDA_KERNEL_PLUGIN_INACTIVE',
   kernelPluginStartFailed: 'PANDA_KERNEL_PLUGIN_START_FAILED',
   kernelSwapRejected: 'PANDA_KERNEL_SWAP_REJECTED',
+  kernelReemitDuringFanout: 'PANDA_KERNEL_REEMIT_DURING_FANOUT',
+  kernelInvalidScope: 'PANDA_KERNEL_INVALID_SCOPE',
+  kernelInvalidLayer: 'PANDA_KERNEL_INVALID_LAYER',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

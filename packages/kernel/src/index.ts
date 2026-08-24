@@ -7,6 +7,9 @@ export {
   PluginInactiveError,
   PluginStartFailedError,
   SwapRejectedError,
+  ReemitDuringFanoutError,
+  InvalidScopeError,
+  InvalidLayerError,
   KERNEL_ERROR_CODES,
 } from './errors'
 export {
@@ -29,6 +32,7 @@ export {
   type ActivationContext,
   type ConsumedService,
   type DisposalFailure,
+  type HandlerFailure,
   type KernelOptions,
   type KernelStartResult,
   type PandaKernel,
@@ -37,3 +41,23 @@ export {
   type StopResult,
   type SwapResult,
 } from './lifecycle'
+export {
+  createEventBus,
+  BUS_SCOPES,
+  type BusEvent,
+  type BusScope,
+  type DispatchFailure,
+  type EmitResult,
+  type EventHandler,
+  type EventOrigin,
+  type ScopedEventBus,
+  type Unsubscribe,
+} from './events'
+export {
+  createLayeredConfig,
+  CONFIG_LAYERS,
+  deepMerge,
+  type ConfigEntry,
+  type ConfigLayer,
+  type LayeredConfig,
+} from './config'

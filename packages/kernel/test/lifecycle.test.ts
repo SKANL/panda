@@ -33,7 +33,7 @@ function startWith(...registrations: { input: unknown; factory: PluginFactory }[
 }
 
 describe('lifecycle: chained teardown ordering', () => {
-  it('disposes in exact reverse activation order across a hard-dependency chain', () => {
+  it('disposes in exact reverse activation order across a hard-dependency chain', async () => {
     const log: string[] = []
     const kernel = createKernel({ orderLog: log })
     kernel.register(manifest({ id: 'a', provides: ['svc.a'] }), () => ({
@@ -54,53 +54,82 @@ describe('lifecycle: chained teardown ordering', () => {
     expect(result.started).toEqual(['a', 'b', 'c'])
     expect(result.failures).toEqual([])
 
-    const stopped = kernel.stop()
-    expect(stopped).toEqual({ disposed: ['c', 'b', 'a'], disposalErrors: [] })
+    const stopped = await kernel.stop()
+    expect(stopped).toEqual({
+      disposed: ['c', 'b', 'a'],
+      disposalErrors: [],
+      handlerFailures: [],
+    })
     expect(log).toEqual(['activate:a', 'activate:b', 'activate:c', 'dispose:c', 'dispose:b', 'dispose:a'])
   })
 })
 
 describe('lifecycle: disposal idempotence', () => {
-  it('treats a second stop as a no-op with no duplicate log entries', () => {
+  it('treats a second stop as a no-op with no duplicate log entries', async () => {
     const log: string[] = []
     const kernel = createKernel({ orderLog: log })
     const a = provider('a', 'svc.a', 1)
     kernel.register(a.input, a.factory)
     kernel.start()
-    kernel.stop()
+    await kernel.stop()
 
     const afterFirstStop = [...log]
-    expect(kernel.stop()).toEqual({ disposed: [], disposalErrors: [] })
+    expect(await kernel.stop()).toEqual({ disposed: [], disposalErrors: [], handlerFailures: [] })
     expect(log).toEqual(afterFirstStop)
   })
 })
 
 describe('lifecycle: per-plugin dispose', () => {
-  it('runs the disposer once, is a no-op when repeated, and blocks further lookups', () => {
+  it('runs the disposer once, is a no-op when repeated, and blocks further lookups', async () => {
     let disposals = 0
     const { kernel } = startWith(provider('p', 'svc.p', 42, () => {
       disposals += 1
     }))
     kernel.start()
 
-    kernel.dispose('p')
+    await kernel.dispose('p')
     expect(disposals).toBe(1)
     expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
 
-    kernel.dispose('p')
+    await kernel.dispose('p')
     expect(disposals).toBe(1)
   })
 
-  it('is a no-op for unknown plugin ids', () => {
+  it('drains pending bus continuations before running the plugin’s disposer', async () => {
+    const observations: string[] = []
+    const { kernel } = startWith(provider('p', 'svc.p', 1, () => {
+      observations.push(`disposed (pending=${kernel.bus.pendingCount})`)
+    }))
+    kernel.start()
+
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    kernel.bus.subscribe('global', async () => {
+      await gate
+      observations.push('continuation settled')
+    })
+    kernel.bus.emit('e')
+
+    release?.()
+    const run = kernel.dispose('p')
+    expect(observations).toEqual([])
+    await run
+
+    expect(observations).toEqual(['continuation settled', 'disposed (pending=0)'])
+  })
+
+  it('is a no-op for unknown plugin ids', async () => {
     const { kernel } = startWith(provider('p', 'svc.p', 1))
-    expect(() => kernel.dispose('ghost')).not.toThrow()
+    await expect(kernel.dispose('ghost')).resolves.toBeUndefined()
   })
 })
 
 describe('lifecycle: post-dispose use', () => {
-  it('raises a typed inactive error naming the plugin when a disposed service is requested', () => {
+  it('raises a typed inactive error naming the plugin when a disposed service is requested', async () => {
     const { kernel } = startWith(provider('provider', 'svc.p', 42))
-    kernel.stop()
+    await kernel.stop()
 
     expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
     try {
@@ -234,11 +263,11 @@ describe('lifecycle: invalid swap', () => {
     }
   })
 
-  it('rejects swaps targeting plugins that are not active', () => {
+  it('rejects swaps targeting plugins that are not active', async () => {
     const { kernel } = startWith(provider('p', 'svc.p', 'old'))
     expect(() => kernel.swap('ghost', () => ({ status: 'activated' }))).toThrow(PluginInactiveError)
 
-    kernel.stop()
+    await kernel.stop()
     expect(() => kernel.swap('p', () => ({ status: 'activated' }))).toThrow(PluginInactiveError)
   })
 })
@@ -266,13 +295,13 @@ describe('lifecycle: valid swap', () => {
     expect(observations).toEqual(['old disposer sees: {"kind":"provided","pluginId":"p","value":"new"}'])
   })
 
-  it('runs the superseded disposer at commit and only the current one at stop', () => {
+  it('runs the superseded disposer at commit and only the current one at stop', async () => {
     const disposed: string[] = []
     const { kernel } = startWith(provider('p', 'svc.p', 'old', () => disposed.push('old')))
     kernel.swap('p', () => ({ status: 'activated', services: { 'svc.p': 'new' }, dispose: () => disposed.push('new') }))
     expect(disposed).toEqual(['old'])
 
-    const stopped = kernel.stop()
+    const stopped = await kernel.stop()
     expect(stopped.disposed).toEqual(['p'])
     expect(disposed).toEqual(['old', 'new'])
   })
@@ -297,7 +326,7 @@ describe('lifecycle: valid swap', () => {
 })
 
 describe('lifecycle: disposer exception containment at stop', () => {
-  it('runs every disposer despite throws and collects per-plugin errors', () => {
+  it('runs every disposer despite throws and collects per-plugin errors', async () => {
     const disposed: string[] = []
     const boom = new Error('b exploded')
     const kernel = createKernel()
@@ -320,7 +349,7 @@ describe('lifecycle: disposer exception containment at stop', () => {
     }))
 
     kernel.start()
-    const stopped = kernel.stop()
+    const stopped = await kernel.stop()
 
     expect(disposed).toEqual(['d', 'a'])
     expect(stopped.disposed).toEqual(['d', 'b', 'a'])
@@ -387,9 +416,9 @@ describe('lifecycle: activation failure containment', () => {
 })
 
 describe('lifecycle: terminal state', () => {
-  it('rejects register and start on a stopped kernel with typed errors naming the kernel', () => {
+  it('rejects register and start on a stopped kernel with typed errors naming the kernel', async () => {
     const { kernel } = startWith(provider('p', 'svc.p', 1))
-    kernel.stop()
+    await kernel.stop()
 
     expect(() =>
       kernel.register(manifest({ id: 'late' }), () => ({ status: 'activated' })),
@@ -428,20 +457,155 @@ describe('lifecycle: composition with the loader', () => {
   })
 })
 
+describe('lifecycle: drained shutdown', () => {
+  it('drains pending event-handler continuations before any disposer runs, with the bus quiescent', async () => {
+    const observations: string[] = []
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), () => ({
+      status: 'activated',
+      services: { 'svc.p': 1 },
+      dispose: () => {
+        // A disposer must never observe a half-drained bus.
+        observations.push(`disposed (pending=${kernel.bus.pendingCount})`)
+      },
+    }))
+    kernel.start()
+
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    kernel.bus.subscribe('global', async (event) => {
+      await gate
+      observations.push(`handler finished:${String(event.payload)}`)
+    })
+    kernel.bus.emit('task.progress', 'tick')
+
+    release?.()
+    const stopped = await kernel.stop()
+
+    expect(observations).toEqual(['handler finished:tick', 'disposed (pending=0)'])
+    expect(stopped.disposed).toEqual(['p'])
+  })
+
+  it('surfaces rejected handler continuations in the stop result', async () => {
+    const boom = new Error('continuation exploded')
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { kernel } = startWith(provider('p', 'svc.p', 1))
+    kernel.bus.subscribe('global', async () => {
+      await gate
+      throw boom
+    })
+    kernel.bus.emit('e')
+
+    release?.()
+    const stopped = await kernel.stop()
+
+    expect(stopped.handlerFailures).toHaveLength(1)
+    expect(stopped.handlerFailures[0]?.listenerId).toBe('listener-0')
+    expect(stopped.handlerFailures[0]?.error).toBe(boom)
+  })
+
+  it('returns empty handlerFailures when no continuation failed', async () => {
+    const { kernel } = startWith(provider('p', 'svc.p', 1))
+    kernel.bus.subscribe('global', async () => {})
+    kernel.bus.emit('e')
+
+    const stopped = await kernel.stop()
+    expect(stopped.handlerFailures).toEqual([])
+  })
+
+  it('shares one in-flight result across concurrent stop calls', async () => {
+    let disposals = 0
+    const { kernel } = startWith(provider('p', 'svc.p', 1, () => {
+      disposals += 1
+    }))
+
+    const [first, second] = await Promise.all([kernel.stop(), kernel.stop()])
+
+    expect(first).toBe(second)
+    expect(disposals).toBe(1)
+    expect(first.disposed).toEqual(['p'])
+
+    const third = await kernel.stop()
+    expect(third).toEqual({ disposed: [], disposalErrors: [], handlerFailures: [] })
+  })
+
+  it('rejects emit and subscribe on the bus once stop has completed', async () => {
+    const { kernel } = startWith(provider('p', 'svc.p', 1))
+
+    const stopped = await kernel.stop()
+    expect(() => kernel.bus.emit('late')).toThrow(PluginInactiveError)
+    expect(() => kernel.bus.subscribe('global', () => {})).toThrow(PluginInactiveError)
+    try {
+      kernel.bus.emit('late')
+      expect.unreachable()
+    } catch (error) {
+      expect((error as PluginInactiveError).code).toBe('PANDA_KERNEL_PLUGIN_INACTIVE')
+      expect((error as PluginInactiveError).message).toContain("'kernel'")
+    }
+    expect(stopped.handlerFailures).toEqual([])
+  })
+
+  it('lets plugins subscribe and read config through the activation context', () => {
+    const observed: string[] = []
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'wired', provides: ['level'] }), (context) => ({
+      status: 'activated',
+      services: { level: (context.config.resolve() as { level?: string }).level },
+      dispose: () => {},
+    }))
+    kernel.register(
+      manifest({ id: 'listener', consumes: [{ service: 'level', mode: 'hard' }] }),
+      (context) => {
+        context.bus.subscribe('agent', 'a', (event) => {
+          observed.push(`${event.type}:${String(event.payload)}`)
+        })
+        return { status: 'activated' }
+      },
+    )
+    kernel.config.setLayer('defaults', { level: 'info' })
+    kernel.start()
+
+    kernel.bus.emit('task.started', 'tick', { agentId: 'a' })
+    kernel.bus.emit('task.started', 'tock', { agentId: 'b' })
+
+    expect(observed).toEqual(['task.started:tick'])
+  })
+
+  it('exposes the scoped event bus and layered config as kernel-owned services', () => {
+    const { kernel } = startWith(provider('p', 'svc.p', 1))
+    const seen: string[] = []
+    kernel.bus.subscribe('agent', 'a', (event) => {
+      seen.push(String(event.payload))
+    })
+    kernel.config.setLayer('defaults', { level: 'info' })
+
+    kernel.bus.emit('e', 'only-agent-a', { agentId: 'a' })
+    kernel.bus.emit('e', 'not-for-agent-b', { agentId: 'b' })
+
+    expect(seen).toEqual(['only-agent-a'])
+    expect(kernel.config.resolve()).toEqual({ level: 'info' })
+  })
+})
+
 describe('lifecycle: order log discipline', () => {
-  it('keeps swap events out of the ordering log', () => {
+  it('keeps swap events out of the ordering log', async () => {
     const log: string[] = []
     const kernel = createKernel({ orderLog: log })
     const p = provider('p', 'svc.p', 'old', () => {})
     kernel.register(p.input, p.factory)
     kernel.start()
     kernel.swap('p', () => ({ status: 'activated', services: { 'svc.p': 'new' }, dispose: () => {} }))
-    kernel.stop()
+    await kernel.stop()
 
     expect(log).toEqual(['activate:p', 'dispose:p'])
   })
 
-  it('never lets a throwing diagnostic abort activation or teardown', () => {
+  it('never lets a throwing diagnostic abort activation or teardown', async () => {
     const hostileLog = {
       push: () => {
         throw new Error('log exploded')
@@ -451,9 +615,10 @@ describe('lifecycle: order log discipline', () => {
     const p = provider('p', 'svc.p', 1, () => {})
     kernel.register(p.input, p.factory)
 
-    expect(() => {
+    const run = async () => {
       kernel.start()
-      kernel.stop()
-    }).not.toThrow()
+      await kernel.stop()
+    }
+    await expect(run()).resolves.toBeUndefined()
   })
 })

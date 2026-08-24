@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   CycleDetectedError,
+  InvalidLayerError,
+  InvalidScopeError,
   ManifestInvalidError,
   PluginInactiveError,
   PluginStartFailedError,
+  ReemitDuringFanoutError,
   ServiceConflictError,
   ServiceNotProvidedError,
   SwapRejectedError,
@@ -103,5 +106,23 @@ describe('kernel error-code parity with canonical contracts constants', () => {
     const error = new SwapRejectedError('p', ['issue'])
     expect(error.code).toBe(PANDA_ERROR_CODES.kernelSwapRejected)
     expect(error.code).toBe('PANDA_KERNEL_SWAP_REJECTED')
+  })
+
+  it('pins PANDA_KERNEL_REEMIT_DURING_FANOUT to the canonical constant', () => {
+    const error = new ReemitDuringFanoutError()
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelReemitDuringFanout)
+    expect(error.code).toBe('PANDA_KERNEL_REEMIT_DURING_FANOUT')
+  })
+
+  it('pins PANDA_KERNEL_INVALID_SCOPE to the canonical constant', () => {
+    const error = new InvalidScopeError('tenant', 'unknown scope')
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelInvalidScope)
+    expect(error.code).toBe('PANDA_KERNEL_INVALID_SCOPE')
+  })
+
+  it('pins PANDA_KERNEL_INVALID_LAYER to the canonical constant', () => {
+    const error = new InvalidLayerError('tenant', 'unknown layer')
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelInvalidLayer)
+    expect(error.code).toBe('PANDA_KERNEL_INVALID_LAYER')
   })
 })

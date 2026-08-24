@@ -1,3 +1,4 @@
+import { createLayeredConfig, type LayeredConfig } from './config'
 import {
   CycleDetectedError,
   PluginInactiveError,
@@ -5,6 +6,7 @@ import {
   ServiceNotProvidedError,
   SwapRejectedError,
 } from './errors'
+import { createEventBus, type ScopedEventBus } from './events'
 import { loadPlugins, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader'
 import { validateManifest, type PluginManifest } from './manifest'
 
@@ -24,6 +26,10 @@ export interface ActivationContext {
    * failed or never activated read as absent, and use sites decide what to do.
    */
   consume<T = unknown>(service: string): ConsumedService<T>
+  /** The kernel's scoped event bus; plugins may subscribe and emit during activation. */
+  readonly bus: ScopedEventBus
+  /** The kernel's layered configuration; plugins read composed values via `resolve()`/`dump()`. */
+  readonly config: LayeredConfig
 }
 
 export type PluginFactoryResult =
@@ -46,9 +52,16 @@ export interface DisposalFailure {
   readonly error: unknown
 }
 
+export interface HandlerFailure {
+  readonly listenerId?: string
+  readonly error: unknown
+}
+
 export interface StopResult {
   readonly disposed: readonly string[]
   readonly disposalErrors: readonly DisposalFailure[]
+  /** Continuation failures contained by the bus and surfaced by the pre-unwind drain. */
+  readonly handlerFailures: readonly HandlerFailure[]
 }
 
 export interface SwapResult {
@@ -59,11 +72,18 @@ export interface PandaKernel {
   /** Queues a validated manifest paired with its activation factory. */
   register(input: unknown, factory: PluginFactory): void
   start(): KernelStartResult
-  stop(): StopResult
+  stop(): Promise<StopResult>
   getService<T = unknown>(service: string): ConsumedService<T>
   swap(pluginId: string, factory: PluginFactory): SwapResult
-  /** Runs one plugin's disposer once and drops its services from the registry; repeats are no-ops. */
-  dispose(pluginId: string): void
+  /**
+   * Drains pending bus continuations, then runs one plugin's disposer and drops
+   * its services from the registry; repeats are no-ops.
+   */
+  dispose(pluginId: string): Promise<void>
+  /** Scoped synchronous event bus (`global | project | agent`) owned by this kernel. */
+  readonly bus: ScopedEventBus
+  /** Layered configuration (defaults → global → project → agent → invocation) owned by this kernel. */
+  readonly config: LayeredConfig
 }
 
 export interface KernelOptions {
@@ -108,8 +128,12 @@ type ActivationRejection = {
  *   activate (`unready`, reusing the loader's `PANDA_KERNEL_SERVICE_NOT_PROVIDED`
  *   failure). Readiness stays presence-based, as decided in 1.1. Each plugin activates
  *   at most once and its failure is reported once across repeated starts.
- * - `stop` runs EVERY disposer in exact reverse activation order even if some throw,
- *   collecting per-plugin disposal errors in the result; it is idempotent. Disposers of
+ * - `stop` drains pending event-handler continuations BEFORE unwinding (their contained
+ *   failures land in the result's `handlerFailures`), then runs
+ *   EVERY disposer in exact reverse activation order even if some throw, collecting
+ *   per-plugin disposal errors in the result; it is idempotent, and concurrent calls
+ *   share one in-flight result. Once it completes the bus is closed: further emit or
+ *   subscribe raises `PANDA_KERNEL_PLUGIN_INACTIVE` naming `'kernel'`. Disposers of
  *   failed/unready plugins never run because those plugins never activated.
  * - `swap` activates the candidate fully against the live registry before commit; a
  *   rejection (thrown, returned issues, or service-coverage violation) leaves the
@@ -121,11 +145,14 @@ type ActivationRejection = {
  */
 export function createKernel(options: KernelOptions = {}): PandaKernel {
   const orderLog = options.orderLog
+  const bus = createEventBus()
+  const config = createLayeredConfig()
   const registrations: { manifest: PluginManifest; factory: PluginFactory }[] = []
   const runtime = new Map<string, RuntimePlugin>()
   const activationOrder: string[] = []
   const serviceIndex = new Map<string, string>()
   let stopped = false
+  let stopPromise: Promise<StopResult> | undefined
 
   // A throwing diagnostic must never abort activation or teardown.
   function log(entry: string): void {
@@ -165,7 +192,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   ): ActivationAssessment | ActivationRejection {
     let result: PluginFactoryResult
     try {
-      result = factory({ manifest, consume: (service) => lookup(service) })
+      result = factory({ manifest, consume: (service) => lookup(service), bus, config })
     } catch (error) {
       return {
         reason: 'rejected',
@@ -255,26 +282,44 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       return { started, failures }
     },
 
-    stop() {
-      if (stopped) return { disposed: [], disposalErrors: [] }
+    stop(): Promise<StopResult> {
+      // Concurrent calls share one in-flight stop; once it settles, later calls are
+      // idempotent no-ops again.
+      if (stopPromise) return stopPromise
+      if (stopped) return Promise.resolve({ disposed: [], disposalErrors: [], handlerFailures: [] })
       stopped = true
 
-      const disposed: string[] = []
-      const disposalErrors: DisposalFailure[] = []
-      for (const id of [...activationOrder].reverse()) {
-        const plugin = runtime.get(id)
-        if (plugin === undefined || plugin.state !== 'active') continue
-        try {
-          plugin.disposer?.()
-        } catch (error) {
-          disposalErrors.push({ pluginId: id, error })
+      const performStop = async (): Promise<StopResult> => {
+        // Handler continuations may still mutate state a disposer could observe;
+        // they settle (and their contained failures surface) before unwinding.
+        const handlerFailures = await bus.drain()
+
+        const disposed: string[] = []
+        const disposalErrors: DisposalFailure[] = []
+        for (const id of [...activationOrder].reverse()) {
+          const plugin = runtime.get(id)
+          if (plugin === undefined || plugin.state !== 'active') continue
+          try {
+            plugin.disposer?.()
+          } catch (error) {
+            disposalErrors.push({ pluginId: id, error })
+          }
+          plugin.state = 'disposed'
+          plugin.services = {}
+          log(`dispose:${id}`)
+          disposed.push(id)
         }
-        plugin.state = 'disposed'
-        plugin.services = {}
-        log(`dispose:${id}`)
-        disposed.push(id)
+
+        bus.close()
+        return { disposed, disposalErrors, handlerFailures }
       }
-      return { disposed, disposalErrors }
+
+      const inFlight = performStop()
+      stopPromise = inFlight
+      void inFlight.finally(() => {
+        if (stopPromise === inFlight) stopPromise = undefined
+      })
+      return inFlight
     },
 
     getService(service) {
@@ -306,14 +351,19 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       return {}
     },
 
-    dispose(pluginId) {
+    async dispose(pluginId) {
       const plugin = runtime.get(pluginId)
       if (plugin === undefined || plugin.state === 'disposed') return
+      // Same invariant as stop: a disposer must never observe a half-drained bus.
+      await bus.drain()
       plugin.disposer?.()
       plugin.state = 'disposed'
       plugin.services = {}
       log(`dispose:${pluginId}`)
     },
+
+    bus,
+    config,
   }
 }
 
