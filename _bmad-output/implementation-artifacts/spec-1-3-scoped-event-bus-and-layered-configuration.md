@@ -2,7 +2,7 @@
 title: 'Scoped event bus and layered configuration'
 type: 'feature'
 created: '2026-08-24'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '9cf86ac51681838bd766306fd1a3972c03213146'
 context:

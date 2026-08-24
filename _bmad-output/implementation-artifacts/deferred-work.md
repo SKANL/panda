@@ -12,3 +12,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-plugin-manifest-foundation.md`
   summary: "Before any I/O" guarantee for manifest validation is scoped to kernel-owned code by documentation only; no spy-based test harness proves it mechanically.
   evidence: Code-review finding — plugin-supplied Standard Schema validators necessarily execute plugin code, so full mechanical provability needs a dedicated harness; deferred as not actionable now.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-executoradapter-port-with-contract-test-harness.md`
+  summary: Executor contract clauses invoke adapter.run() up to four times per suite audit; real-executor cost/side-effect strategy (single-run caching or probe isolation) decided in Epic 2.
+  evidence: Harness documents repeatability assumption; first-party adapters spawn processes.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-executoradapter-port-with-contract-test-harness.md`
+  summary: Workspace contract clauses assume disk-persisted state; genericity for in-memory/remote providers needs capability-gated clause variants.
+  evidence: Suite hard-couples to node:fs at rootPath.

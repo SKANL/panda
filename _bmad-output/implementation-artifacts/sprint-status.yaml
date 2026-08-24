@@ -39,7 +39,7 @@ development_status:
   1-1-plugin-manifest-foundation: done
   1-2-injection-disposal-and-atomic-swaps: done
   1-3-scoped-event-bus-and-layered-configuration: in-progress
-  1-4-executoradapter-port-with-contract-test-harness: backlog
+  1-4-executoradapter-port-with-contract-test-harness: in-progress
   1-5-first-execution-claude-code-driven-headlessly: backlog
   epic-1-retrospective: optional
 
