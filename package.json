@@ -8,6 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "check": "pnpm typecheck && pnpm test && pnpm lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "eslint ."
