@@ -36,6 +36,9 @@ export interface PluginLoadResult {
  * hard-consumed services come back not-ready (`PANDA_KERNEL_SERVICE_NOT_PROVIDED`,
  * naming each missing service). Soft-consumed absent services resolve to a typed
  * absent value (`{ kind: 'absent' }`), never undefined.
+ *
+ * Readiness at this stage reflects provider PRESENCE only; propagating provider
+ * readiness through the graph arrives with Story 1.2 lifecycle ordering.
  */
 export function loadPlugins(manifests: readonly unknown[]): PluginLoadResult {
   const parsed = manifests.map((manifest) => validateManifest(manifest))
@@ -43,7 +46,7 @@ export function loadPlugins(manifests: readonly unknown[]): PluginLoadResult {
   const seenIds = new Set<string>()
   for (const manifest of parsed) {
     if (seenIds.has(manifest.id)) {
-      throw new ManifestInvalidError(`invalid plugin manifest: duplicate plugin id '${manifest.id}'`)
+      throw new ManifestInvalidError(`invalid plugin manifest: 'id' must be unique across loaded plugins (duplicate '${manifest.id}')`)
     }
     seenIds.add(manifest.id)
   }

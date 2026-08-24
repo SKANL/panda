@@ -9,6 +9,7 @@ import {
 } from '@panda/kernel'
 import { PANDA_ERROR_CODES } from '../src'
 
+// Temporary local helpers until the shared contract-test harness lands (Story 1.4); they move there.
 const passthroughSchema = {
   '~standard': { version: 1 as const, validate: (value: unknown) => ({ value }) },
 }
@@ -31,6 +32,8 @@ describe('kernel error-code parity with canonical contracts constants', () => {
       validateManifest({})
       expect.unreachable()
     } catch (error) {
+      // Dual assertion (canonical constant AND verbatim literal) is deliberate drift detection:
+      // if either table changes independently, this suite fails before consumers see a renamed code.
       expect((error as { code: string }).code).toBe(PANDA_ERROR_CODES.kernelManifestInvalid)
       expect((error as { code: string }).code).toBe('PANDA_KERNEL_MANIFEST_INVALID')
     }

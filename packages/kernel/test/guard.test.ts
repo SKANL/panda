@@ -12,7 +12,7 @@ function collectSourceFiles(dir: string): string[] {
 }
 
 function relativeImportsOf(source: string): string[] {
-  return [...source.matchAll(/(?:from|import)\s*['"]([^'"]+)['"]/g)]
+  return [...source.matchAll(/(?:from\s*|import\s*\(?\s*)['"]([^'"]+)['"]/g)]
     .map((match) => match[1])
     .filter((specifier): specifier is string => specifier !== undefined && specifier.startsWith('.'))
 }
@@ -42,5 +42,11 @@ describe('@panda/kernel zero-dependency invariant', () => {
         expect(escapesPackage, `${file} imports '${specifier}' which resolves outside @panda/kernel`).toBe(false)
       }
     }
+  })
+
+  it('captures static, dynamic, and re-export import forms in the escape scan', () => {
+    expect(relativeImportsOf(`import x from '../outside/a'`)).toEqual(['../outside/a'])
+    expect(relativeImportsOf(`const m = await import('../outside/b')`)).toEqual(['../outside/b'])
+    expect(relativeImportsOf(`export * from '../outside/c'`)).toEqual(['../outside/c'])
   })
 })

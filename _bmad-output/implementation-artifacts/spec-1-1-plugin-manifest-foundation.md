@@ -73,6 +73,8 @@ Target layout to create:
 
 ## Spec Change Log
 
+- 2026-08-24 (code review round): Sanctioned extension of the error vocabulary with `PANDA_KERNEL_SERVICE_CONFLICT` (duplicate providers of one service) beyond the three suggested codes. Silent last-wins provider resolution was rejected: an ambiguous injection must fail loudly at load, not hide behind an arbitrary pick. KEEP: the kernel emits stable literal code strings, pinned by the contracts-side parity suite so any drift between kernel literals and canonical constants fails CI rather than violating AD-1.
+
 ## Design Notes
 
 Error-model boundary: AD-1 forbids kernel importing contracts, AD-7 wants one shared code vocabulary. Resolution: kernel defines a minimal coded-error TYPE (string `code` field) and emits stable literal codes; `@panda/contracts` publishes the canonical constants; a contracts-side test asserts the expected kernel code literals verbatim, making drift a test failure rather than an import. Suggested prefixes: `PANDA_KERNEL_MANIFEST_INVALID`, `PANDA_KERNEL_CYCLE_DETECTED`, `PANDA_KERNEL_SERVICE_NOT_PROVIDED`.

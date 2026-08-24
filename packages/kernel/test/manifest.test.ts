@@ -97,6 +97,46 @@ describe('validateManifest', () => {
     }
   })
 
+  it('accepts loose version strings pending future semver enforcement', () => {
+    expect(validateManifest(manifest({ version: 'banana' })).version).toBe('banana')
+    expect(validateManifest(manifest({ version: '1' })).version).toBe('1')
+    expect(validateManifest(manifest({ version: 'not.a.semver-at.all' })).version).toBe('not.a.semver-at.all')
+  })
+
+  it('normalizes whitespace-padded values to trimmed stored values', () => {
+    const result = validateManifest(
+      manifest({
+        id: ' plugin-a ',
+        version: '\t1.0.0 ',
+        provides: [' svc.one '],
+        consumes: [{ service: ' svc.two ', mode: 'hard' }],
+      }),
+    )
+    expect(result.id).toBe('plugin-a')
+    expect(result.version).toBe('1.0.0')
+    expect(result.provides).toEqual(['svc.one'])
+    expect(result.consumes).toEqual([{ service: 'svc.two', mode: 'hard' }])
+  })
+
+  it('rejects a configSchema whose validate throws synchronously', () => {
+    const throwingSchema = {
+      '~standard': {
+        version: 1 as const,
+        validate: () => {
+          throw new Error('schema exploded')
+        },
+      },
+    }
+    expect(() => validateManifest(manifest({ configSchema: throwingSchema }))).toThrow(ManifestInvalidError)
+    try {
+      validateManifest(manifest({ configSchema: throwingSchema }))
+      expect.unreachable()
+    } catch (error) {
+      expect((error as PandaKernelError).code).toBe('PANDA_KERNEL_MANIFEST_INVALID')
+      expect((error as Error).message).toContain('configSchema')
+    }
+  })
+
   it('rejects duplicate entries in provides', () => {
     expect(() => validateManifest(manifest({ provides: ['svc.one', 'svc.one'] }))).toThrow(ManifestInvalidError)
     try {

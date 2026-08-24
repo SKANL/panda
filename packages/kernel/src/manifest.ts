@@ -1,5 +1,9 @@
 import { ManifestInvalidError } from './errors'
 
+// Validation performs no I/O in kernel-owned code: no fs, network, env reads, or dynamic imports.
+// Plugin-supplied Standard Schema validators necessarily execute plugin code; their side effects are
+// the plugin's responsibility.
+
 export interface ServiceConsumption {
   readonly service: string
   readonly mode: 'hard' | 'soft'
@@ -22,6 +26,8 @@ export interface StandardSchemaV1Like<Output = unknown> {
 
 export interface PluginManifest {
   readonly id: string
+  // Intentionally loose for now: any non-empty trimmed string. Semver enforcement arrives with the
+  // MethodPlugin contract in a later story.
   readonly version: string
   readonly provides: readonly string[]
   readonly consumes: readonly ServiceConsumption[]
@@ -74,14 +80,14 @@ function rejectDuplicateServices(services: readonly string[], field: string): vo
 export function validateManifest(input: unknown): PluginManifest {
   if (!isRecord(input)) fail('manifest', 'must be an object')
 
-  const id = requireField(input, 'id', isNonEmptyString, 'a non-empty trimmed string')
-  const version = requireField(input, 'version', isNonEmptyString, 'a non-empty trimmed string')
+  const id = requireField(input, 'id', isNonEmptyString, 'a non-empty trimmed string').trim()
+  const version = requireField(input, 'version', isNonEmptyString, 'a non-empty trimmed string').trim()
 
   const rawProvides = requireField(input, 'provides', (value): value is string[] => Array.isArray(value), 'an array of service names')
   for (const service of rawProvides) {
     if (!isNonEmptyString(service)) fail('provides', 'entries must be non-empty trimmed strings')
   }
-  rejectDuplicateServices(rawProvides, 'provides')
+  rejectDuplicateServices(rawProvides.map((service) => service.trim()), 'provides')
 
   const rawConsumes = requireField(input, 'consumes', (value): value is unknown[] => Array.isArray(value), 'an array of service consumptions')
   const consumedServices: string[] = []
@@ -91,8 +97,8 @@ export function validateManifest(input: unknown): PluginManifest {
     if (!isNonEmptyString(service)) fail('consumes', "entries must have a non-empty trimmed string 'service'")
     const mode = entry['mode']
     if (!isServiceMode(mode)) fail('consumes', "entries must have a mode of 'hard' or 'soft'")
-    consumedServices.push(service)
-    return { service, mode }
+    consumedServices.push(service.trim())
+    return { service: service.trim(), mode }
   })
   rejectDuplicateServices(consumedServices, 'consumes')
 
@@ -101,13 +107,18 @@ export function validateManifest(input: unknown): PluginManifest {
   if (!isStandardSchemaV1Like(configSchema)) {
     fail('configSchema', 'must be a Standard Schema v1 object (~standard with version 1 and a validate function)')
   }
-  const probeResult = configSchema['~standard'].validate(CONFIG_PROBE) as { then?: unknown }
+  let probeResult: { then?: unknown }
+  try {
+    probeResult = configSchema['~standard'].validate(CONFIG_PROBE) as { then?: unknown }
+  } catch (error) {
+    throw new ManifestInvalidError(`invalid plugin manifest: 'configSchema' must validate without throwing`, { cause: error })
+  }
   if (typeof probeResult.then === 'function') fail('configSchema', 'must validate synchronously')
 
   return {
     id,
     version,
-    provides: [...rawProvides],
+    provides: rawProvides.map((service) => service.trim()),
     consumes,
     configSchema,
   }

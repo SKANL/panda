@@ -140,6 +140,18 @@ describe('loadPlugins', () => {
     }
   })
 
+  it('readies a hard consumer based on provider presence only, even when the provider itself is not ready', () => {
+    const result = loadPlugins([
+      manifest({ id: 'flaky', provides: ['svc.db'], consumes: [{ service: 'svc.missing', mode: 'hard' }] }),
+      manifest({ id: 'consumer', consumes: [{ service: 'svc.db', mode: 'hard' }] }),
+    ])
+
+    const flaky = result.plugins.find((plugin) => plugin.manifest.id === 'flaky')
+    const consumer = result.plugins.find((plugin) => plugin.manifest.id === 'consumer')
+    expect(flaky?.ready).toBe(false)
+    expect(consumer?.ready).toBe(true)
+  })
+
   it('rejects two manifests sharing the same plugin id', () => {
     try {
       loadPlugins([manifest({ id: 'twin' }), manifest({ id: 'twin' })])
