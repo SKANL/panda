@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceHandle } from '@panda/contracts'
-import { ClaudeCodeAdapter, createNodeChildSpawner } from '../src'
+import { createClaudeCodeAdapter, createNodeChildSpawner } from '../src/index.ts'
 
 // Live smoke against the real `claude` CLI. Gating is deterministic:
 // - the binary is probed cheaply via `claude --version` (no API call);
@@ -67,7 +67,7 @@ describe('live claude smoke', () => {
 
       const rootDir = await mkdtemp(join(tmpdir(), 'panda-live-'))
       try {
-        const adapter = new ClaudeCodeAdapter()
+        const adapter = createClaudeCodeAdapter()
         const handle: WorkspaceHandle = {
           id: 'panda-live-smoke',
           rootPath: rootDir,

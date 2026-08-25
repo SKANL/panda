@@ -3,7 +3,10 @@ import type { ChildProcess, SpawnOptions as NodeSpawnOptions } from 'node:child_
 import type { ChildProcessSpawner, SpawnedChild, SpawnOutcome } from './spawn-seam.ts'
 
 // stdout/stderr capture cap per stream; beyond it we truncate and flag, so a
-// chatty executor can never grow the parent's memory without bound.
+// chatty executor can never grow the parent's memory without bound. JSONL
+// executors emit an event per token, so this cap is reached in practice, not
+// only in theory — the truncation flag is what stops a chopped stream from
+// being read as a complete answer.
 const STREAM_CAPTURE_CAP_BYTES = 1024 * 1024
 
 // Real spawner backed by node:child_process.
@@ -42,18 +45,18 @@ function killTreeOf(child: ChildProcess): void {
   }
 }
 
-// win32 cannot exec .cmd/.bat shims directly (Node refuses them since the
-// shell-injection hardening, raising EINVAL); route those through cmd.exe
-// explicitly. The tracked pid is whatever we spawned (cmd.exe on a reroute),
-// so taskkill tree semantics are unchanged.
-function requiresCmdShim(command: string): boolean {
+/**
+ * True when this command can only be started by rerouting through `cmd.exe`.
+ *
+ * win32 cannot exec .cmd/.bat shims directly (Node refuses them since the
+ * shell-injection hardening, raising EINVAL), so the spawner reroutes them.
+ * That reroute hands the argv to a SHELL, which interprets `&`, `|`, `>`, `^`,
+ * `%VAR%` and newlines — Node's CRT-style quoting does not neutralise any of
+ * them. Callers that would put untrusted text in argv must consult this and
+ * refuse rather than let the shell see it.
+ */
+export function routesThroughCmdShim(command: string): boolean {
   return process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
-}
-
-interface AttachedChild {
-  readonly source: ChildProcess
-  writeStdin(chunk: string): void
-  endStdin(): void
 }
 
 export function createNodeChildSpawner(): ChildProcessSpawner {
@@ -85,9 +88,18 @@ export function createNodeChildSpawner(): ChildProcessSpawner {
         let bytes = 0
         return {
           push(chunk: Buffer): void {
-            if (bytes + chunk.length > STREAM_CAPTURE_CAP_BYTES) {
-              const remaining = STREAM_CAPTURE_CAP_BYTES - bytes
-              if (remaining > 0) targetChunks.push(chunk.subarray(0, remaining))
+            // Once at the cap nothing more is retained — and discarding is
+            // itself truncation, including when an earlier chunk filled the cap
+            // exactly. Failing to advance `bytes` here would let every later
+            // chunk append another cap-sized slice, i.e. no cap at all.
+            if (bytes >= STREAM_CAPTURE_CAP_BYTES) {
+              markTruncated()
+              return
+            }
+            const remaining = STREAM_CAPTURE_CAP_BYTES - bytes
+            if (chunk.length > remaining) {
+              targetChunks.push(chunk.subarray(0, remaining))
+              bytes = STREAM_CAPTURE_CAP_BYTES
               markTruncated()
               return
             }
@@ -111,9 +123,34 @@ export function createNodeChildSpawner(): ChildProcessSpawner {
       // adapter can classify the run as failed instead of trusting the outcome.
       let streamErrorMessage: string | undefined
 
-      let attached: AttachedChild | undefined
-      let routedThroughCmd = requiresCmdShim(command)
+      // Everything written to stdin is BUFFERED, because the cmd.exe reroute
+      // below arrives asynchronously — by then the caller has usually already
+      // written the prompt and closed stdin on the first child. Without replay
+      // the rerouted child waits on stdin forever and the run hangs.
+      const stdinChunks: string[] = []
+      let stdinEnded = false
+      let flushedChunks = 0
+      let flushedEnd = false
+      let currentSource: ChildProcess | undefined
+      let routedThroughCmd = routesThroughCmdShim(command)
       const cmdArgs = (): readonly string[] => ['/d', '/s', '/c', command, ...args]
+
+      function flushStdin(): void {
+        const source = currentSource
+        if (source === undefined || settled || streamErrorMessage !== undefined) return
+        try {
+          while (flushedChunks < stdinChunks.length) {
+            source.stdin?.write(stdinChunks[flushedChunks]!)
+            flushedChunks++
+          }
+          if (stdinEnded && !flushedEnd) {
+            source.stdin?.end()
+            flushedEnd = true
+          }
+        } catch (error) {
+          streamErrorMessage = error instanceof Error ? error.message : String(error)
+        }
+      }
 
       const settleFatal = (message: string) => {
         settle({ exitCode: null, stdout: '', stderr: '', spawnErrorMessage: message })
@@ -155,25 +192,11 @@ export function createNodeChildSpawner(): ChildProcessSpawner {
             ...(stderrTruncated ? { stderrTruncated: true } : {}),
           })
         })
-        attached = {
-          source,
-          writeStdin(chunk) {
-            if (settled || streamErrorMessage !== undefined) return
-            try {
-              source.stdin?.write(chunk)
-            } catch (error) {
-              streamErrorMessage = error instanceof Error ? error.message : String(error)
-            }
-          },
-          endStdin() {
-            if (settled || streamErrorMessage !== undefined) return
-            try {
-              source.stdin?.end()
-            } catch (error) {
-              streamErrorMessage = error instanceof Error ? error.message : String(error)
-            }
-          },
-        }
+        // A rerouted child has received nothing yet: replay from the start.
+        currentSource = source
+        flushedChunks = 0
+        flushedEnd = false
+        flushStdin()
       }
 
       function launch(executable: string, launchArgs: readonly string[]): boolean {
@@ -191,16 +214,25 @@ export function createNodeChildSpawner(): ChildProcessSpawner {
 
       return {
         get pid() {
-          return attached?.source.pid
+          return currentSource?.pid
+        },
+        get settled() {
+          return settled
         },
         writeStdin(chunk) {
-          attached?.writeStdin(chunk)
+          if (stdinEnded) return
+          stdinChunks.push(chunk)
+          flushStdin()
         },
         endStdin() {
-          attached?.endStdin()
+          stdinEnded = true
+          flushStdin()
         },
         killTree() {
-          if (attached !== undefined) killTreeOf(attached.source)
+          // Signalling after the child settled could hit a RECYCLED pid, which
+          // on win32 means taskkill /T /F on somebody else's process tree.
+          if (settled || currentSource === undefined) return
+          killTreeOf(currentSource)
         },
         done,
       }
@@ -211,6 +243,7 @@ export function createNodeChildSpawner(): ChildProcessSpawner {
 function failedChild(done: Promise<SpawnOutcome>): SpawnedChild {
   return {
     pid: undefined,
+    settled: true,
     writeStdin() {},
     endStdin() {},
     killTree() {},

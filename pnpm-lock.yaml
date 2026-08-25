@@ -39,7 +39,7 @@ importers:
         specifier: ^8.67.0
         version: 8.67.0(eslint@10.9.0)(typescript@6.0.3)
 
-  packages/adapter-claude:
+  packages/adapter-cli:
     dependencies:
       '@panda/contracts':
         specifier: workspace:*
@@ -57,9 +57,9 @@ importers:
 
   packages/cli:
     dependencies:
-      '@panda/adapter-claude':
+      '@panda/adapter-cli':
         specifier: workspace:*
-        version: link:../adapter-claude
+        version: link:../adapter-cli
       '@panda/contracts':
         specifier: workspace:*
         version: link:../contracts

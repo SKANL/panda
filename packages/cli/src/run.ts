@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { PandaError } from '@panda/contracts'
 import type { ExecutorAdapter, WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
-import { ClaudeCodeAdapter } from '@panda/adapter-claude'
+import { createClaudeCodeAdapter } from '@panda/adapter-cli'
 import { LocalWorkspaceProvider } from '@panda/workspace-local'
 
 // Exit codes (documented in the package README):
@@ -94,7 +94,7 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
   const removeSignalHandler = disposeSignals(() => controller.abort())
 
   try {
-    const adapter = options.createAdapter?.() ?? new ClaudeCodeAdapter()
+    const adapter = options.createAdapter?.() ?? createClaudeCodeAdapter()
     const envelope = await adapter.run({ prompt, workspace: handle, signal: controller.signal })
     out(JSON.stringify(envelope, null, 2))
     return envelope.status === 'ok' ? 0 : 1

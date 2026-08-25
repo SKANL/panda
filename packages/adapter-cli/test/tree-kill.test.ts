@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createNodeChildSpawner } from '../src'
+import { createNodeChildSpawner } from '../src/index.ts'
 
 // Real-spawner tree-kill proof (no network, no auth): the spawned child forks a
 // grandchild of its own and idles. After killTree() BOTH pids must exit within a

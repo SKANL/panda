@@ -1,5 +1,5 @@
 {
-  "name": "@panda/adapter-claude",
+  "name": "@panda/adapter-cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",

@@ -13,8 +13,8 @@
   summary: "Before any I/O" guarantee for manifest validation is scoped to kernel-owned code by documentation only; no spy-based test harness proves it mechanically.
   evidence: Code-review finding — plugin-supplied Standard Schema validators necessarily execute plugin code, so full mechanical provability needs a dedicated harness; deferred as not actionable now.
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4-executoradapter-port-with-contract-test-harness.md`
-  summary: Executor contract clauses invoke adapter.run() up to four times per suite audit; real-executor cost/side-effect strategy (single-run caching or probe isolation) decided in Epic 2.
-  evidence: Harness documents repeatability assumption; first-party adapters spawn processes.
+  summary: RESOLVED BY DECISION (Story 2.5) — executor contract clauses keep invoking adapter.run() up to four times per suite audit; no caching and no probe isolation are added.
+  evidence: The suite runs against FAKE spawners exclusively (spec 2.5 Boundaries: "contract-suite runs use fake spawners exclusively — no test may execute a real binary"), so per-run cost is nil and no side effect leaves the process — the premise that made repeated runs expensive never materialized. All four adapters (claude-code, codex, opencode, trait-only stub) run the full suite through `packages/adapter-cli/test/executor-suite.ts` with `FakeSpawner`; no contract-suite clause ever starts a process. (The overhead and tree-kill suites do spawn `process.execPath`, but they measure the spawn seam, not an executor, and the only test that runs a real coding CLI is the env-gated live smoke.) Revisit only if a real-executor conformance audit is ever added.
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4-executoradapter-port-with-contract-test-harness.md`
   summary: Workspace contract clauses assume disk-persisted state; genericity for in-memory/remote providers needs capability-gated clause variants.
   evidence: Suite hard-couples to node:fs at rootPath.
@@ -39,3 +39,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-4-toolprovider-and-skillsource-ports.md`
   summary: The provider ports have no production consumer — nothing outside the new tests imports `ingestProviders`, `ToolProvider` or `SkillSource`.
   evidence: Code-review finding — the CLI surface (Story 2.7 init/project-init/doctor) is the first real caller and will exercise the API shapes (outcome keys, batch write, cancellation) that no test can pressure today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-5-shipped-adapters-complete-the-set.md`
+  summary: The executor trait path vocabulary (`readonly string[]`) cannot address array elements, so payload shapes like `message.content[0].text` — the shape most agent CLIs and the Anthropic/OpenAI message formats actually use — are unreachable without an engine edit.
+  evidence: Code-review finding — `resolvePath` rejects non-record intermediates by design; no shipped record needs an index today, so the vocabulary stays minimal until a real executor forces it. Note that the trait-only stub test proves reuse for shapes the engine already handles, not for every shape.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-5-shipped-adapters-complete-the-set.md`
+  summary: `envelope.data` is a flat string map, so trait metadata keys can collide with the engine's own `result`/truncation keys and non-string metadata is silently dropped.
+  evidence: Code-review finding — the collision risk is closed defensively by trait validation (rejecting the reserved keys); nesting metadata under its own namespace and preserving non-string values is a shape change worth doing when a consumer needs the richer payload (e.g. codex token usage).
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-5-shipped-adapters-complete-the-set.md`
+  summary: `panda run` has no executor selector — codex and opencode ship as library surface only, reachable exclusively through direct construction.
+  evidence: Wiring adapter selection into the CLI is explicitly Ask First in this spec's Boundaries; the natural home is the CLI surface story (2.7 init/project-init/doctor), where executor choice becomes user-visible configuration.

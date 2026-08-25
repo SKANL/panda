@@ -19,6 +19,13 @@ export interface SpawnOutcome {
 export interface SpawnedChild {
   /** undefined when the platform refused to start the process. */
   readonly pid: number | undefined
+  /**
+   * Synchronously true once `done` has been resolved. Callers need this to
+   * decide SYNCHRONOUSLY whether a run already finished: `done.then(...)` only
+   * runs a microtask later, and an abort dispatched inside that window would
+   * otherwise discard a completed run as cancelled.
+   */
+  readonly settled: boolean
   writeStdin(chunk: string): void
   endStdin(): void
   /**

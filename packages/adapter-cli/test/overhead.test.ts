@@ -2,8 +2,8 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { performance } from 'node:perf_hooks'
 import type { WorkspaceHandle } from '@panda/contracts'
-import { ClaudeCodeAdapter, createNodeChildSpawner } from '../src'
-import type { AdapterTiming } from '../src'
+import { createClaudeCodeAdapter, createNodeChildSpawner } from '../src/index.ts'
+import type { AdapterTiming } from '../src/index.ts'
 
 // NFR-9 measurement: adapter-added spawn overhead must stay <=150ms above a raw
 // CLI startup. The delta that matters is what the adapter ADDS on top of spawning
@@ -23,7 +23,7 @@ describe('spawn overhead budget (NFR-9)', () => {
 
     const spawner = createNodeChildSpawner()
     const timings: AdapterTiming[] = []
-    const adapter = new ClaudeCodeAdapter({ spawner, command: process.execPath, onTiming: (t) => timings.push(t) })
+    const adapter = createClaudeCodeAdapter({ spawner, command: process.execPath, onTiming: (t) => timings.push(t) })
 
     const adapterSetups: number[] = []
     for (let i = 0; i < SAMPLES; i++) {
