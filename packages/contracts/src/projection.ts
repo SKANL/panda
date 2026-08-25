@@ -12,6 +12,14 @@ export const PROJECTION_GRAMMAR_VERSION = 1
 
 export const PROJECTION_RESERVED_ROOT_KEY = 'panda'
 
+// Delimited-block vocabulary for TOML-family targets: ownership is ONE
+// comment-delimited region managed at string level (never parsed), replaced
+// wholesale on every projection and appended at EOF when absent. The markers
+// are versioned with the grammar; a block declaring any other version
+// classifies as Drift and is reported, never rewritten.
+export const PANDA_MANAGED_BLOCK_BEGIN = `# BEGIN panda-managed v${PROJECTION_GRAMMAR_VERSION}`
+export const PANDA_MANAGED_BLOCK_END = `# END panda-managed v${PROJECTION_GRAMMAR_VERSION}`
+
 export interface ProjectionOwnedTool {
   readonly command?: string
 }
@@ -58,6 +66,12 @@ export interface ProjectionMergeOutcome {
   readonly drift: readonly DriftEntry[]
   /** Entry ids present in the registry but not projected by this target kind. */
   readonly skippedEntryIds?: readonly string[]
+  /**
+   * Byte span of the owned region inside `text`, when the strategy can report
+   * it. Verification surface: bytes outside this span MUST equal the native
+   * input's corresponding prefix/suffix.
+   */
+  readonly ownedSpan?: readonly [number, number]
 }
 
 /**

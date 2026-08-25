@@ -1,0 +1,37 @@
+{
+      // theme picked by the user
+  "theme": "oxocarbon",
+  "model": "anthropic/claude-opus-4.1", // inline comment
+  "small_model": "openai/gpt-5-mini",
+        "mcp": {
+    "context7": {
+      "type": "remote", // remote server
+          "url": "https://mcp.context7.com/sse",
+    },
+  },
+"panda": {
+      "version": 1,
+      "tools": {
+            "fd-find": {
+                  "command": "~/bin/fd"
+            },
+            "ripgrep": {
+                  "command": "rg"
+            }
+      },
+      "mcpServers": {
+            "context7": {
+                  "command": "npx",
+                  "args": [
+                        "-y",
+                        "@upstash/context7-mcp"
+                  ]
+            }
+      },
+      "skills": {
+            "commit-lint": {
+                  "entryPath": "~/.panda/skills/commit-lint.ts"
+            }
+      }
+}
+}

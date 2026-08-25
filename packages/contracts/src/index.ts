@@ -39,6 +39,8 @@ export {
   type RegistryScope,
 } from './registry.ts'
 export {
+  PANDA_MANAGED_BLOCK_BEGIN,
+  PANDA_MANAGED_BLOCK_END,
   PROJECTION_GRAMMAR_VERSION,
   PROJECTION_RESERVED_ROOT_KEY,
   classifyOwnedMarker,
