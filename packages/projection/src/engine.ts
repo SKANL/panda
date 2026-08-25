@@ -2,23 +2,34 @@ import { readFile, stat } from 'node:fs/promises'
 import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
 import type {
   ProjectionFailure,
-  ProjectionOwnedSubtree,
+  ProjectionLedgerRecord,
   ProjectionResult,
   ProjectionTarget,
+  ProjectionWarning,
   RegistryEntriesByKind,
   RegistryEntry,
 } from '@panda/contracts'
 import { atomicWriteText } from './atomic-write.ts'
-import { renderOwnedSubtree } from './owned-subtree.ts'
+import { resolveOwnedPath, sameOwnedPath } from './ledger.ts'
+import type { ProjectionLedger } from './ledger.ts'
 
-// Projection engine (FR-12): renders registry entries once and runs every
-// target SEQUENTIALLY against the rendered owned content — targets are never
-// executed concurrently, and a single projected file is assumed to have ONE
-// writer: concurrent runProjection calls over the same file are unsupported in
-// v1. Every failure — render, malformed native file, mid-projection external
+// Projection engine (FR-12): reads the ownership ledger once, then runs every
+// target SEQUENTIALLY — targets are never executed concurrently. Every failure
+// — malformed native file, unclaimable container, mid-projection external
 // modification, anything else — is CONTAINED per target: it becomes a typed
 // failure for that target alone and never affects sibling targets or escapes
 // runProjection.
+//
+// Each target records its claims IMMEDIATELY after its own file lands, and a
+// ledger write that fails FAILS THAT TARGET. Deferring the ledger to the end of
+// the run leaves a window where the file already holds new bytes while the
+// ledger still holds the old hash — and a warning there would leave panda
+// permanently locked out of an entry it owns.
+//
+// An UNREADABLE ledger stops every ledger write for the run. Under-claiming for
+// one run is recoverable (panda reports its own entries as foreign and touches
+// nothing); persisting that under-claim would orphan every entry panda has
+// written anywhere, permanently.
 
 const ENTRY_KINDS = ['tool', 'skill', 'mcp-server', 'profile'] as const
 
@@ -42,11 +53,14 @@ export function groupByKind(entries: readonly RegistryEntry[]): RegistryEntriesB
 export interface RunProjectionOptions {
   readonly entries: RegistryEntriesByKind
   readonly targets: readonly ProjectionTarget[]
+  /** Required: without a ledger panda cannot know which entries are its own. */
+  readonly ledger: ProjectionLedger
 }
 
 export interface ProjectionRun {
   readonly results: ProjectionResult[]
   readonly failures: ProjectionFailure[]
+  readonly warnings: ProjectionWarning[]
 }
 
 /** File identity snapshot taken when the native text is read. */
@@ -68,14 +82,23 @@ async function readNativeFile(
 }
 
 /**
- * Defense against a read-write race: if the native file changed on disk
- * between the read and the write, the projection is stale and MUST NOT land.
+ * Defense against a read-write race: if the native file changed on disk between
+ * the read and the write, the projection is stale and MUST NOT land. An ABSENT
+ * snapshot is not "nothing to compare": the merge was computed against an empty
+ * document, so the file appearing in the meantime — a vendor CLI creating
+ * `~/.claude.json` — is exactly the case where landing would overwrite it
+ * wholesale.
  */
 export async function hasFileChangedSince(
   filePath: string,
   snapshot: NativeFileSnapshot | undefined,
 ): Promise<boolean> {
-  if (snapshot === undefined) return false
+  if (snapshot === undefined) {
+    return await stat(filePath).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => error.code !== 'ENOENT',
+    )
+  }
   const current = await stat(filePath)
   return current.mtimeMs !== snapshot.mtimeMs || current.size !== snapshot.size
 }
@@ -96,10 +119,10 @@ function toTargetFailure(targetId: string, error: unknown): ProjectionFailure {
 async function projectTarget(
   target: ProjectionTarget,
   entries: RegistryEntriesByKind,
-  ownedContent: ProjectionOwnedSubtree,
-): Promise<ProjectionResult> {
+  records: readonly ProjectionLedgerRecord[],
+): Promise<{ result: ProjectionResult; records: readonly ProjectionLedgerRecord[] }> {
   const { text: nativeText, snapshot } = await readNativeFile(target.filePath)
-  const outcome = await target.merge({ entries, ownedContent, nativeText })
+  const outcome = await target.merge({ entries, records, nativeText })
   const written = outcome.text !== nativeText
   if (written) {
     if (await hasFileChangedSince(target.filePath, snapshot)) {
@@ -111,36 +134,40 @@ async function projectTarget(
     await atomicWriteText(target.filePath, outcome.text)
   }
   return {
-    targetId: target.targetId,
-    written,
-    byteDelta: written
-      ? Math.abs(Buffer.byteLength(outcome.text, 'utf8') - Buffer.byteLength(nativeText, 'utf8'))
-      : 0,
-    drift: outcome.drift,
-    skippedEntryIds: outcome.skippedEntryIds ?? [],
+    result: {
+      targetId: target.targetId,
+      written,
+      byteDelta: written
+        ? Math.abs(Buffer.byteLength(outcome.text, 'utf8') - Buffer.byteLength(nativeText, 'utf8'))
+        : 0,
+      drift: outcome.drift,
+      skippedEntryIds: outcome.skippedEntryIds ?? [],
+    },
+    records: outcome.records,
   }
 }
 
 export async function runProjection(options: RunProjectionOptions): Promise<ProjectionRun> {
-  let ownedContent: ProjectionOwnedSubtree
-  try {
-    ownedContent = renderOwnedSubtree(options.entries)
-  } catch (error) {
-    // Render failures (e.g. unprojectable ids) are contained: every target
-    // reports the same typed failure instead of runProjection throwing.
-    return {
-      results: [],
-      failures: options.targets.map((target) => toTargetFailure(target.targetId, error)),
-    }
-  }
+  const ledger = await options.ledger.read()
+  const warnings: ProjectionWarning[] = [...ledger.warnings]
   const results: ProjectionResult[] = []
   const failures: ProjectionFailure[] = []
+
   for (const target of options.targets) {
+    const scope = { targetId: target.targetId, filePath: resolveOwnedPath(target.filePath) }
+    const claimed = ledger.records.filter(
+      (record) =>
+        record.targetId === scope.targetId &&
+        sameOwnedPath(resolveOwnedPath(record.filePath), scope.filePath),
+    )
     try {
-      results.push(await projectTarget(target, options.entries, ownedContent))
+      const projected = await projectTarget(target, options.entries, claimed)
+      if (ledger.state !== 'unreadable') await options.ledger.update(scope, projected.records)
+      results.push(projected.result)
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
     }
   }
-  return { results, failures }
+
+  return { results, failures, warnings }
 }

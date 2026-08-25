@@ -57,7 +57,7 @@ development_status:
   2-5-shipped-adapters-complete-the-set: done
   2-6-liveness-detection-hierarchy: backlog  # re-spec onto native hook locations
   2-7-project-binding-projection-commands-and-drift-doctor: backlog
-  2-8-native-config-projection-with-ownership-ledger: backlog
+  2-8-native-config-projection-with-ownership-ledger: done
   2-9-filesystem-materialisation-targets: backlog
   2-10-unprojectable-entries-reported-not-faked: backlog
   epic-2-retrospective: optional

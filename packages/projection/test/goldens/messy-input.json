@@ -1,9 +1,0 @@
-{
-        "z-last": true,
-    "permissions": {
-      "deny": [],
-             "allow": ["Bash(ls)"]
-    },
-  "model": "opus",
-"a-first": false
-}

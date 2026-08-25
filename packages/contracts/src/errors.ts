@@ -27,6 +27,8 @@ export const PANDA_ERROR_CODES = {
   projectionNativeMalformed: 'PANDA_PROJECTION_NATIVE_MALFORMED',
   projectionTargetFailed: 'PANDA_PROJECTION_TARGET_FAILED',
   projectionTraitsInvalid: 'PANDA_PROJECTION_TRAITS_INVALID',
+  projectionLedgerUnavailable: 'PANDA_PROJECTION_LEDGER_UNAVAILABLE',
+  projectionNativeUnclaimable: 'PANDA_PROJECTION_NATIVE_UNCLAIMABLE',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

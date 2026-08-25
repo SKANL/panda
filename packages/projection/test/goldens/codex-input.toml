@@ -1,6 +1,0 @@
-# Codex CLI configuration
-model = "gpt-5-codex"
-approval_policy = "on-request"
-
-[mcp_servers.github]
-url = "https://api.githubcopilot.com/mcp/"

@@ -1,82 +1,112 @@
-import { PandaError } from './errors.ts'
+import type { PandaError, PandaErrorCode } from './errors.ts'
 import type { RegistryEntry, RegistryEntryType } from './registry.ts'
-import { isRecord } from './validation.ts'
 
-// Versioned, namespaced sentinel grammar (AD-9) for projection markers. A
-// JSON-family target claims ownership of ONE reserved root key whose value is
-// a `ProjectionOwnedSubtree`. The grammar version stamps every written
-// subtree; markers declaring any other version — or not matching the declared
-// shape at all — classify as Drift and are reported, never rewritten.
+// Native projection vocabulary (correction-01). Panda's registry vocabulary is
+// the INPUT of a projection and never its output: a target renders each entry
+// in the EXECUTOR's own schema, at the location that executor actually reads.
+// That is why nothing here describes a panda namespace, a reserved key or a
+// marker — a marker inside a vendor structure has nowhere to live in a JSON
+// array or a directory tree, and a vendor running its strictest validation
+// rejects it as an unknown field, taking the user's whole config down with it.
+//
+// Ownership therefore lives in a durable panda-side LEDGER (AD-6): a record
+// written at creation, never inferred from the file. The ledger is also
+// strictly more informative than a marker could be, because comparing it
+// against disk separates "the user edited this" from "the user deleted this"
+// from "panda never wrote this" — distinctions a marker's presence or absence
+// cannot express.
 
-export const PROJECTION_GRAMMAR_VERSION = 1
-
-export const PROJECTION_RESERVED_ROOT_KEY = 'panda'
-
-// Delimited-block vocabulary for TOML-family targets: ownership is ONE
-// comment-delimited region managed at string level (never parsed), replaced
-// wholesale on every projection and appended at EOF when absent. The markers
-// are versioned with the grammar; a block declaring any other version
-// classifies as Drift and is reported, never rewritten.
-export const PANDA_MANAGED_BLOCK_BEGIN = `# BEGIN panda-managed v${PROJECTION_GRAMMAR_VERSION}`
-export const PANDA_MANAGED_BLOCK_END = `# END panda-managed v${PROJECTION_GRAMMAR_VERSION}`
-
-export interface ProjectionOwnedTool {
-  readonly command?: string
+/**
+ * An MCP server reduced to the fields EVERY vendor schema can express. Each
+ * target maps this into its own vocabulary (`args` array vs. argv-joined
+ * `command`); nothing outside a target ever sees a vendor's field names.
+ */
+export interface ProjectionMcpEntry {
+  readonly id: string
+  readonly command: string
+  readonly args: readonly string[]
 }
 
-export interface ProjectionOwnedSkill {
-  readonly entryPath?: string
+export const PROJECTION_LEDGER_VERSION = 1
+
+/**
+ * One entry panda wrote, at one native location, in one file. `contentHash`
+ * hashes EXACTLY the text panda placed there — not the surrounding separators
+ * — which is what lets a later run tell an untouched entry from an edited one
+ * without parsing the vendor's document as a whole.
+ */
+export interface ProjectionLedgerRecord {
+  readonly targetId: string
+  readonly filePath: string
+  /** Vendor-native location, e.g. `mcpServers.context7`, `mcp_servers.context7`. */
+  readonly nativeLocation: string
+  readonly entryId: string
+  readonly contentHash: string
 }
 
-export interface ProjectionOwnedMcpServer {
-  readonly command?: string
-  readonly args?: readonly string[]
-}
-
-/** The value stored under the reserved root key in a projected native file. */
-export interface ProjectionOwnedSubtree {
-  readonly version: number
-  readonly tools: Readonly<Record<string, ProjectionOwnedTool>>
-  readonly mcpServers: Readonly<Record<string, ProjectionOwnedMcpServer>>
-  readonly skills: Readonly<Record<string, ProjectionOwnedSkill>>
-}
-
-export type DriftKind = 'legacy-marker' | 'unknown-shape'
+/**
+ * The three ledger-versus-disk verdicts. All of them are REPORTED and none of
+ * them is resolved by writing: panda only ever overwrites content whose hash
+ * still matches what panda itself last wrote.
+ */
+export type DriftKind =
+  /** In the ledger, present on disk, content changed since panda wrote it. */
+  | 'edited'
+  /** In the ledger, absent from disk: the user deleted it; never re-added. */
+  | 'removed-by-user'
+  /** Occupying the native location but absent from the ledger: not panda's. */
+  | 'foreign-collision'
 
 export interface DriftEntry {
   readonly kind: DriftKind
-  /** Locator of the drifted content inside the native document (dot notation). */
+  readonly entryId: string
+  /** The vendor-native location the verdict is about. */
   readonly location: string
+  readonly detail: string
+}
+
+/** A non-fatal condition a projection ran through, surfaced rather than thrown. */
+export interface ProjectionWarning {
+  readonly code: PandaErrorCode
   readonly detail: string
 }
 
 export interface ProjectionMergeRequest {
   /** Registry entries grouped by kind, as consumed by the engine. */
   readonly entries: RegistryEntriesByKind
-  /** Rendered owned content the target must claim in its native format. */
-  readonly ownedContent: ProjectionOwnedSubtree
+  /** The ledger records this target already owns in this file. */
+  readonly records: readonly ProjectionLedgerRecord[]
   /** Current native text; '' when the file does not exist yet. */
   readonly nativeText: string
 }
 
 export interface ProjectionMergeOutcome {
-  /** Merged native text with the rendered content claimed by this target. */
+  /** Merged native text, in the vendor's own vocabulary. */
   readonly text: string
-  /** Unclassifiable panda-shaped content found in the native text. */
+  /** Ledger-versus-disk verdicts; every one of them left `text` alone. */
   readonly drift: readonly DriftEntry[]
-  /** Entry ids present in the registry but not projected by this target kind. */
+  /** Entry ids present in the registry but not projected by this target. */
   readonly skippedEntryIds?: readonly string[]
   /**
-   * Byte span of the owned region inside `text`, when the strategy can report
-   * it. Verification surface: bytes outside this span MUST equal the native
-   * input's corresponding prefix/suffix.
+   * The records that are true of `text`. They REPLACE this target's previous
+   * records wholesale, so an entry panda stopped writing stops being claimed.
    */
-  readonly ownedSpan?: readonly [number, number]
+  readonly records: readonly ProjectionLedgerRecord[]
+  /**
+   * Ascending, non-overlapping spans of `text` panda owns, each covering the
+   * separator characters panda introduced along with the entry itself.
+   * Verification surface: deleting every span from `text` removes exactly
+   * what panda rendered in this run and nothing else. On a file panda never
+   * wrote that leaves the native input byte for byte; over panda's own prior
+   * output it leaves every foreign byte and no rendered entry. A run that
+   * writes must report a non-empty span, or it has proven nothing.
+   */
+  readonly ownedSpans: readonly (readonly [number, number])[]
 }
 
 /**
  * Per-target strategy port (AD-9 contract home): declares which file it owns
- * and merges rendered owned content into current native text. The
+ * and merges the registry's intent into the current native text. The
  * format-specific merge lives entirely behind this interface.
  */
 export interface ProjectionTarget {
@@ -91,7 +121,7 @@ export interface ProjectionResult {
   /** Absolute byte-length delta between the previous and next file contents. */
   readonly byteDelta: number
   readonly drift: readonly DriftEntry[]
-  /** Entry ids present in the registry but not projected by this target kind. */
+  /** Entry ids present in the registry but not projected by this target. */
   readonly skippedEntryIds: readonly string[]
 }
 
@@ -102,109 +132,3 @@ export interface ProjectionFailure {
 
 /** Registry entries grouped by kind, as projection consumes them. */
 export type RegistryEntriesByKind = Readonly<Record<RegistryEntryType, readonly RegistryEntry[]>>
-
-type OwnedSectionKey = 'tools' | 'mcpServers' | 'skills'
-
-const OWNED_SECTION_KEYS: readonly OwnedSectionKey[] = ['tools', 'mcpServers', 'skills']
-
-function isEntryMap(value: unknown): value is Readonly<Record<string, unknown>> {
-  if (!isRecord(value)) return false
-  return Object.values(value).every((entry) => isRecord(entry))
-}
-
-function hasOnlyOptionalStrings(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.entries(value).every(([key, field]) =>
-    keys.includes(key) ? typeof field === 'string' : false,
-  )
-}
-
-function isValidToolLeaf(value: unknown): boolean {
-  return isRecord(value) && hasOnlyOptionalStrings(value, ['command'])
-}
-
-function isValidSkillLeaf(value: unknown): boolean {
-  return isRecord(value) && hasOnlyOptionalStrings(value, ['entryPath'])
-}
-
-function isValidMcpServerLeaf(value: unknown): boolean {
-  if (!isRecord(value)) return false
-  for (const [key, field] of Object.entries(value)) {
-    if (key === 'args') {
-      if (!Array.isArray(field) || !field.every((item) => typeof item === 'string')) return false
-    } else if (key === 'command') {
-      if (typeof field !== 'string') return false
-    } else {
-      return false
-    }
-  }
-  return true
-}
-
-const SECTION_LEAF_VALIDATORS: Readonly<Record<OwnedSectionKey, (value: unknown) => boolean>> = {
-  tools: isValidToolLeaf,
-  mcpServers: isValidMcpServerLeaf,
-  skills: isValidSkillLeaf,
-}
-
-/**
- * Classifies a panda marker found inside a native document against the
- * current grammar. An absent marker yields no drift; anything else either
- * matches grammar v1 exactly (sections AND entry leaves) or classifies as
- * legacy-marker (older/other version) or unknown-shape (wrong layout), so
- * callers can report it without rewriting regions they cannot own.
- */
-export function classifyOwnedMarker(marker: unknown): readonly DriftEntry[] {
-  if (marker === undefined) return []
-  const location = `$.${PROJECTION_RESERVED_ROOT_KEY}`
-  if (!isRecord(marker)) {
-    return [{ kind: 'unknown-shape', location, detail: 'reserved marker is not an object' }]
-  }
-  const version = marker['version']
-  const versionLocation = `${location}.version`
-  if (version === undefined) {
-    return [
-      { kind: 'legacy-marker', location: versionLocation, detail: 'reserved marker is missing its version key' },
-    ]
-  }
-  if (version !== PROJECTION_GRAMMAR_VERSION) {
-    return [
-      {
-        kind: 'legacy-marker',
-        location: versionLocation,
-        detail: `marker declares grammar version ${JSON.stringify(version)} but this build projects version ${PROJECTION_GRAMMAR_VERSION}`,
-      },
-    ]
-  }
-  const issues: DriftEntry[] = []
-  for (const section of OWNED_SECTION_KEYS) {
-    const sectionValue = marker[section]
-    if (!isEntryMap(sectionValue)) {
-      issues.push({
-        kind: 'unknown-shape',
-        location: `${location}.${section}`,
-        detail: `'${section}' must be an object of entry objects`,
-      })
-      continue
-    }
-    const validLeaf = SECTION_LEAF_VALIDATORS[section]
-    for (const [id, leaf] of Object.entries(sectionValue)) {
-      if (id === '' || !validLeaf(leaf)) {
-        issues.push({
-          kind: 'unknown-shape',
-          location: `${location}.${section}.${id}`,
-          detail: `'${id}' does not match the grammar v1 entry shape for '${section}'`,
-        })
-      }
-    }
-  }
-  for (const key of Object.keys(marker)) {
-    if (key !== 'version' && !(OWNED_SECTION_KEYS as readonly string[]).includes(key)) {
-      issues.push({
-        kind: 'unknown-shape',
-        location: `${location}.${key}`,
-        detail: `'${key}' is not part of grammar version ${PROJECTION_GRAMMAR_VERSION}`,
-      })
-    }
-  }
-  return issues
-}

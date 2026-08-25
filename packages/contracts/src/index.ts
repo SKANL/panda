@@ -51,22 +51,17 @@ export {
   type ToolProvider,
 } from './providers.ts'
 export {
-  PANDA_MANAGED_BLOCK_BEGIN,
-  PANDA_MANAGED_BLOCK_END,
-  PROJECTION_GRAMMAR_VERSION,
-  PROJECTION_RESERVED_ROOT_KEY,
-  classifyOwnedMarker,
+  PROJECTION_LEDGER_VERSION,
   type DriftEntry,
   type DriftKind,
   type ProjectionFailure,
+  type ProjectionLedgerRecord,
+  type ProjectionMcpEntry,
   type ProjectionMergeOutcome,
   type ProjectionMergeRequest,
-  type ProjectionOwnedMcpServer,
-  type ProjectionOwnedSkill,
-  type ProjectionOwnedSubtree,
-  type ProjectionOwnedTool,
   type ProjectionResult,
   type ProjectionTarget,
+  type ProjectionWarning,
   type RegistryEntriesByKind,
 } from './projection.ts'
 export { isRecord } from './validation.ts'

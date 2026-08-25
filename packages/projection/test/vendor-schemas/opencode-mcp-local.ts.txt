@@ -1,0 +1,27 @@
+// VENDORED VERBATIM from OpenCode's own configuration schema. Do not edit the
+// excerpt: re-fetch it when the pin moves.
+//
+// source: https://github.com/anomalyco/opencode/blob/7e7ad377364d2d6c9f63d79cb8481298abaf0756/packages/core/src/v1/config/mcp.ts
+// commit: 7e7ad377364d2d6c9f63d79cb8481298abaf0756
+// retrieved: 2026-08-25
+//
+// Note `command` IS the argv array: there is no `args` field to write into.
+
+export const Local = Schema.Struct({
+  type: Schema.Literal("local").annotate({ description: "Type of MCP server connection" }),
+  command: Schema.mutable(Schema.Array(Schema.String)).annotate({
+    description: "Command and arguments to run the MCP server",
+  }),
+  cwd: Schema.optional(Schema.String).annotate({
+    description: "Working directory for the MCP server process. Relative paths resolve from the workspace directory.",
+  }),
+  environment: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description: "Environment variables to set when running the MCP server",
+  }),
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description: "Enable or disable the MCP server on startup",
+  }),
+  timeout: Schema.optional(PositiveInt).annotate({
+    description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
+  }),
+}).annotate({ identifier: "McpLocalConfig" })
