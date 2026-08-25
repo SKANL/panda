@@ -1,5 +1,5 @@
 {
-  "name": "@panda/contracts",
+  "name": "@panda/registry",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,16 +7,18 @@
     "node": ">=24"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./validation": "./src/validation.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint ."
   },
+  "dependencies": {
+    "@panda/contracts": "workspace:*",
+    "@panda/kernel": "workspace:*"
+  },
   "devDependencies": {
-    "@panda/kernel": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

@@ -18,6 +18,10 @@ export const PANDA_ERROR_CODES = {
   executorUnavailable: 'PANDA_EXECUTOR_UNAVAILABLE',
   executorRunFailed: 'PANDA_EXECUTOR_RUN_FAILED',
   executorCancelled: 'PANDA_EXECUTOR_CANCELLED',
+  registryInvalidEntry: 'PANDA_REGISTRY_INVALID_ENTRY',
+  registryContention: 'PANDA_REGISTRY_CONTENTION',
+  registryStoreUnavailable: 'PANDA_REGISTRY_STORE_UNAVAILABLE',
+  registryInactive: 'PANDA_REGISTRY_INACTIVE',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

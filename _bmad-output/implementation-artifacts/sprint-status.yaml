@@ -43,8 +43,8 @@ development_status:
   1-5-first-execution-claude-code-driven-headlessly: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-registry-core-with-machine-scoped-serialization: backlog
+  epic-2: in-progress
+  2-1-registry-core-with-machine-scoped-serialization: in-progress
   2-2-projection-engine-with-sentinel-grammar-claude-target: backlog
   2-3-codex-and-opencode-targets-via-trait-data: backlog
   2-4-toolprovider-and-skillsource-ports: backlog

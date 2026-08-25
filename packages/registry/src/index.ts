@@ -1,0 +1,6 @@
+export { acquireLock } from './lock.ts'
+export type { LockHolder, LockOptions, RegistryLock, StaleLockBreak } from './lock.ts'
+export { RegistryStore } from './store.ts'
+export type { RegistryStoreOptions } from './store.ts'
+export { createRegistryPlugin } from './plugin.ts'
+export type { RegistryPlugin, RegistryPluginOptions } from './plugin.ts'

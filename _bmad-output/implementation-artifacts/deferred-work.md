@@ -18,3 +18,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4-executoradapter-port-with-contract-test-harness.md`
   summary: Workspace contract clauses assume disk-persisted state; genericity for in-memory/remote providers needs capability-gated clause variants.
   evidence: Suite hard-couples to node:fs at rootPath.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-1-registry-core-with-machine-scoped-serialization.md`
+  summary: Registry persistence lacks fsync-level durability — there is a power-loss window after rename where the store file may be stale or empty.
+  evidence: Atomicity (temp+rename) covers process crashes, not power loss; acceptable for v1 local tool, revisit if the Registry becomes a multi-device source of truth.

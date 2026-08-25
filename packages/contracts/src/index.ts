@@ -23,6 +23,21 @@ export {
   type ResultStatus,
   type RunRequest,
 } from './executor.ts'
+export {
+  REGISTRY_ENTRY_SCHEMA,
+  REGISTRY_ENTRY_TYPES,
+  REGISTRY_PATH_FIELDS,
+  REGISTRY_SCOPES,
+  expandRegistryEntryPaths,
+  isRegistryScopeValue,
+  registryEntryIssues,
+  normalizeRegistryEntryPaths,
+  validateRegistryEntry,
+  validateRegistryScope,
+  type RegistryEntry,
+  type RegistryEntryType,
+  type RegistryScope,
+} from './registry.ts'
 export { isRecord } from './validation.ts'
 export {
   CONTRACT_PROBE_REQUEST,
