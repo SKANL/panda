@@ -535,3 +535,92 @@ So that I find out from panda instead of from an agent that silently lacks it.
 **Then** the target reports the entry as unprojectable, naming the entry and the reason, and writes nothing for it
 **And** the report is a product-visible fact surfaced by `panda doctor`, not an internal detail
 **And** no best-effort approximation is written into any namespace (FR-13, correction-01 C5)
+
+---
+
+## Epic 1 addendum — the two kernel seams (2026-08-25, ROADMAP-01 M1)
+
+> Both are mandated by the architecture and have no story anywhere. Measured: the
+> kernel has ZERO production callers today, which makes this the cheapest moment
+> these seams will ever cost — after composition they are a breaking kernel API
+> change, and NFR-8's joint-semver rule turns that into a major bump of all seven
+> contracts.
+
+### Story 1.6: Kernel-owned observability log
+
+As a developer building on panda,
+I want every model-visible interaction reconstructable from one append-only log,
+So that I can audit what an agent actually did instead of trusting a summary.
+
+**Acceptance Criteria:**
+
+**Given** a kernel starting with any set of plugins
+**When** the first plugin loads
+**Then** the observability log is already initialised — no plugin can register before it exists
+**And** every model-visible interaction is reconstructable from the log alone
+**And** a log write that cannot land degrades to a typed degraded mode, never silent loss
+**And** the log is append-only and secrets never enter it (NFR-4, AD-4)
+
+### Story 1.7: Tool-call interception waterfall
+
+As a developer building on panda,
+I want budgets and limits enforced at a seam every executor action passes through,
+So that a budget is a property of the system rather than a sentence in a prompt.
+
+**Acceptance Criteria:**
+
+**Given** the kernel's interception pipeline
+**When** any executor-action invocation runs
+**Then** it flows through `pre → guard → around → post`, with no path around the seam
+**And** token budgets, loop caps and fan-out limits are enforced there as declarative policy, never by prompt instruction
+**And** a policy violation raises a coded error from the AD-7 hierarchy
+**And** a test proves an invocation cannot reach an executor without traversing the pipeline (NFR-2, AD-10)
+
+## Epic 2 addendum — Story 2.7 split (2026-08-25, ROADMAP-01 M2)
+
+> `deferred-work.md` names Story 2.7 as the resolution home for four separate
+> deferred items. As a single four-criterion story it cannot absorb that load.
+
+### Story 2.7a: `panda init` and `panda project init`
+
+As a developer using panda,
+I want one command to bind a project and push my registry into every detected executor,
+So that setting up a machine or a repo is one command instead of a manual afternoon.
+
+**Acceptance Criteria:**
+
+**Given** a fresh project with detected executors
+**When** `panda project init` runs
+**Then** each detected executor's own configuration contains the projected entries, in that executor's vocabulary, at the location it reads
+**And** the command composes through the KERNEL — plugins mount and services resolve — rather than constructing adapters and providers directly
+**And** running with no detected executors exits non-zero listing what was looked for and not found
+**And** projection, the Registry and the provider ports each gain their first production caller (FR-14, FR-24)
+
+### Story 2.7b: `panda doctor`
+
+As a developer using panda,
+I want drift and unprojectable entries reported by one command,
+So that I find out from panda rather than from an agent that silently lacks a tool.
+
+**Acceptance Criteria:**
+
+**Given** a hand-edited panda-owned entry
+**When** `panda doctor` runs
+**Then** it is reported as Drift naming the entry, the location and the suspected cause, and nothing is rewritten
+**And** an entry no target can express natively is reported as unprojectable, naming the entry and the reason (correction-01 C5)
+**And** re-projection converges state and a second doctor run reports clean
+**And** the report distinguishes edited from removed-by-user from foreign-collision, as the ledger already does
+
+### Story 2.7c: Executor selection for `panda run`
+
+As a developer using panda,
+I want to choose which executor runs my prompt,
+So that "swap the agent, keep the workflow" is reachable from the binary and not only from a script.
+
+**Acceptance Criteria:**
+
+**Given** the three shipped adapters
+**When** `panda run` is invoked selecting one of them
+**Then** that executor runs the prompt and the result envelope is identical in shape across all three
+**And** an unknown executor name exits non-zero listing the available ones
+**And** the selection has a configured default resolved through the layered config, not a hardcoded constructor (FR-7, FR-9)

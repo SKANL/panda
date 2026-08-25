@@ -32,18 +32,22 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-24-2026 08:00
-last_updated: 08-25-2026 14:10
+last_updated: 08-25-2026 16:05
 project: panda
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:\code\panda\_bmad-output\implementation-artifacts
 development_status:
-  epic-1: in-progress
+  epic-1: in-progress  # reopened by ROADMAP-01 for the two kernel seams
   1-1-plugin-manifest-foundation: done
   1-2-injection-disposal-and-atomic-swaps: done
-  1-3-scoped-event-bus-and-layered-configuration: in-progress
+  1-3-scoped-event-bus-and-layered-configuration: done
   1-4-executoradapter-port-with-contract-test-harness: done
   1-5-first-execution-claude-code-driven-headlessly: done
+  # ROADMAP-01 M1: kernel seams, cheapest now because the kernel has no
+  # production caller yet; a breaking change once composition lands.
+  1-6-kernel-owned-observability-log: backlog
+  1-7-tool-call-interception-waterfall: backlog
   epic-1-retrospective: optional
 
   epic-2: in-progress
@@ -56,10 +60,14 @@ development_status:
   2-4-toolprovider-and-skillsource-ports: done
   2-5-shipped-adapters-complete-the-set: done
   2-6-liveness-detection-hierarchy: backlog  # re-spec onto native hook locations
-  2-7-project-binding-projection-commands-and-drift-doctor: backlog
+  # ROADMAP-01 M2: split — 2.7 was the named home for four deferred items.
+  2-7a-panda-init-and-project-init: backlog
+  2-7b-panda-doctor: backlog
+  2-7c-executor-selection-for-panda-run: backlog
   2-8-native-config-projection-with-ownership-ledger: done
   2-9-filesystem-materialisation-targets: backlog
-  2-10-unprojectable-entries-reported-not-faked: backlog
+  2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b
+  2-11-remediate-blocks-written-by-a-previous-build: backlog
   epic-2-retrospective: optional
 
   epic-3: backlog
