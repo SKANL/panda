@@ -11,6 +11,9 @@
 #   - in-progress: Developer actively working on implementation
 #   - review: Implementation complete, ready for review
 #   - done: Story completed
+#   - superseded: Story shipped but its delivered behaviour was invalidated by an
+#     architecture correction; a replacement story carries the corrected work.
+#     See planning-artifacts/architecture/.../correction-01-native-projection.md
 
 # Retrospective Status:
 #   - optional: Can be completed but not required
@@ -29,7 +32,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-24-2026 08:00
-last_updated: 08-24-2026 10:30
+last_updated: 08-25-2026 14:10
 project: panda
 project_key: NOKEY
 tracking_system: file-system
@@ -45,12 +48,18 @@ development_status:
 
   epic-2: in-progress
   2-1-registry-core-with-machine-scoped-serialization: done
-  2-2-projection-engine-with-sentinel-grammar-claude-target: done
-  2-3-codex-and-opencode-targets-via-trait-data: done
+  # 2-2 and 2-3 shipped correct machinery writing a vocabulary no executor reads
+  # (verified empirically against all three CLIs). Machinery retained; rendering
+  # and delivery location replaced by 2-8/2-9/2-10 per correction-01.
+  2-2-projection-engine-with-sentinel-grammar-claude-target: superseded
+  2-3-codex-and-opencode-targets-via-trait-data: superseded
   2-4-toolprovider-and-skillsource-ports: done
   2-5-shipped-adapters-complete-the-set: done
-  2-6-liveness-detection-hierarchy: backlog
+  2-6-liveness-detection-hierarchy: backlog  # re-spec onto native hook locations
   2-7-project-binding-projection-commands-and-drift-doctor: backlog
+  2-8-native-config-projection-with-ownership-ledger: backlog
+  2-9-filesystem-materialisation-targets: backlog
+  2-10-unprojectable-entries-reported-not-faked: backlog
   epic-2-retrospective: optional
 
   epic-3: backlog

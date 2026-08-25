@@ -474,3 +474,64 @@ So that I know my environment at a glance.
 **When** status runs
 **Then** quota data comes from official surfaces with async probes cached ≥60s
 **And** probes never block spawns and unsupported executors show no quota row rather than erroring (FR-27, RD-4)
+
+---
+
+## Epic 2 addendum — corrected projection stories (2026-08-25)
+
+> Added by `architecture/architecture-panda-2026-08-24/correction-01-native-projection.md`.
+> Stories 2.2 and 2.3 shipped correct machinery that wrote a vocabulary no executor
+> reads — verified empirically against Claude Code, Codex CLI 0.149.1 and OpenCode.
+> They are marked `superseded`; the machinery is retained, the rendering and the
+> delivery location are replaced here.
+>
+> **Every acceptance criterion below is phrased in the EXTERNAL tool's terms and is
+> verifiable against that tool's published schema or its own source.** That is the
+> discipline whose absence let 2.2–2.5 pass while delivering nothing.
+
+### Story 2.8: Native config projection with a durable ownership ledger
+
+As a developer using panda,
+I want my registry's MCP servers to arrive in each executor's own configuration vocabulary,
+So that the executors actually load them instead of ignoring a namespace panda invented.
+
+**Acceptance Criteria:**
+
+**Given** a Registry holding an MCP server entry
+**When** projection runs for Claude Code
+**Then** the entry appears as `mcpServers.<id> = {type:"stdio", command, args, env}` in the file Claude Code reads for MCP servers — NOT in `settings.json`, which has no such key
+**And** for Codex the entry appears as `[mcp_servers.<id>]` in `config.toml` — snake_case, the key `ConfigToml` actually declares
+**And** for OpenCode the entry appears as `mcp.<id> = {type:"local", command:[…]}` matching `ConfigV1.Info`, whose `command` is argv and which has no `args` field
+**And** `codex --strict-config` loads the resulting `config.toml` without error — panda writes no field the vendor does not define, in any vendor-owned structure
+**And** foreign content is preserved byte-for-byte and projecting twice is byte-identical
+**And** panda's ownership of each written entry is recorded in a durable panda-side ledger (AD-6), never inferred from the file and never marked by a key inside a vendor structure
+**And** a user edit to a panda-written entry is reported as Drift naming the entry, and is never silently overwritten (FR-12, FR-13, AD-4, AD-6, AD-9)
+
+### Story 2.9: Filesystem materialisation targets
+
+As a developer using panda,
+I want my registry's skills to land where the executors discover skills,
+So that a skill registered once is available in every agent that supports skills.
+
+**Acceptance Criteria:**
+
+**Given** a Registry holding a skill entry
+**When** projection runs
+**Then** the skill is materialised as the directory tree each executor discovers — `~/.claude/skills/<id>/SKILL.md` for Claude Code, `~/.codex/skills/<id>/SKILL.md` for Codex, and a directory plus its `skills.paths[]` entry for OpenCode
+**And** the ProjectionTarget port expresses this as a materialisation kind alongside config merging, with the same guarantees: atomic writes, idempotence, foreign files in the skills root untouched, per-target failure isolation
+**And** removal of a skill from the Registry removes exactly what panda's ledger says panda wrote, and nothing else
+**And** a skill directory a user created by hand is never touched, because it is not in the ledger (FR-12, FR-13, AD-4, AD-6)
+
+### Story 2.10: Unprojectable entries are reported, never faked
+
+As a developer using panda,
+I want to be told when a tool cannot exist in an executor,
+So that I find out from panda instead of from an agent that silently lacks it.
+
+**Acceptance Criteria:**
+
+**Given** a Registry entry whose concept a target has no native representation for — a shell-command Tool, which none of the three executors can express (Claude has no such settings concept, OpenCode's `tools` is a boolean map, Codex's `[tools]` is a fixed struct)
+**When** projection runs
+**Then** the target reports the entry as unprojectable, naming the entry and the reason, and writes nothing for it
+**And** the report is a product-visible fact surfaced by `panda doctor`, not an internal detail
+**And** no best-effort approximation is written into any namespace (FR-13, correction-01 C5)
