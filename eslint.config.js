@@ -4,12 +4,23 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/', '**/dist/', '**/coverage/', '.git/', '.scratch/', '_bmad/', '_bmad-output/'],
+    ignores: [
+      '**/node_modules/',
+      '**/dist/',
+      '**/coverage/',
+      '.git/',
+      // Local tool index, like .scratch/: git-excluded, ships its own `*`
+      // .gitignore, and is not project source.
+      '.gitnexus/',
+      '.scratch/',
+      '_bmad/',
+      '_bmad-output/',
+    ],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,
   {
-    files: ['**/*.config.{js,ts}'],
+    files: ['**/*.config.{js,ts}', 'scripts/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
   {
