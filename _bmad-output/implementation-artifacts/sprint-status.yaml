@@ -32,7 +32,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-24-2026 08:00
-last_updated: 08-25-2026 16:05
+last_updated: 08-25-2026 17:30
 project: panda
 project_key: NOKEY
 tracking_system: file-system
@@ -51,6 +51,10 @@ development_status:
   epic-1-retrospective: optional
 
   epic-2: in-progress
+  # ROADMAP-01 Correction A: the capability lives in a package, the CLI is a
+  # thin binding. 2-0 heads M2 so init/doctor/selection are built on the
+  # pattern rather than corrected onto it.
+  2-0-session-composition-through-the-kernel: done
   2-1-registry-core-with-machine-scoped-serialization: done
   # 2-2 and 2-3 shipped correct machinery writing a vocabulary no executor reads
   # (verified empirically against all three CLIs). Machinery retained; rendering

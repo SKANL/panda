@@ -88,3 +88,35 @@ Packages export raw TypeScript with no compile or consumption story. "Usable in 
 - It does not add capability before the existing capability is reachable. Nothing new gets built in Epic 3, 4 or 5 until `panda` composes what it already has.
 - It does not treat the six orphan NFRs as a backlog sweep. Two of them (NFR-2, NFR-4) are sequencing-critical and are in M1; the rest are tracked but not urgent.
 - It does not reorder Epic 4 ahead of Epic 3 yet. Worktrees-from-day-one is a real vision bullet and the planning audit is right that it is sequenced late — but pulling it forward before the composition path exists would repeat the exact mistake this roadmap corrects.
+
+---
+
+## Correction A (2026-08-25) — M2 is SDK-first, and the CLI is a thin binding
+
+Raised by the product owner: *"I thought we were building a kernel or something like an SDK/framework — exactly what are we building?"* The question was right, and the roadmap above was part of the problem.
+
+**What the artifacts say.** PRD §0: *"a headless TypeScript SDK and CLI"*. PRD §2: *"Panda ships as an SDK first: a headless kernel usable from any project… The terminal shell, Workers & Workflows orchestration, and methodology plugins are future consumers of the same contracts."* F8 describes the CLI as *"the only face of v1"* — a face, not the product.
+
+**The drift, measured.** `runPanda` is 114 lines that mix argv parsing, exit codes and stdout formatting with the actual composition — create a workspace, obtain an adapter, run a prompt with a cancellation signal, release and dispose. A repo-wide search finds no SDK-level equivalent: the only composition panda has lives inside its CLI. A third party who installs the packages to run a prompt in an isolated workspace must reimplement it, which contradicts the PRD's own *"TypeScript SDK usable from any Node project"*.
+
+M2 as written above made it worse: its criteria were phrased *"when `panda project init` runs"* — CLI-first, for the surface the owner most wants reusable.
+
+**Why it happened, and this is the part worth keeping.** The knowledge graph over the artifacts shows F8's entire neighbourhood is CLI requirements — FR-24 through FR-28 — and **there is no requirement node anywhere for the SDK promise**. It lives in PRD prose and was never turned into an FR. This is the same structural failure as the six orphan NFRs: the epic breakdown decomposes by capability, F8 is named "CLI", and a promise with no requirement gets no story, no acceptance criterion, and therefore no defence against drift.
+
+### The rule from here
+
+**The capability lives in a package. The CLI is a thin binding: parse argv, call the function, map the result to an exit code.**
+
+The test that keeps it honest is one sentence, and it is checkable: *anything the CLI can do, a third party must be able to do by importing packages, without `@panda/cli`.* If that fails, the functionality is in the wrong place.
+
+### Sequencing change
+
+A new story heads M2, before init/doctor/executor-selection, because those three build on the pattern and would otherwise be written wrong and corrected afterwards — the same argument that put the kernel seams first in M1, which held.
+
+- **Story 2.0 — session composition through the kernel.** Extract the composition out of `runPanda` into an SDK surface, and route the executor run through the Story 1.7 interception pipeline. Behaviour-neutral for `panda run`.
+
+That second half matters beyond hygiene. Story 1.7's spec admits its no-bypass guarantee is kernel-scoped *"because today `panda run` constructs adapters directly"*. This story is what makes it end-to-end.
+
+### Also to close
+
+FR-24..FR-28 cover the CLI surface; nothing covers the SDK surface. The PRD needs a requirement for it, phrased so it is testable — the sentence above is already the shape of one. Until it exists, the promise the owner cares most about has no acceptance criterion anywhere in the plan.

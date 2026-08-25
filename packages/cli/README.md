@@ -1,8 +1,11 @@
 # @panda/cli
 
-Minimal `panda` command-line surface. First slice only: `run <prompt>` wires
-`@panda/workspace-local` (workspace under `<cwd>/.panda/workspaces/<uuid>`) to the Claude Code
-adapter and prints the resulting typed envelope as structured JSON.
+Minimal `panda` command-line surface, and nothing more than a binding: it parses
+argv, calls [`@panda/session`](../session/README.md), prints the typed envelope as
+structured JSON and maps it to an exit code. The composition it used to own —
+workspace under `<cwd>/.panda/workspaces/<uuid>`, adapter, cancellation, cleanup —
+lives in that package, so a third party can do everything this CLI does without
+installing it.
 
 ## Usage
 

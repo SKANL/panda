@@ -1,13 +1,10 @@
 {
-  "name": "@panda/cli",
+  "name": "@panda/session",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=24"
-  },
-  "bin": {
-    "panda": "./bin/panda.ts"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -18,10 +15,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@panda/session": "workspace:*"
+    "@panda/adapter-cli": "workspace:*",
+    "@panda/contracts": "workspace:*",
+    "@panda/kernel": "workspace:*",
+    "@panda/workspace-local": "workspace:*"
   },
   "devDependencies": {
-    "@panda/contracts": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

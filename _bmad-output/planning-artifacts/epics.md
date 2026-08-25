@@ -624,3 +624,28 @@ So that "swap the agent, keep the workflow" is reachable from the binary and not
 **Then** that executor runs the prompt and the result envelope is identical in shape across all three
 **And** an unknown executor name exits non-zero listing the available ones
 **And** the selection has a configured default resolved through the layered config, not a hardcoded constructor (FR-7, FR-9)
+
+---
+
+## Epic 2 addendum — M2 heads with an SDK surface (2026-08-25, ROADMAP-01 Correction A)
+
+> The capability lives in a package; the CLI is a thin binding. Measured drift:
+> `runPanda` mixes argv parsing, exit codes and stdout formatting with the only
+> composition panda has, and no SDK-level equivalent exists anywhere. The
+> knowledge graph shows why it went unnoticed — F8's whole neighbourhood is
+> FR-24..FR-28, all CLI, and the SDK promise has no requirement node at all.
+
+### Story 2.0: Session composition through the kernel
+
+As a developer building on panda,
+I want to run a prompt in an isolated workspace by importing packages,
+So that the kernel is genuinely usable from my own project and not only through panda's binary.
+
+**Acceptance Criteria:**
+
+**Given** a third-party Node project that has installed panda's packages but NOT `@panda/cli`
+**When** it composes a session — workspace, executor, prompt, cancellation
+**Then** it obtains the same result envelope `panda run` produces, with no code copied from the CLI
+**And** `@panda/cli` contains only argv parsing, output formatting and exit-code mapping — a test fails if composition logic returns to it
+**And** the executor invocation flows through the Story 1.7 interception pipeline, so the no-bypass guarantee stops being kernel-scoped and holds end to end
+**And** `panda run` behaves identically: same envelope, same exit codes, same cancellation on interrupt, same workspace cleanup (FR-7, FR-17, NFR-2)

@@ -1,28 +1,20 @@
-import { join } from 'node:path'
-import { PandaError } from '@panda/contracts'
-import type { ExecutorAdapter, WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
-import { createClaudeCodeAdapter } from '@panda/adapter-cli'
-import { LocalWorkspaceProvider } from '@panda/workspace-local'
+import { runSession, type SessionOptions } from '@panda/session'
 
 // Exit codes (documented in the package README):
 //   0 — run completed with an ok envelope
 //   1 — run returned a failed or cancelled envelope
 //   2 — usage error, invalid request, or environment failure
 
-export interface RunCommandOptions {
-  readonly cwd?: string
+/**
+ * The seams are PICKED from `SessionOptions` rather than redeclared: this package
+ * forwards them and owns none of them, so naming their types here would be the
+ * first step back towards composing sessions in the CLI (see the thin-binding pin
+ * in `test/run.test.ts`). What the CLI owns is where the output goes.
+ */
+export interface RunCommandOptions
+  extends Pick<SessionOptions, 'cwd' | 'createAdapter' | 'createProvider' | 'onInterrupt'> {
   readonly stdout?: (line: string) => void
   readonly stderr?: (line: string) => void
-  /** Adapter seam; tests inject fakes, production defaults to Claude Code. */
-  readonly createAdapter?: () => ExecutorAdapter
-  /** Workspace provider seam; production defaults to the local-dir provider. */
-  readonly createProvider?: () => WorkspaceProvider
-  /**
-   * Signal-registration seam: register a handler for interrupt/termination and
-   * return its disposer. Tests inject a manual trigger; production wires
-   * SIGINT/SIGTERM so Ctrl+C aborts the run instead of killing the CLI raw.
-   */
-  readonly onInterrupt?: (handler: () => void) => () => void
 }
 
 export const USAGE = [
@@ -35,14 +27,12 @@ export const USAGE = [
 
 const DEFAULT_USAGE = USAGE.split('\n')[0] ?? USAGE
 
-async function contained(action: () => Promise<void>): Promise<void> {
-  try {
-    await action()
-  } catch {
-    // Cleanup must never mask the primary envelope/error or crash the exit path.
-  }
-}
-
+/**
+ * Process-level signal wiring, which is why it lives in the binary's package and
+ * not in the session: a library that registers SIGINT handlers takes them from
+ * whatever host embedded it. The session takes the registration as a seam and
+ * this is the CLI's answer to it.
+ */
 function defaultInterruptRegistration(handler: () => void): () => void {
   process.once('SIGINT', handler)
   process.once('SIGTERM', handler)
@@ -51,12 +41,10 @@ function defaultInterruptRegistration(handler: () => void): () => void {
     process.off('SIGTERM', handler)
   }
 }
-void defaultInterruptRegistration
 
 export async function runPanda(argv: readonly string[], options: RunCommandOptions = {}): Promise<number> {
   const out = options.stdout ?? ((line: string) => console.log(line))
   const err = options.stderr ?? ((line: string) => console.error(line))
-  const cwd = options.cwd ?? process.cwd()
 
   if (argv[0] === '--help' || argv[0] === '-h') {
     out(USAGE)
@@ -79,36 +67,40 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     return 2
   }
 
-  const provider = options.createProvider?.() ?? new LocalWorkspaceProvider({ rootDir: join(cwd, '.panda', 'workspaces') })
-  let handle: WorkspaceHandle
   try {
-    handle = await provider.create()
-  } catch (error) {
-    await contained(() => provider.dispose())
-    err(describe(error))
-    return 2
-  }
-
-  const controller = new AbortController()
-  const disposeSignals = options.onInterrupt ?? defaultInterruptRegistration
-  const removeSignalHandler = disposeSignals(() => controller.abort())
-
-  try {
-    const adapter = options.createAdapter?.() ?? createClaudeCodeAdapter()
-    const envelope = await adapter.run({ prompt, workspace: handle, signal: controller.signal })
+    const envelope = await runSession({
+      prompt,
+      cwd: options.cwd,
+      createAdapter: options.createAdapter,
+      createProvider: options.createProvider,
+      onInterrupt: options.onInterrupt ?? defaultInterruptRegistration,
+    })
+    // Printed AFTER cleanup now, where the old inline composition printed before
+    // it. Deliberate, and the trade is worth naming: output can no longer be
+    // interleaved with a half-torn-down workspace, but a HUNG release or dispose
+    // withholds the envelope entirely, where before it had already been written.
+    // `contained()` catches throws, not hangs — restoring the old order would
+    // mean the CLI holding the workspace lifecycle again, which is the whole
+    // thing this story removed. A cleanup timeout belongs in the session, and is
+    // filed with the other AbortSignal-policy work in deferred-work.md.
+    //
+    // Inside the try on purpose: a payload that cannot be serialised is an
+    // environment failure (exit 2), not an uncaught throw out of the binary.
     out(JSON.stringify(envelope, null, 2))
     return envelope.status === 'ok' ? 0 : 1
   } catch (error) {
     err(describe(error))
     return 2
-  } finally {
-    removeSignalHandler()
-    await contained(() => provider.release(handle))
-    await contained(() => provider.dispose())
   }
 }
+
 function describe(error: unknown): string {
-  return error instanceof PandaError
-    ? `${error.code}: ${error.message}`
-    : String(error instanceof Error ? error.message : error)
+  // Duck-typed on `code` rather than `instanceof PandaError`: AD-1 forbids the
+  // kernel from importing the contracts package, so `PandaKernelError` is a
+  // DISJOINT hierarchy — an instanceof check against either one silently drops
+  // the other's code, and a budget refusal is precisely the case whose code the
+  // user needs. It also leaves this package importing nothing but the session.
+  const code: unknown = (error as { code?: unknown } | null | undefined)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  return typeof code === 'string' && code.length > 0 ? `${code}: ${message}` : message
 }

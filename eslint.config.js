@@ -24,6 +24,28 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
   },
   {
+    // Repo-wide, because a cross-package RELATIVE import needs no manifest entry
+    // and therefore no dependency test can see it. A working composition was
+    // planted in @panda/cli through `../../workspace-local/src/index.ts` with the
+    // whole gate green; this is the rule that rejects it, and it holds the same
+    // line for every package (AD-2: the topology is manifests, not paths).
+    files: ['packages/*/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: String.raw`^\.\.[\\/]\.\.`,
+              message:
+                'cross-package imports must use the workspace package name, never a relative path out of the package (AD-2)',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/kernel/**/*.ts'],
     rules: {
       'no-restricted-imports': [

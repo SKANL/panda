@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -201,3 +202,131 @@ function cancelledEnvelope(): ResultEnvelope {
     errors: [{ message: 'the run was cancelled and its process tree terminated' }],
   }
 }
+
+// --- Exit-code mapping the neutrality claim rests on ----------------------
+//
+// Three paths that reach `describe()` and were never pinned. Two of them are
+// where Story 2.0 measurably CHANGED behaviour (for the better) rather than
+// preserving it, and an unpinned improvement is indistinguishable from an
+// accident the next person is free to undo.
+
+describe('panda run exit-code mapping', () => {
+  it('exits 2 when the envelope cannot be serialised, instead of throwing out of the binary', async () => {
+    const circular: Record<string, unknown> = {}
+    circular['self'] = circular
+    const io = capture()
+    const code = await runPanda(['run', 'produce a cycle'], {
+      ...io,
+      cwd: await tempCwd(),
+      createAdapter: () => ({
+        run: async () => ({ status: 'ok', data: circular, summary: 'cyclic payload', errors: [] }),
+      }),
+    })
+    expect(code).toBe(2)
+    expect(io.out).toHaveLength(0)
+    expect(io.err.join('\n')).toContain('circular')
+  })
+
+  it('exits 2 when the adapter throws, printing the code of EITHER error hierarchy', async () => {
+    // Deliberately not a `PandaError`: AD-1 keeps `PandaKernelError` in a disjoint
+    // hierarchy, so a budget refusal carries a code that no `instanceof PandaError`
+    // check can see. `describe()` duck-types on `code`, and this is what pins it.
+    const io = capture()
+    const code = await runPanda(['run', 'refuse me'], {
+      ...io,
+      cwd: await tempCwd(),
+      createAdapter: () => ({
+        run: () => {
+          throw Object.assign(new Error('the invocations cap of 0 would be exceeded'), {
+            code: 'PANDA_KERNEL_INVOCATION_CAP_EXCEEDED',
+          })
+        },
+      }),
+    })
+    expect(code).toBe(2)
+    expect(io.err.join('\n')).toContain('PANDA_KERNEL_INVOCATION_CAP_EXCEEDED: the invocations cap of 0 would be exceeded')
+  })
+
+  it('exits 2 when the provider factory itself throws', async () => {
+    // Previously an unhandled rejection with no mapped exit code, and reachable in
+    // production through a deleted cwd.
+    const io = capture()
+    const code = await runPanda(['run', 'anything'], {
+      ...io,
+      cwd: await tempCwd(),
+      createProvider: () => {
+        throw new Error('provider construction failed')
+      },
+    })
+    expect(code).toBe(2)
+    expect(io.err.join('\n')).toContain('provider construction failed')
+  })
+})
+
+// --- The thin-binding pin (Story 2.0) -------------------------------------
+//
+// Everything above pins BEHAVIOUR. This block pins the SHAPE that behaviour is
+// allowed to live in: the composition — create a workspace, obtain an adapter,
+// run under a signal, release, dispose — belongs to `@panda/session`, and
+// `@panda/cli` is argv parsing, output formatting and exit-code mapping.
+//
+// These two clauses are the cheap, exact half of that rule. They are NOT the
+// whole enforcement, and it matters that nobody reads them as such:
+//   - the relative-import route (`../../workspace-local/src/index.ts`, which
+//     needs no manifest entry at all) is closed by `no-restricted-imports` in
+//     eslint.config.js, repo-wide;
+//   - the POSITIVE proof — that a consumer really can do this without the CLI —
+//     is `packages/session/test/consumer.test.ts`, which the CLI cannot defeat
+//     by rewriting itself.
+// A text scan for composition vocabulary used to sit here and was deleted on
+// review: it flagged a comment that merely named the tokens, and missed a real
+// composition written as `provider['release'](h)`. A negative scan over source
+// text cannot carry this claim.
+
+const cliPackageDir = join(import.meta.dirname, '..')
+
+function shippedSourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    // `__scratch/` is git-ignored test scratch; recursing into a leftover probe
+    // turns the gate red for something that is not source.
+    if (entry.name === '__scratch' || entry.name === 'node_modules') return []
+    const path = join(dir, entry.name)
+    return entry.isDirectory() ? shippedSourceFiles(path) : entry.name.endsWith('.ts') ? [path] : []
+  })
+}
+
+function importSpecifiersOf(source: string): string[] {
+  return [...source.matchAll(/(?:from\s*|import\s*\(?\s*)['"]([^'"]+)['"]/g)]
+    .map((match) => match[1])
+    .filter((specifier): specifier is string => specifier !== undefined)
+}
+
+/** A composition cannot be written without reaching into at least one of these. */
+const COMPOSITION_PACKAGES = ['@panda/adapter-cli', '@panda/workspace-local', '@panda/kernel']
+
+describe('@panda/cli stays a thin binding', () => {
+  it('shipped sources exist to scan', () => {
+    // Guards against the pin passing because a path typo made every scan empty.
+    expect(shippedSourceFiles(join(cliPackageDir, 'src')).length).toBeGreaterThan(0)
+    expect(shippedSourceFiles(join(cliPackageDir, 'bin')).length).toBeGreaterThan(0)
+  })
+
+  it('depends on the session and on nothing else at runtime', () => {
+    const pkg = JSON.parse(readFileSync(join(cliPackageDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    // `@panda/contracts` moved to devDependencies once `describe()` stopped
+    // needing `instanceof PandaError`: the shipped CLI now imports exactly one
+    // package, and the tests keep contracts only to type their fakes.
+    expect(Object.keys((pkg['dependencies'] ?? {}) as Record<string, unknown>)).toEqual(['@panda/session'])
+  })
+
+  it('never imports the implementation packages a session composes', () => {
+    for (const file of [
+      ...shippedSourceFiles(join(cliPackageDir, 'src')),
+      ...shippedSourceFiles(join(cliPackageDir, 'bin')),
+    ]) {
+      for (const specifier of importSpecifiersOf(readFileSync(file, 'utf8'))) {
+        expect(COMPOSITION_PACKAGES.includes(specifier), `${file} imports '${specifier}'`).toBe(false)
+      }
+    }
+  })
+})
