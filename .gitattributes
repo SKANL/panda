@@ -1,0 +1,2 @@
+# Byte-exact test fixtures must survive checkout on any platform untouched.
+packages/projection/test/goldens/** -text

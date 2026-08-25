@@ -38,6 +38,23 @@ export {
   type RegistryEntryType,
   type RegistryScope,
 } from './registry.ts'
+export {
+  PROJECTION_GRAMMAR_VERSION,
+  PROJECTION_RESERVED_ROOT_KEY,
+  classifyOwnedMarker,
+  type DriftEntry,
+  type DriftKind,
+  type ProjectionFailure,
+  type ProjectionMergeOutcome,
+  type ProjectionMergeRequest,
+  type ProjectionOwnedMcpServer,
+  type ProjectionOwnedSkill,
+  type ProjectionOwnedSubtree,
+  type ProjectionOwnedTool,
+  type ProjectionResult,
+  type ProjectionTarget,
+  type RegistryEntriesByKind,
+} from './projection.ts'
 export { isRecord } from './validation.ts'
 export {
   CONTRACT_PROBE_REQUEST,

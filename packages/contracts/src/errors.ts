@@ -22,6 +22,8 @@ export const PANDA_ERROR_CODES = {
   registryContention: 'PANDA_REGISTRY_CONTENTION',
   registryStoreUnavailable: 'PANDA_REGISTRY_STORE_UNAVAILABLE',
   registryInactive: 'PANDA_REGISTRY_INACTIVE',
+  projectionNativeMalformed: 'PANDA_PROJECTION_NATIVE_MALFORMED',
+  projectionTargetFailed: 'PANDA_PROJECTION_TARGET_FAILED',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

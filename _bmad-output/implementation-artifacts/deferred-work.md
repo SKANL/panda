@@ -21,3 +21,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1-registry-core-with-machine-scoped-serialization.md`
   summary: Registry persistence lacks fsync-level durability — there is a power-loss window after rename where the store file may be stale or empty.
   evidence: Atomicity (temp+rename) covers process crashes, not power loss; acceptable for v1 local tool, revisit if the Registry becomes a multi-device source of truth.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2-projection-engine-with-sentinel-grammar-claude-target.md`
+  summary: No user-facing resolution/adoption flow for permanent drift yet — markers that classify as drift are reported and never rewritten, leaving affected files frozen until doctor (Story 2.7) defines remediation commands.
+  evidence: Projection targets return drift entries verbatim in results without any rewrite path; no CLI surface exists to resolve, adopt, or discard them.

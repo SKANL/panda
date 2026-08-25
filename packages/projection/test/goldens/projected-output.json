@@ -1,0 +1,34 @@
+{
+        "z-last": true,
+    "permissions": {
+      "deny": [],
+             "allow": ["Bash(ls)"]
+    },
+  "model": "opus",
+"a-first": false,
+"panda": {
+  "version": 1,
+  "tools": {
+    "fd-find": {
+      "command": "~/bin/fd"
+    },
+    "ripgrep": {
+      "command": "rg"
+    }
+  },
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    }
+  },
+  "skills": {
+    "commit-lint": {
+      "entryPath": "~/.panda/skills/commit-lint.ts"
+    }
+  }
+}
+}
