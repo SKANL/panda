@@ -8,6 +8,7 @@ import {
   REGISTRY_ENTRY_TYPES,
   REGISTRY_PATH_FIELDS,
   REGISTRY_SCOPES,
+  UNPROJECTABLE_ENTRY_IDS,
   expandRegistryEntryPaths,
   isRegistryScopeValue,
   normalizeRegistryEntryPaths,
@@ -47,6 +48,18 @@ describe('canonical registry entry envelopes', () => {
     expect(registryEntryIssues({ type: 'mcp-server', id: 'x', args: ['ok', ''] })).toEqual([
       { message: "'args' must be an array of non-empty strings when present" },
     ])
+  })
+
+  it('rejects ids that can never become a projected key', () => {
+    // The guard lives here, at the envelope, because every registration path
+    // routes through it: an unprojectable id that reaches the store makes
+    // EVERY projection target fail permanently.
+    for (const id of UNPROJECTABLE_ENTRY_IDS) {
+      expect(registryEntryIssues({ type: 'tool', id })).toEqual([
+        { message: `'id' must not be '${id}': it can never be used as a projected key` },
+      ])
+    }
+    expect(registryEntryIssues({ type: 'tool', id: 'constructor-ish' })).toEqual([])
   })
 
   it('rejects unknown root keys naming the extensions rule', () => {

@@ -47,7 +47,7 @@ development_status:
   2-1-registry-core-with-machine-scoped-serialization: done
   2-2-projection-engine-with-sentinel-grammar-claude-target: done
   2-3-codex-and-opencode-targets-via-trait-data: done
-  2-4-toolprovider-and-skillsource-ports: backlog
+  2-4-toolprovider-and-skillsource-ports: done
   2-5-shipped-adapters-complete-the-set: backlog
   2-6-liveness-detection-hierarchy: backlog
   2-7-project-binding-projection-commands-and-drift-doctor: backlog

@@ -24,3 +24,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-2-projection-engine-with-sentinel-grammar-claude-target.md`
   summary: No user-facing resolution/adoption flow for permanent drift yet — markers that classify as drift are reported and never rewritten, leaving affected files frozen until doctor (Story 2.7) defines remediation commands.
   evidence: Projection targets return drift entries verbatim in results without any rewrite path; no CLI surface exists to resolve, adopt, or discard them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-toolprovider-and-skillsource-ports.md`
+  summary: Provider ingestion holds no run-scoped lock — `store.get` reads lock-free and each `store.register` takes its own lock, so a concurrent writer can mutate an entry between the change-detection read and the write, and two interleaved ingests leave the store holding a mix of both runs.
+  evidence: Code-review finding — needs `RegistryStore.withLock(scope, fn)` spanning reads and writes; acceptable for a single-writer local tool, revisit when panda runs concurrently against one machine store.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-toolprovider-and-skillsource-ports.md`
+  summary: Phase 2 issues one lock acquisition and one whole-file rewrite per contribution — N locks and O(n^2) bytes for a catalog of N entries, each with its own contention deadline.
+  evidence: Code-review finding — wants a `RegistryStore.registerMany(entries, scope)` batching one lock, one read and one persist; the same change shrinks the partial-write window documented in the ingest jsdoc.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-toolprovider-and-skillsource-ports.md`
+  summary: `list()` on an untrusted origin has no timeout and no cancellation — a provider that never resolves wedges the whole sequential collect phase with no error path.
+  evidence: Code-review finding — needs an AbortSignal/timeout policy shared across the provider ports rather than a one-off race in the driver.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-toolprovider-and-skillsource-ports.md`
+  summary: Ingestion is additive only — an entry an origin stops contributing stays registered and keeps projecting forever, with no reconciliation path.
+  evidence: Pruning/reconciliation semantics are explicitly Ask-First in the spec's Boundaries; the drift/doctor surface (Story 2.7) is the natural home for the resolution flow.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-toolprovider-and-skillsource-ports.md`
+  summary: The provider ports have no production consumer — nothing outside the new tests imports `ingestProviders`, `ToolProvider` or `SkillSource`.
+  evidence: Code-review finding — the CLI surface (Story 2.7 init/project-init/doctor) is the first real caller and will exercise the API shapes (outcome keys, batch write, cancellation) that no test can pressure today.

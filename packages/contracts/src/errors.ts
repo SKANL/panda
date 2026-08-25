@@ -22,6 +22,8 @@ export const PANDA_ERROR_CODES = {
   registryContention: 'PANDA_REGISTRY_CONTENTION',
   registryStoreUnavailable: 'PANDA_REGISTRY_STORE_UNAVAILABLE',
   registryInactive: 'PANDA_REGISTRY_INACTIVE',
+  registryProviderRejected: 'PANDA_REGISTRY_PROVIDER_REJECTED',
+  registryOriginConflict: 'PANDA_REGISTRY_ORIGIN_CONFLICT',
   projectionNativeMalformed: 'PANDA_PROJECTION_NATIVE_MALFORMED',
   projectionTargetFailed: 'PANDA_PROJECTION_TARGET_FAILED',
   projectionTraitsInvalid: 'PANDA_PROJECTION_TRAITS_INVALID',

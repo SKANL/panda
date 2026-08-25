@@ -48,6 +48,21 @@ export const REGISTRY_PATH_FIELDS: Readonly<Record<RegistryEntryType, readonly s
   profile: [],
 }
 
+// Ids that would collide with Object.prototype members or otherwise cannot
+// become a key in a projected document. Rejected at REGISTRATION, not at
+// projection: an entry that persists with such an id makes every projection
+// target fail permanently, with no way to remove it through a provider.
+export const UNPROJECTABLE_ENTRY_IDS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  'toLocaleString',
+  'toString',
+  'valueOf',
+])
+
 const KNOWN_ROOT_KEYS: ReadonlySet<string> = new Set([
   'type',
   'id',
@@ -71,7 +86,11 @@ export function registryEntryIssues(value: unknown): StandardSchemaIssue[] {
   if (!isEntryType(value['type'])) {
     issues.push(issue(`'type' must be one of: ${REGISTRY_ENTRY_TYPES.join(', ')}`))
   }
-  if (!isNonEmptyString(value['id'])) issues.push(issue("'id' must be a non-empty string"))
+  if (!isNonEmptyString(value['id'])) {
+    issues.push(issue("'id' must be a non-empty string"))
+  } else if (UNPROJECTABLE_ENTRY_IDS.has(value['id'])) {
+    issues.push(issue(`'id' must not be '${value['id']}': it can never be used as a projected key`))
+  }
   const command = value['command']
   if (command !== undefined && !isNonEmptyString(command)) {
     issues.push(issue("'command' must be a non-empty string when present"))

@@ -19,6 +19,7 @@
     "jsonc-parser": "^3.3.1"
   },
   "devDependencies": {
+    "@panda/registry": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

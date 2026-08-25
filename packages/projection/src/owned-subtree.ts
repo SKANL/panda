@@ -1,4 +1,9 @@
-import { PandaError, PANDA_ERROR_CODES, PROJECTION_GRAMMAR_VERSION } from '@panda/contracts'
+import {
+  PandaError,
+  PANDA_ERROR_CODES,
+  PROJECTION_GRAMMAR_VERSION,
+  UNPROJECTABLE_ENTRY_IDS,
+} from '@panda/contracts'
 import type {
   ProjectionOwnedMcpServer,
   ProjectionOwnedSkill,
@@ -17,24 +22,14 @@ import type {
 // Claude settings surface in grammar v1) is target knowledge: targets report
 // those through their outcome's skippedEntryIds.
 
-/** Ids that would collide with Object.prototype members or special keys. */
-const FORBIDDEN_IDS: ReadonlySet<string> = new Set([
-  '__proto__',
-  'constructor',
-  'hasOwnProperty',
-  'isPrototypeOf',
-  'propertyIsEnumerable',
-  'toLocaleString',
-  'toString',
-  'valueOf',
-])
-
 function byId(a: RegistryEntry, b: RegistryEntry): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
 function assertProjectableId(kind: string, id: string): void {
-  if (FORBIDDEN_IDS.has(id)) {
+  // Defense in depth: the canonical envelope already rejects these ids on every
+  // registration path, so reaching here means a hand-edited or corrupted store.
+  if (UNPROJECTABLE_ENTRY_IDS.has(id)) {
     throw new PandaError(
       PANDA_ERROR_CODES.registryInvalidEntry,
       `registry ${kind} entry '${id}' cannot be used as a projected key`,

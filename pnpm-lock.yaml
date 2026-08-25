@@ -113,6 +113,9 @@ importers:
         specifier: ^3.3.1
         version: 3.3.1
     devDependencies:
+      '@panda/registry':
+        specifier: workspace:*
+        version: link:../registry
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3

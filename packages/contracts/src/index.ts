@@ -28,6 +28,7 @@ export {
   REGISTRY_ENTRY_TYPES,
   REGISTRY_PATH_FIELDS,
   REGISTRY_SCOPES,
+  UNPROJECTABLE_ENTRY_IDS,
   expandRegistryEntryPaths,
   isRegistryScopeValue,
   registryEntryIssues,
@@ -38,6 +39,17 @@ export {
   type RegistryEntryType,
   type RegistryScope,
 } from './registry.ts'
+export {
+  PANDA_SOURCE_EXTENSION_KEY,
+  type IngestOrigin,
+  type IngestOutcome,
+  type IngestWarning,
+  type IngestWarningKind,
+  type SkillSource,
+  type SourcedSkill,
+  type SourceTracking,
+  type ToolProvider,
+} from './providers.ts'
 export {
   PANDA_MANAGED_BLOCK_BEGIN,
   PANDA_MANAGED_BLOCK_END,

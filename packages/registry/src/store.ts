@@ -126,14 +126,35 @@ export class RegistryStore {
     })
   }
 
-  async get(type: RegistryEntryType, id: string): Promise<RegistryEntry | undefined> {
+  /**
+   * Two deliberately different modes:
+   *  - WITHOUT `scope`: the merged read every consumer wants — agent > project
+   *    > global precedence, i.e. what the registry actually serves for this id.
+   *  - WITH `scope`: that ONE scope, no fallthrough. A writer targeting a scope
+   *    must see what is stored THERE; the merged view would let an entry
+   *    shadowing from another scope hide a stale target-scope entry forever.
+   */
+  async get(
+    type: RegistryEntryType,
+    id: string,
+    scope?: RegistryScope,
+  ): Promise<RegistryEntry | undefined> {
     this.#assertActive()
     const key = `${type}:${id}`
-    const agent = this.#agentEntries.get(key)
-    if (agent !== undefined) return expandRegistryEntryPaths(agent, this.#homeDir)
-    for (const scope of ['project', 'global'] as const) {
-      if (scope === 'project' && this.#projectDir === undefined) continue
-      const file = await this.#readStore(this.#storePath(scope))
+    if (scope === 'agent') {
+      const agent = this.#agentEntries.get(key)
+      return agent === undefined ? undefined : expandRegistryEntryPaths(agent, this.#homeDir)
+    }
+    if (scope === undefined) {
+      const agent = this.#agentEntries.get(key)
+      if (agent !== undefined) return expandRegistryEntryPaths(agent, this.#homeDir)
+    }
+    const scopes = scope === undefined ? (['project', 'global'] as const) : ([scope] as const)
+    for (const candidateScope of scopes) {
+      // Only the merged read skips an unconfigured project scope; an EXPLICIT
+      // project read is a configuration error and fails coded through #storePath.
+      if (scope === undefined && candidateScope === 'project' && this.#projectDir === undefined) continue
+      const file = await this.#readStore(this.#storePath(candidateScope))
       const found = file.entries.find((candidate) => entryKey(candidate) === key)
       if (found !== undefined) return expandRegistryEntryPaths(found, this.#homeDir)
     }
