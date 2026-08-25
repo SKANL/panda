@@ -5,6 +5,8 @@ import {
   ServiceConflictError,
   SwapRejectedError,
   createKernel,
+  createLogSink,
+  createMemoryLogSink,
   type PandaKernel,
   type PluginFactory,
 } from '../src'
@@ -32,10 +34,15 @@ function startWith(...registrations: { input: unknown; factory: PluginFactory }[
   return { kernel, result: kernel.start() }
 }
 
+/** The plugin-level transitions in the order the records carry them. */
+function lifecycleTrail(log: { readonly records: readonly { event: string; subject: string }[] }): string[] {
+  return log.records.filter((r) => r.event.startsWith('plugin.')).map((r) => `${r.event}:${r.subject}`)
+}
+
 describe('lifecycle: chained teardown ordering', () => {
   it('disposes in exact reverse activation order across a hard-dependency chain', async () => {
-    const log: string[] = []
-    const kernel = createKernel({ orderLog: log })
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
     kernel.register(manifest({ id: 'a', provides: ['svc.a'] }), () => ({
       status: 'activated',
       dispose: () => {},
@@ -60,22 +67,32 @@ describe('lifecycle: chained teardown ordering', () => {
       disposalErrors: [],
       handlerFailures: [],
     })
-    expect(log).toEqual(['activate:a', 'activate:b', 'activate:c', 'dispose:c', 'dispose:b', 'dispose:a'])
+    expect(lifecycleTrail(log)).toEqual([
+      'plugin.activated:a',
+      'plugin.activated:b',
+      'plugin.activated:c',
+      'plugin.disposed:c',
+      'plugin.disposed:b',
+      'plugin.disposed:a',
+    ])
   })
 })
 
 describe('lifecycle: disposal idempotence', () => {
   it('treats a second stop as a no-op with no duplicate log entries', async () => {
-    const log: string[] = []
-    const kernel = createKernel({ orderLog: log })
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
     const a = provider('a', 'svc.a', 1)
     kernel.register(a.input, a.factory)
     kernel.start()
     await kernel.stop()
 
-    const afterFirstStop = [...log]
+    // Byte-identical, not merely same-length: a second stop must append nothing,
+    // including a second `kernel.stopped`.
+    const afterFirstStop = JSON.stringify(log.records)
+    expect(afterFirstStop).toContain('kernel.stopped')
     expect(await kernel.stop()).toEqual({ disposed: [], disposalErrors: [], handlerFailures: [] })
-    expect(log).toEqual(afterFirstStop)
+    expect(JSON.stringify(log.records)).toBe(afterFirstStop)
   })
 })
 
@@ -592,33 +609,58 @@ describe('lifecycle: drained shutdown', () => {
   })
 })
 
-describe('lifecycle: order log discipline', () => {
-  it('keeps swap events out of the ordering log', async () => {
-    const log: string[] = []
-    const kernel = createKernel({ orderLog: log })
+describe('lifecycle: record stream discipline', () => {
+  it('records a swap as its own transition, between activation and disposal', async () => {
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
     const p = provider('p', 'svc.p', 'old', () => {})
     kernel.register(p.input, p.factory)
     kernel.start()
     kernel.swap('p', () => ({ status: 'activated', services: { 'svc.p': 'new' }, dispose: () => {} }))
     await kernel.stop()
 
-    expect(log).toEqual(['activate:p', 'dispose:p'])
+    expect(lifecycleTrail(log)).toEqual(['plugin.activated:p', 'plugin.swapped:p', 'plugin.disposed:p'])
   })
 
-  it('never lets a throwing diagnostic abort activation or teardown', async () => {
-    const hostileLog = {
-      push: () => {
-        throw new Error('log exploded')
+  it('never lets a throwing sink abort activation or teardown', async () => {
+    const hostileSink = createLogSink(() => {})
+    const kernel = createKernel({
+      log: {
+        ...hostileSink,
+        record: () => {
+          throw new Error('sink exploded')
+        },
       },
-    } as unknown as string[]
-    const kernel = createKernel({ orderLog: hostileLog })
+    })
     const p = provider('p', 'svc.p', 1, () => {})
     kernel.register(p.input, p.factory)
 
-    const run = async () => {
-      kernel.start()
-      await kernel.stop()
-    }
-    await expect(run()).resolves.toBeUndefined()
+    let disposed = false
+    kernel.register(manifest({ id: 'q', provides: ['svc.q'] }), () => ({
+      status: 'activated',
+      services: { 'svc.q': 1 },
+      dispose: () => {
+        disposed = true
+      },
+    }))
+
+    expect(kernel.start().started).toEqual(['p', 'q'])
+    // The disposers still run: a broken diagnostic must not skip teardown.
+    await expect(kernel.stop()).resolves.toMatchObject({ disposed: ['q', 'p'] })
+    expect(disposed).toBe(true)
+  })
+
+  it('never lets a rejecting drain skip the disposers or crash the process', async () => {
+    const base = createLogSink(() => {})
+    const disposals: string[] = []
+    const kernel = createKernel({
+      log: { ...base, drain: () => Promise.reject(new Error('drain exploded')) },
+    })
+    const p = provider('p', 'svc.p', 1, () => disposals.push('p'))
+    kernel.register(p.input, p.factory)
+    kernel.start()
+
+    await expect(kernel.stop()).resolves.toMatchObject({ disposed: ['p'] })
+    expect(disposals).toEqual(['p'])
   })
 })

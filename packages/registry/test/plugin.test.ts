@@ -15,22 +15,28 @@ afterAll(() => {
   void rm(projectDir, { recursive: true, force: true })
 })
 
-function mount(orderLog: string[] = []) {
-  const kernel = createKernel({ orderLog })
+function mount() {
+  const kernel = createKernel()
   const plugin = createRegistryPlugin({ homeDir, projectDir })
   kernel.register(plugin.manifest, plugin.factory)
   return kernel
 }
 
+/** The plugin-level transitions the kernel's own record stream carries. */
+function trail(kernel: ReturnType<typeof mount>): string[] {
+  return (kernel.log.records ?? [])
+    .filter((record) => record.event.startsWith('plugin.'))
+    .map((record) => `${record.event}:${record.subject}`)
+}
+
 describe('registry as a real kernel plugin', () => {
   it('activates through the normal lifecycle, serves entries, and disposes in reverse order', async () => {
-    const orderLog: string[] = []
-    const kernel = mount(orderLog)
+    const kernel = mount()
 
     const started = kernel.start()
     expect(started.started).toEqual(['registry'])
     expect(started.failures).toHaveLength(0)
-    expect(orderLog).toEqual(['activate:registry'])
+    expect(trail(kernel)).toEqual(['plugin.activated:registry'])
 
     const resolution = kernel.getService<RegistryStore>('registry')
     if (resolution.kind !== 'provided') throw new Error('registry service should be provided')
@@ -39,7 +45,7 @@ describe('registry as a real kernel plugin', () => {
 
     // Disposal is honored: stop() runs the disposer and drops the service.
     await kernel.stop()
-    expect(orderLog).toEqual(['activate:registry', 'dispose:registry'])
+    expect(trail(kernel)).toEqual(['plugin.activated:registry', 'plugin.disposed:registry'])
     expect(() => kernel.getService('registry')).toThrow(/inactive/)
   })
 

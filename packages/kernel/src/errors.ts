@@ -9,7 +9,17 @@ export const KERNEL_ERROR_CODES = {
   reemitDuringFanout: 'PANDA_KERNEL_REEMIT_DURING_FANOUT',
   invalidScope: 'PANDA_KERNEL_INVALID_SCOPE',
   invalidLayer: 'PANDA_KERNEL_INVALID_LAYER',
+  logRecordInvalid: 'PANDA_KERNEL_LOG_RECORD_INVALID',
 } as const
+
+export type KernelErrorCode = (typeof KERNEL_ERROR_CODES)[keyof typeof KERNEL_ERROR_CODES]
+
+const CODE_VALUES = new Set<string>(Object.values(KERNEL_ERROR_CODES))
+
+/** Narrows an arbitrary string to a kernel code, so a record can carry one without a cast. */
+export function isKernelErrorCode(value: string): value is KernelErrorCode {
+  return CODE_VALUES.has(value)
+}
 
 export class PandaKernelError extends Error {
   readonly code: string
@@ -134,6 +144,16 @@ export class InvalidScopeError extends PandaKernelError {
     super(KERNEL_ERROR_CODES.invalidScope, `'${scope}' is not a valid scope: ${detail}`, options)
     this.name = 'InvalidScopeError'
     this.scope = scope
+  }
+}
+
+export class LogRecordInvalidError extends PandaKernelError {
+  readonly field: string
+
+  constructor(field: string, detail: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.logRecordInvalid, `invalid log record: '${field}' ${detail}`, options)
+    this.name = 'LogRecordInvalidError'
+    this.field = field
   }
 }
 

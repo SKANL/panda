@@ -46,7 +46,7 @@ development_status:
   1-5-first-execution-claude-code-driven-headlessly: done
   # ROADMAP-01 M1: kernel seams, cheapest now because the kernel has no
   # production caller yet; a breaking change once composition lands.
-  1-6-kernel-owned-observability-log: backlog
+  1-6-kernel-owned-observability-log: done
   1-7-tool-call-interception-waterfall: backlog
   epic-1-retrospective: optional
 

@@ -9,6 +9,7 @@ export const PANDA_ERROR_CODES = {
   kernelReemitDuringFanout: 'PANDA_KERNEL_REEMIT_DURING_FANOUT',
   kernelInvalidScope: 'PANDA_KERNEL_INVALID_SCOPE',
   kernelInvalidLayer: 'PANDA_KERNEL_INVALID_LAYER',
+  kernelLogRecordInvalid: 'PANDA_KERNEL_LOG_RECORD_INVALID',
   contractEnvelopeInvalid: 'PANDA_CONTRACT_ENVELOPE_INVALID',
   contractWorkspaceUnknownId: 'PANDA_CONTRACT_WORKSPACE_UNKNOWN_ID',
   contractWorkspaceInvalidHandle: 'PANDA_CONTRACT_WORKSPACE_INVALID_HANDLE',

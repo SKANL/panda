@@ -5,3 +5,7 @@ dist/
 *.tsbuildinfo
 graphify-out/
 .codegraph/
+
+# Package-local test scratch dirs (e.g. packages/*/test/__scratch/): the root
+# .scratch/ rule does not reach them, and a probe left behind turns the gate red.
+**/__scratch/

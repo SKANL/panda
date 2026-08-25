@@ -10,7 +10,10 @@ export {
   ReemitDuringFanoutError,
   InvalidScopeError,
   InvalidLayerError,
+  LogRecordInvalidError,
   KERNEL_ERROR_CODES,
+  isKernelErrorCode,
+  type KernelErrorCode,
 } from './errors.ts'
 export {
   validateManifest,
@@ -53,6 +56,20 @@ export {
   type ScopedEventBus,
   type Unsubscribe,
 } from './events.ts'
+export {
+  createLogSink,
+  createMemoryLogSink,
+  LOG_EVENTS,
+  LOG_RECORD_VERSION,
+  type LogEntry,
+  type LogEvent,
+  type LogReader,
+  type LogRecord,
+  type LogSink,
+  type LogSinkState,
+  type LogWrite,
+  type MemoryLogSink,
+} from './log.ts'
 export {
   createLayeredConfig,
   CONFIG_LAYERS,

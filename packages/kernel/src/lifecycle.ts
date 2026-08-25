@@ -1,13 +1,22 @@
 import { createLayeredConfig, type LayeredConfig } from './config.ts'
 import {
   CycleDetectedError,
+  KERNEL_ERROR_CODES,
   PluginInactiveError,
   PluginStartFailedError,
   ServiceNotProvidedError,
   SwapRejectedError,
 } from './errors.ts'
 import { createEventBus, type ScopedEventBus } from './events.ts'
-import { loadPlugins, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader.ts'
+import { loadPlugins, manifestSubject, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader.ts'
+import {
+  createMemoryLogSink,
+  recordCodeOf,
+  recordSafely,
+  type LogEntry,
+  type LogReader,
+  type LogSink,
+} from './log.ts'
 import { validateManifest, type PluginManifest } from './manifest.ts'
 
 /**
@@ -84,15 +93,26 @@ export interface PandaKernel {
   readonly bus: ScopedEventBus
   /** Layered configuration (defaults → global → project → agent → invocation) owned by this kernel. */
   readonly config: LayeredConfig
+  /**
+   * The kernel's append-only record stream, WITHOUT its write end. The kernel is
+   * the only writer of kernel transitions: "the records alone reconstruct the
+   * order" is worth nothing if a plugin holding the kernel can append a
+   * `plugin.activated` for a plugin that never loaded.
+   */
+  readonly log: LogReader
 }
 
 export interface KernelOptions {
   /**
-   * Optional array the kernel appends `activate:<id>` / `dispose:<id>` entries to,
-   * so tests can verify activation and teardown ordering. Swap events are not
-   * lifecycle ordering and stay out of the log.
+   * Where the kernel's records go. Omitted, the kernel builds its own in-memory
+   * sink — it never runs without one. Supply a `createMemoryLogSink()` to read
+   * the stream back, or a `createLogSink(write)` to forward it somewhere durable.
+   *
+   * This replaced a separate `orderLog: string[]` option: two overlapping record
+   * mechanisms meant the ordering tests watched one of them while the audit
+   * stream went unchecked.
    */
-  readonly orderLog?: string[]
+  readonly log?: LogSink
 }
 
 type PluginState = 'unready' | 'active' | 'failed' | 'disposed'
@@ -144,7 +164,12 @@ type ActivationRejection = {
  *   `PANDA_KERNEL_PLUGIN_INACTIVE` naming `'kernel'`; restart is unsupported in this story.
  */
 export function createKernel(options: KernelOptions = {}): PandaKernel {
-  const orderLog = options.orderLog
+  // Constructed here, in the kernel's first statements: `register` and `start`
+  // only exist on the object this function returns, so no manifest can be
+  // validated and no plugin can load before the sink is in place (AD-4). The
+  // load path then takes it as a required argument, which is what makes the
+  // ordering a type error rather than a convention.
+  const log = options.log ?? createMemoryLogSink()
   const bus = createEventBus()
   const config = createLayeredConfig()
   const registrations: { manifest: PluginManifest; factory: PluginFactory }[] = []
@@ -154,14 +179,31 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   let stopped = false
   let stopPromise: Promise<StopResult> | undefined
 
-  // A throwing diagnostic must never abort activation or teardown.
-  function log(entry: string): void {
-    if (orderLog === undefined) return
-    try {
-      orderLog.push(entry)
-    } catch {
-      // diagnostics are best-effort by contract
-    }
+  // A throwing diagnostic must never abort activation or teardown, so every
+  // kernel-internal record goes through the containing helper. A hostile sink is
+  // a broken sink, not a reason to leave `runtime` half-populated (AD-5).
+  function record(entry: LogEntry): void {
+    recordSafely(log, entry)
+  }
+
+  // Same rule for the drain: a sink whose drain() rejects must not make stop()
+  // reject, which would skip every disposer and leave the kernel stopped without
+  // having stopped.
+  function drainLog(): Promise<void> {
+    return log.drain().catch(() => {})
+  }
+
+  // An actual object without `record`, not a `LogReader` annotation over the sink:
+  // the type is erased at runtime, which is exactly the documentation-only
+  // guarantee this story exists to stop shipping.
+  const logReader: LogReader = {
+    drain: () => log.drain(),
+    get state() {
+      return log.state
+    },
+    get records() {
+      return log.records
+    },
   }
 
   function lookup<T>(service: string): ConsumedService<T> {
@@ -230,7 +272,17 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       if (stopped) {
         throw new PluginInactiveError('kernel', 'cannot register into a stopped kernel (restart is unsupported)')
       }
-      registrations.push({ manifest: validateManifest(input), factory })
+      let manifest: PluginManifest
+      try {
+        manifest = validateManifest(input)
+      } catch (error) {
+        // This manifest never reaches loadPlugins, so nothing downstream would
+        // record it. A successful registration needs no record of its own: the
+        // `manifest.validated` the load path emits already proves it happened.
+        record({ event: 'manifest.rejected', subject: manifestSubject(input, '#unregistered'), code: recordCodeOf(error) })
+        throw error
+      }
+      registrations.push({ manifest, factory })
     },
 
     start() {
@@ -238,7 +290,21 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         throw new PluginInactiveError('kernel', 'cannot start a stopped kernel (restart is unsupported)')
       }
 
-      const loaded = loadPlugins(registrations.map((registration) => registration.manifest))
+      // start() is legally callable more than once and the load path re-runs every
+      // time (the service graph needs every manifest), but a plugin already in
+      // `runtime` was loaded by an earlier start. Recording it again would make a
+      // reader see the same manifest validated twice.
+      const loadLog: LogSink = {
+        record: (entry) => {
+          if (runtime.has(entry.subject)) return
+          record(entry)
+        },
+        drain: () => log.drain(),
+        get state() {
+          return log.state
+        },
+      }
+      const loaded = loadPlugins(registrations.map((registration) => registration.manifest), loadLog)
       const factoriesById = new Map(registrations.map((registration) => [registration.manifest.id, registration.factory]))
       // Providers are unique per service (conflicts are rejected at load), so indexing
       // by provides alone covers every resolvable service.
@@ -259,6 +325,8 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
           const known = loaded.failures.find((candidate) => candidate.pluginId === id)
           failures.push(known ?? { pluginId: id, error: new ServiceNotProvidedError(id, plugin.missingHardServices) })
           runtime.set(id, { manifest: plugin.manifest, state: 'unready', services: {} })
+          // The unready record is the loader's: it decided readiness, and recording
+          // it twice would make the stream claim the plugin failed twice.
           continue
         }
 
@@ -266,6 +334,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         if ('reason' in outcome) {
           failures.push({ pluginId: id, error: startFailed(id, outcome) })
           runtime.set(id, { manifest: plugin.manifest, state: 'failed', services: {} })
+          record({ event: 'plugin.start-failed', subject: id, code: KERNEL_ERROR_CODES.pluginStartFailed })
           continue
         }
 
@@ -276,7 +345,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
           disposer: outcome.disposer,
         })
         activationOrder.push(id)
-        log(`activate:${id}`)
+        record({ event: 'plugin.activated', subject: id })
         started.push(id)
       }
       return { started, failures }
@@ -293,32 +362,49 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         // Handler continuations may still mutate state a disposer could observe;
         // they settle (and their contained failures surface) before unwinding.
         const handlerFailures = await bus.drain()
+        // AD-8's drain-before-disposers rule, applied to the record stream too: a
+        // disposer must not run while a pre-teardown record is still in flight, or
+        // the stream would show disposal ahead of the transition it followed.
+        await drainLog()
 
         const disposed: string[] = []
         const disposalErrors: DisposalFailure[] = []
         for (const id of [...activationOrder].reverse()) {
           const plugin = runtime.get(id)
           if (plugin === undefined || plugin.state !== 'active') continue
+          let disposerThrew = false
           try {
             plugin.disposer?.()
           } catch (error) {
             disposalErrors.push({ pluginId: id, error })
+            disposerThrew = true
           }
           plugin.state = 'disposed'
           plugin.services = {}
-          log(`dispose:${id}`)
+          // A disposer that threw did not dispose cleanly; recording
+          // `plugin.disposed` for it would make the stream assert something the
+          // result object contradicts.
+          record({ event: disposerThrew ? 'plugin.disposal-failed' : 'plugin.disposed', subject: id })
           disposed.push(id)
         }
 
+        record({ event: 'kernel.stopped', subject: 'kernel' })
         bus.close()
+        // stop() resolves quiescent: nothing teardown recorded is still pending.
+        await drainLog()
         return { disposed, disposalErrors, handlerFailures }
       }
 
       const inFlight = performStop()
       stopPromise = inFlight
-      void inFlight.finally(() => {
-        if (stopPromise === inFlight) stopPromise = undefined
-      })
+      // The rejection handler is mandatory: `.finally()` re-raises, and this
+      // promise has no other consumer, so an unhandled rejection would terminate
+      // the process by default. The caller awaiting stop() still sees it.
+      void inFlight
+        .finally(() => {
+          if (stopPromise === inFlight) stopPromise = undefined
+        })
+        .catch(() => {})
       return inFlight
     },
 
@@ -329,12 +415,16 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
     swap(pluginId, factory) {
       const plugin = runtime.get(pluginId)
       if (plugin === undefined || plugin.state !== 'active') {
+        record({ event: 'plugin.swap-rejected', subject: pluginId, code: KERNEL_ERROR_CODES.pluginInactive })
         throw new PluginInactiveError(pluginId, 'swap requires an active plugin')
       }
       const outcome = runCandidate(plugin.manifest, factory)
       if ('reason' in outcome) {
-        if (outcome.reason === 'pairing') throw startFailed(pluginId, outcome)
-        throw new SwapRejectedError(pluginId, outcome.issues, { cause: outcome.cause })
+        const rejection = outcome.reason === 'pairing' ? startFailed(pluginId, outcome) : new SwapRejectedError(pluginId, outcome.issues, { cause: outcome.cause })
+        // A rejected swap is the transition most worth auditing: the previous
+        // implementation is still serving and nothing else in the stream says why.
+        record({ event: 'plugin.swap-rejected', subject: pluginId, code: recordCodeOf(rejection) })
+        throw rejection
       }
 
       const previousDisposer = plugin.disposer
@@ -342,10 +432,14 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       for (const service of Object.keys(outcome.services)) serviceIndex.set(service, pluginId)
       plugin.services = outcome.services
       plugin.disposer = outcome.disposer
+      record({ event: 'plugin.swapped', subject: pluginId })
 
       try {
         previousDisposer?.()
       } catch (error) {
+        // The swap itself committed; only the superseded implementation's
+        // teardown failed, and that is the half the result object reports.
+        record({ event: 'plugin.disposal-failed', subject: pluginId })
         return { disposalError: { pluginId, error } }
       }
       return {}
@@ -354,16 +448,29 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
     async dispose(pluginId) {
       const plugin = runtime.get(pluginId)
       if (plugin === undefined || plugin.state === 'disposed') return
-      // Same invariant as stop: a disposer must never observe a half-drained bus.
+      // Same invariant as stop: a disposer must never observe a half-drained bus
+      // or an in-flight record.
       await bus.drain()
-      plugin.disposer?.()
+      await drainLog()
+      // Contained exactly as stop() contains it. Letting the throw escape here
+      // left the plugin 'active', so a later stop() would run its disposer a
+      // second time, and lost the record entirely.
+      let disposerThrew = false
+      try {
+        plugin.disposer?.()
+      } catch {
+        disposerThrew = true
+      }
       plugin.state = 'disposed'
       plugin.services = {}
-      log(`dispose:${pluginId}`)
+      record({ event: disposerThrew ? 'plugin.disposal-failed' : 'plugin.disposed', subject: pluginId })
+      // Mirrors stop(): the record has landed by the time dispose() resolves.
+      await drainLog()
     },
 
     bus,
     config,
+    log: logReader,
   }
 }
 

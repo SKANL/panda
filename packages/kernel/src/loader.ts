@@ -1,4 +1,12 @@
-import { CycleDetectedError, ManifestInvalidError, PandaKernelError, ServiceConflictError, ServiceNotProvidedError } from './errors.ts'
+import {
+  CycleDetectedError,
+  KERNEL_ERROR_CODES,
+  ManifestInvalidError,
+  PandaKernelError,
+  ServiceConflictError,
+  ServiceNotProvidedError,
+} from './errors.ts'
+import { isRecordIdentifier, recordCodeOf, recordSafely, type LogSink } from './log.ts'
 import { validateManifest, type PluginManifest } from './manifest.ts'
 
 export type ServiceResolution =
@@ -26,6 +34,13 @@ export interface PluginLoadResult {
 /**
  * Validates every manifest eagerly and synchronously, resolves the service graph, and gates readiness.
  *
+ * `log` is a REQUIRED positional parameter, never an option and never defaulted:
+ * that is the whole mechanism behind AD-4's "initialised before any plugin
+ * loads". A caller physically cannot reach the load path without having already
+ * constructed a sink, so the ordering is a type error to violate rather than a
+ * comment someone has to keep true. There is deliberately no overload that omits
+ * it — adding one would silently un-guarantee the story.
+ *
  * Throws synchronously (nothing loads):
  * - an invalid manifest (`PANDA_KERNEL_MANIFEST_INVALID`)
  * - duplicate plugin ids (`PANDA_KERNEL_MANIFEST_INVALID`)
@@ -40,9 +55,57 @@ export interface PluginLoadResult {
  * Readiness at this stage reflects provider PRESENCE only; propagating provider
  * readiness through the graph arrives with Story 1.2 lifecycle ordering.
  */
-export function loadPlugins(manifests: readonly unknown[]): PluginLoadResult {
-  const parsed = manifests.map((manifest) => validateManifest(manifest))
+export function loadPlugins(manifests: readonly unknown[], log: LogSink): PluginLoadResult {
+  // Every throwing path of the load is inside this try, so the `load.rejected`
+  // companion below is unconditional — an invalid manifest rejects the load just
+  // as a conflict does, and a stream that recorded only one of them would let a
+  // reader conclude the other never happened.
+  try {
+    const parsed = manifests.map((manifest, index) => {
+      try {
+        const validated = validateManifest(manifest)
+        recordSafely(log, { event: 'manifest.validated', subject: validated.id })
+        return validated
+      } catch (error) {
+        // The code comes from what was actually thrown: hardcoding it would let a
+        // RangeError from a throwing getter be recorded as a validation failure
+        // that never happened.
+        recordSafely(log, {
+          event: 'manifest.rejected',
+          subject: manifestSubject(manifest, `#${index}`),
+          code: recordCodeOf(error),
+        })
+        throw error
+      }
+    })
 
+    return resolveGraph(parsed, log)
+  } catch (error) {
+    // The subject is the kernel because a conflict or a cycle belongs to no
+    // single plugin; the thrown error names the participants.
+    recordSafely(log, { event: 'load.rejected', subject: 'kernel', code: recordCodeOf(error) })
+    throw error
+  }
+}
+
+/**
+ * An id is only trustworthy once validation passed. It is also unbounded and
+ * unfiltered upstream, and an id the sink would reject would make its own
+ * rejection record vanish — so anything unusable is located by position instead.
+ */
+export function manifestSubject(candidate: unknown, fallback: string): string {
+  let id: unknown
+  try {
+    id = (candidate as { id?: unknown } | null | undefined)?.id
+  } catch {
+    // Reading the id is itself untrusted work: a throwing getter would otherwise
+    // escape and delete the very record that reports the rejection.
+    return fallback
+  }
+  return isRecordIdentifier(id) ? id.trim() : fallback
+}
+
+function resolveGraph(parsed: readonly PluginManifest[], log: LogSink): PluginLoadResult {
   const seenIds = new Set<string>()
   for (const manifest of parsed) {
     if (seenIds.has(manifest.id)) {
@@ -83,10 +146,15 @@ export function loadPlugins(manifests: readonly unknown[]): PluginLoadResult {
       const providerId = providers.get(consumption.service)
       if (providerId === undefined) {
         resolutions.set(consumption.service, { kind: 'absent' })
+        recordSafely(log, { event: 'service.unresolved', subject: manifest.id, service: consumption.service })
         if (consumption.mode === 'hard') missingHardServices.push(consumption.service)
       } else {
         resolutions.set(consumption.service, { kind: 'provided', providerId })
+        recordSafely(log, { event: 'service.resolved', subject: manifest.id, service: consumption.service })
       }
+    }
+    if (missingHardServices.length > 0) {
+      recordSafely(log, { event: 'plugin.unready', subject: manifest.id, code: KERNEL_ERROR_CODES.serviceNotProvided })
     }
     return {
       manifest,

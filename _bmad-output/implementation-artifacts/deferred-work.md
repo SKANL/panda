@@ -48,3 +48,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-5-shipped-adapters-complete-the-set.md`
   summary: `panda run` has no executor selector — codex and opencode ship as library surface only, reachable exclusively through direct construction.
   evidence: Wiring adapter selection into the CLI is explicitly Ask First in this spec's Boundaries; the natural home is the CLI surface story (2.7 init/project-init/doctor), where executor choice becomes user-visible configuration.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-kernel-owned-observability-log.md`
+  summary: Records carry no kernel identity, so two kernels sharing one sink interleave into a single unattributable stream.
+  evidence: Code-review finding — the closed record shape has no `kernelId`, and nothing today constructs two kernels against one sink. Belongs with composition (ROADMAP-01 M2), when a caller owns more than one container; adding the field later is a record-shape version bump, which `LOG_RECORD_VERSION` already exists to carry.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-kernel-owned-observability-log.md`
+  summary: No process-exit drain — records still in flight when the process ends are lost, and only the seq gap survives to show it.
+  evidence: Code-review finding — `stop()` and `dispose()` both drain, but nothing hooks process exit, and the kernel deliberately owns no process-level concern today. Belongs with composition (ROADMAP-01 M2), when there is an owner of process shutdown to register the handler.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-kernel-owned-observability-log.md`
+  summary: RESOLVED (Story 1.6) — `KernelOptions.orderLog` deleted rather than deferred; the record sink subsumed it.
+  evidence: Two overlapping ordering mechanisms cost real coverage: the test named "treats a second stop as a no-op with no duplicate log entries" watched `orderLog`, which never receives `kernel.stopped`, so this story's own invariant went unchecked. Migrated all 6 call sites (4 in `packages/kernel/test/lifecycle.test.ts`, 2 in `packages/registry/test/plugin.test.ts`) onto `kernel.log.records`.
