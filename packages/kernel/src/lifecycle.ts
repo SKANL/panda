@@ -8,6 +8,7 @@ import {
   SwapRejectedError,
 } from './errors.ts'
 import { createEventBus, type ScopedEventBus } from './events.ts'
+import { createActionPipeline, type ActionPipeline, type ActionPolicy } from './intercept.ts'
 import { loadPlugins, manifestSubject, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader.ts'
 import {
   createMemoryLogSink,
@@ -39,6 +40,13 @@ export interface ActivationContext {
   readonly bus: ScopedEventBus
   /** The kernel's layered configuration; plugins read composed values via `resolve()`/`dump()`. */
   readonly config: LayeredConfig
+  /**
+   * The kernel's interception waterfall (AD-10). A plugin registers what it does
+   * as an action and invokes it through the handle it gets back, which is the
+   * only place a budget can legally be enforced — a budget rule in a prompt is a
+   * preference.
+   */
+  readonly actions: ActionPipeline
 }
 
 export type PluginFactoryResult =
@@ -113,6 +121,12 @@ export interface KernelOptions {
    * stream went unchecked.
    */
   readonly log?: LogSink
+  /**
+   * Declarative caps for the kernel's interception waterfall. Omitted, nothing is
+   * capped: an unset budget is honest about being unset, where a default one
+   * would silently refuse work nobody asked it to refuse.
+   */
+  readonly actionPolicy?: ActionPolicy
 }
 
 type PluginState = 'unready' | 'active' | 'failed' | 'disposed'
@@ -172,6 +186,10 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   const log = options.log ?? createMemoryLogSink()
   const bus = createEventBus()
   const config = createLayeredConfig()
+  // Built with the sink above, not with one of its own: every invocation and
+  // every violation lands in the same stream as the lifecycle transitions, so one
+  // reader reconstructs both.
+  const actions = createActionPipeline(log, options.actionPolicy)
   const registrations: { manifest: PluginManifest; factory: PluginFactory }[] = []
   const runtime = new Map<string, RuntimePlugin>()
   const activationOrder: string[] = []
@@ -234,7 +252,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   ): ActivationAssessment | ActivationRejection {
     let result: PluginFactoryResult
     try {
-      result = factory({ manifest, consume: (service) => lookup(service), bus, config })
+      result = factory({ manifest, consume: (service) => lookup(service), bus, config, actions })
     } catch (error) {
       return {
         reason: 'rejected',

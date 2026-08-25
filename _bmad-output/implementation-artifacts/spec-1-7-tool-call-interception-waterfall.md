@@ -2,9 +2,9 @@
 title: 'Tool-call interception waterfall'
 type: 'feature'
 created: '2026-08-25'
-status: 'draft'
-review_loop_iteration: 0
-baseline_commit: 'TBD — set to the commit that lands Story 1.6'
+status: 'done'
+review_loop_iteration: 1
+baseline_commit: 'dee3981'
 context:
   - '{project-root}/_bmad-output/planning-artifacts/ROADMAP-01-composition-first.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-1-6-kernel-owned-observability-log.md'
@@ -58,11 +58,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Action descriptor with a numeric cost + declarative policy shapes
-- [ ] Four-stage pipeline with `post` guaranteed and stage failure contained
-- [ ] Count, cost and concurrency caps with coded violations
-- [ ] Invocations and violations recorded through the 1.6 sink
-- [ ] No-bypass proof + every matrix row
+- [x] Action descriptor with a numeric cost + declarative policy shapes
+- [x] Four-stage pipeline with `post` guaranteed and stage failure contained
+- [x] Count, cost and concurrency caps with coded violations
+- [x] Invocations and violations recorded through the 1.6 sink
+- [x] No-bypass proof + every matrix row
 
 **Acceptance Criteria:**
 - Given the kernel's interception pipeline, when any registered action runs, then it flows through `pre → guard → around → post` with no exported path around the seam
@@ -71,6 +71,21 @@ context:
 - And a test proves an invocation cannot reach its operation without traversing the pipeline
 
 ## Spec Change Log
+
+- **Review, the seam validated one object and enforced against another (patch, BLOCKER):** `createActionPipeline` read its policy once and was safe; `register` read its definition three-to-five times and was not. A `cost` accessor validated at 90 and charged at -1000 drove `totalCost` to -999,910 under a cap of 100 — reopening the exact refund the comment beside it warned about, because freezing the descriptor froze the THIRD read. A `GuardDecision.allow` accessor answering `false, false, true` was validated as a well-formed DENIAL and then admitted, leaving a clean `action.invoked` and no refusal in the stream. An `id` accessor made every record for that action fail `seal`, and NEITHER of 1.6's loss signals fired (seal throws before `seq += 1` and before dispatch), so an invocation ran and spent budget with zero audit records. And `run`/`pre`/`guard`/`around`/`post` were re-read at every invoke, so `ActionDefinition.run`'s own doc — "held in a closure and never handed back" — described something the code did not do: a reviewer swapped the operation after registration and had it executed at the old price. `register` now destructures once, validates what it read, and closes over the locals. `recordSafely` additionally counts what it contained (`lostRecordCount`), because containment was otherwise indistinguishable from success.
+- **Review, the fan-out cap did not bound fan-out (patch, BLOCKER):** `runAround` awaited the promise `around` RETURNED and never tracked the one `proceed()` created, so the slot was released when the stage returned. A textbook `Promise.race` timeout `around` reached a peak of three concurrent real operations under `maxConcurrent: 1`, with `usage.concurrent` reporting 0 — and the un-awaited rejection escaped as a process-level `unhandledRejection`, fatal by default on the Node this package requires. The slot now belongs to the operation: `proceed()`'s promise is retained, handled the instant it exists, and awaited before release. A reviewer also replaced the release `finally` with a `catch` that skipped `StageFailedError` and 172/172 still passed, because the "kernel keeps running" clauses used a fresh uncapped action; that loop now runs at `maxConcurrent: 1` and asserts the slot came back.
+- **Review, a capability outlived its stage (patch, BLOCKER):** `proceed` was handed to `around` as a plain function with no lifetime, so an `around` that stored it ran the operation later — uncounted, unrecorded, holding no slot, with `maxInvocations`, `maxTotalCost` and `maxConcurrent` all exhausted. It is revoked in `runAround`'s `finally`.
+- **Review, the pin moved with the thing it constrained (patch, BLOCKER):** `expectTypeOf(createActionPipeline).parameters.toEqualTypeOf<[LogSink, ActionPolicy?]>()` named `ActionPolicy` BY REFERENCE, so widening the interface widened the expectation in lockstep. A reviewer added `readonly unsafeBypass?: boolean` plus `if (policy.unsafeBypass === true) return await definition.run()` as the first line of `invoke` — a bypass parameter the Never list forbids in as many words — and got 172/172 tests, `tsc` exit 0 and clean eslint. `ActionPolicy` is now pinned structurally against a literal that moves independently. The related hole: the exported-surface pin was one `package.json` line from void, since `"./src/*": "./src/*"` would expose every internal module with the gate green; `guard.test.ts` now pins the exports map, and its contracts scan reads import SPECIFIERS (and covers `test/`, not only `src/`).
+- **Review, admission and accounting were two steps (patch):** `recordSafely` ran between the cap check and the increment, so a sink that merely DOES something on that stack — it need not throw — saw the pre-admission counter and reached a peak of four under `maxConcurrent: 1`. The increments moved inside `admit()`. The count and cost caps were also exercised only sequentially: deferring the increments to a microtask passed 171/172. Both are now tested with overlapping invocations.
+- **Review, the outcome vocabulary did not distinguish what the log distinguishes (patch):** an `around` that threw after `await proceed()` told `post` `{status:'refused'}` while usage read `{invocations:1, totalCost:10}`, so any `post` keying refund logic on `refused` concluded nothing was spent. `ActionOutcome` gained `stage-failed`. Same principle applied to the stream: `action.completed` and `action.failed` were added (a failed spend was byte-identical to a successful one), a throwing `post` now records `action.post-failed` rather than sharing `action.stage-failed` (the action did not fail, its observer did), and a `StageFailedError` is relayed verbatim only when it is THIS action's own `around` failure — a nested one was being reported to the outer caller under the inner action's id and stage.
+- **Review, five comments were still standing in for tests (patch):** each was proven by a mutation that passed 172/172 — the context's `Object.freeze` was unobserved (the existing `TypeError` came from the descriptor's freeze), "post runs for a guard denial" was tested only for a cap refusal, "post does NOT run when pre threw" had no test at all (and that is the double-release the ordering exists to prevent), `BudgetUsage`'s freeze was unobserved, and the `ACTION_STAGES` cross-check filtered against the constant as an unordered set and compared to a hardcoded literal, so reordering it, deleting `'around'` from it, or adding a phantom fifth stage all passed. The trail is now derived FROM the constant.
+- **Smaller:** `id.trim()` split registration identity from audit identity (two registrations, one subject; `handle.id !== definition.id`), so an untrimmed id is rejected rather than normalised, and duplicate ids are rejected per pipeline. `Infinity` caps are rejected along with NaN and negatives — "unlimited" is spelled by omitting the cap. The double-`proceed()` refusal is escapable by an `around` that catches its own `StageFailedError`: it then completes normally with no refusal recorded, which costs nothing in accounting (the operation still ran once) but is a doc-vs-code gap worth naming.
+
+- **Three log events, where the Code Map anticipated two:** `action.invoked` and `action.refused` cover an invocation and a violation as written, but a stage that THROWS is neither. Filing a throwing `post` under `action.refused` would make the stream assert the action was refused when it had already run — the exact defect 1.6's review found in `plugin.disposed` being recorded for a disposer that failed. `action.stage-failed` is the third, and it carries `PANDA_KERNEL_STAGE_FAILED` for all four stages.
+- **One code per cap kind, not one `BUDGET_EXCEEDED` plus a field:** the 1.6 record shape is closed (`event`, `subject`, `service`, `code`) and has nowhere to carry which cap fired, so a single code would make every violation in the audit stream indistinguishable from every other. Three codes, one error class — the classes would have been identical.
+- **`post` is the only stage whose throw is swallowed:** `pre`, `guard` and `around` fail closed with `PANDA_KERNEL_STAGE_FAILED` (contained AND not silently allowed). `post` runs after the outcome is decided, so propagating its throw would let it turn a completed action into a failed one, which the Never list forbids as "mutating another stage's decision after the fact". Swallowed is not silent: it is recorded.
+- **`post` balances `pre`, not the operation:** it runs for a guard denial and a cap violation too, so anything `pre` acquired is released. It does NOT run when `pre` itself threw — that acquire never completed.
+- **Fail-closed details the matrix does not name, each pinned by a test:** a guard returning a non-decision is a stage failure, not an allow; a negative or NaN `cost` is refused at registration (a negative cost would REFUND spent budget); a NaN cap is refused at construction (every `>` against NaN is false, so it would silently disable the budget); caps are copied out of the caller's policy object, so mutating it later changes nothing; an `around` that calls `proceed()` twice is refused, because two runs against one budget charge is exactly the accounting AD-10 exists to make trustworthy.
 
 ## Design Notes
 

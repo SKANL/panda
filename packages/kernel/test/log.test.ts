@@ -9,7 +9,7 @@ import {
   type LogRecord,
   type LogSink,
 } from '../src'
-import { manifest } from './helpers'
+import { KERNEL_EXPORTS, manifest } from './helpers'
 
 function entry(overrides: Partial<LogEntry> = {}): LogEntry {
   return { event: 'manifest.validated', subject: 'plugin-a', ...overrides }
@@ -167,34 +167,7 @@ describe('ordering guarantee (matrix: the log exists before any plugin loads)', 
     // beside it, or re-exporting a lower-level loader, would satisfy every
     // assertion above while restoring exactly the hole AD-4 closes.
     const surface = await import('../src')
-    expect(Object.keys(surface).sort()).toEqual([
-      'BUS_SCOPES',
-      'CONFIG_LAYERS',
-      'CycleDetectedError',
-      'InvalidLayerError',
-      'InvalidScopeError',
-      'KERNEL_ERROR_CODES',
-      'LOG_EVENTS',
-      'LOG_RECORD_VERSION',
-      'LogRecordInvalidError',
-      'ManifestInvalidError',
-      'PandaKernelError',
-      'PluginInactiveError',
-      'PluginStartFailedError',
-      'ReemitDuringFanoutError',
-      'ServiceConflictError',
-      'ServiceNotProvidedError',
-      'SwapRejectedError',
-      'createEventBus',
-      'createKernel',
-      'createLayeredConfig',
-      'createLogSink',
-      'createMemoryLogSink',
-      'deepMerge',
-      'isKernelErrorCode',
-      'loadPlugins',
-      'validateManifest',
-    ])
+    expect(Object.keys(surface).sort()).toEqual(KERNEL_EXPORTS)
   })
 
   it('records the first manifest validation before anything else happens', () => {

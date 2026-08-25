@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ActionDeniedError,
+  ActionInvalidError,
+  BudgetExceededError,
   CycleDetectedError,
   InvalidLayerError,
   InvalidScopeError,
@@ -10,7 +13,9 @@ import {
   ReemitDuringFanoutError,
   ServiceConflictError,
   ServiceNotProvidedError,
+  StageFailedError,
   SwapRejectedError,
+  KERNEL_ERROR_CODES,
   createMemoryLogSink,
   loadPlugins,
   validateManifest,
@@ -136,5 +141,51 @@ describe('kernel error-code parity with canonical contracts constants', () => {
     const error = new LogRecordInvalidError('payload', 'is not part of the closed record shape')
     expect(error.code).toBe(PANDA_ERROR_CODES.kernelLogRecordInvalid)
     expect(error.code).toBe('PANDA_KERNEL_LOG_RECORD_INVALID')
+  })
+
+  it('pins PANDA_KERNEL_ACTION_INVALID to the canonical constant', () => {
+    const error = new ActionInvalidError('cost', 'must be a finite number of at least 0')
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelActionInvalid)
+    expect(error.code).toBe('PANDA_KERNEL_ACTION_INVALID')
+  })
+
+  it('pins PANDA_KERNEL_ACTION_DENIED to the canonical constant', () => {
+    const error = new ActionDeniedError('act.run', 'denied for a reason')
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelActionDenied)
+    expect(error.code).toBe('PANDA_KERNEL_ACTION_DENIED')
+  })
+
+  it('pins one code per cap kind, so a violation record says WHICH cap fired', () => {
+    // The log record shape is closed and carries no cap field, so collapsing these
+    // into one code would make every budget violation in the audit stream read
+    // identically to every other.
+    expect(new BudgetExceededError('invocations', 'act.run', 1, 1, 2).code).toBe(
+      PANDA_ERROR_CODES.kernelInvocationCapExceeded,
+    )
+    expect(new BudgetExceededError('invocations', 'act.run', 1, 1, 2).code).toBe('PANDA_KERNEL_INVOCATION_CAP_EXCEEDED')
+    expect(new BudgetExceededError('cost', 'act.run', 1, 1, 2).code).toBe(PANDA_ERROR_CODES.kernelCostCapExceeded)
+    expect(new BudgetExceededError('cost', 'act.run', 1, 1, 2).code).toBe('PANDA_KERNEL_COST_CAP_EXCEEDED')
+    expect(new BudgetExceededError('concurrency', 'act.run', 1, 1, 2).code).toBe(
+      PANDA_ERROR_CODES.kernelConcurrencyCapExceeded,
+    )
+    expect(new BudgetExceededError('concurrency', 'act.run', 1, 1, 2).code).toBe(
+      'PANDA_KERNEL_CONCURRENCY_CAP_EXCEEDED',
+    )
+  })
+
+  it('pins PANDA_KERNEL_STAGE_FAILED to the canonical constant', () => {
+    const error = new StageFailedError('act.run', 'guard', new Error('boom'))
+    expect(error.code).toBe(PANDA_ERROR_CODES.kernelStageFailed)
+    expect(error.code).toBe('PANDA_KERNEL_STAGE_FAILED')
+  })
+
+  it('leaves no kernel code unmirrored, so the next one cannot be forgotten', () => {
+    // The per-code clauses above catch a RENAME. This catches an ADDITION: every
+    // clause above had to be written by hand, and the one nobody wrote is exactly
+    // the code that would drift silently.
+    const mirrored = new Set<string>(Object.values(PANDA_ERROR_CODES))
+    for (const code of Object.values(KERNEL_ERROR_CODES)) {
+      expect(mirrored.has(code), `${code} is missing from PANDA_ERROR_CODES`).toBe(true)
+    }
   })
 })

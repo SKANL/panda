@@ -1,3 +1,5 @@
+import type { ActionStage } from './intercept.ts'
+
 export const KERNEL_ERROR_CODES = {
   manifestInvalid: 'PANDA_KERNEL_MANIFEST_INVALID',
   cycleDetected: 'PANDA_KERNEL_CYCLE_DETECTED',
@@ -10,6 +12,16 @@ export const KERNEL_ERROR_CODES = {
   invalidScope: 'PANDA_KERNEL_INVALID_SCOPE',
   invalidLayer: 'PANDA_KERNEL_INVALID_LAYER',
   logRecordInvalid: 'PANDA_KERNEL_LOG_RECORD_INVALID',
+  actionInvalid: 'PANDA_KERNEL_ACTION_INVALID',
+  actionDenied: 'PANDA_KERNEL_ACTION_DENIED',
+  // One code per cap kind, not one code plus a field: a log record's shape is
+  // closed (`event`, `subject`, `code`) and has nowhere to carry which cap fired,
+  // so a single PANDA_KERNEL_BUDGET_EXCEEDED would make every violation in the
+  // audit stream indistinguishable from every other.
+  invocationCapExceeded: 'PANDA_KERNEL_INVOCATION_CAP_EXCEEDED',
+  costCapExceeded: 'PANDA_KERNEL_COST_CAP_EXCEEDED',
+  concurrencyCapExceeded: 'PANDA_KERNEL_CONCURRENCY_CAP_EXCEEDED',
+  stageFailed: 'PANDA_KERNEL_STAGE_FAILED',
 } as const
 
 export type KernelErrorCode = (typeof KERNEL_ERROR_CODES)[keyof typeof KERNEL_ERROR_CODES]
@@ -154,6 +166,85 @@ export class LogRecordInvalidError extends PandaKernelError {
     super(KERNEL_ERROR_CODES.logRecordInvalid, `invalid log record: '${field}' ${detail}`, options)
     this.name = 'LogRecordInvalidError'
     this.field = field
+  }
+}
+
+/** An action descriptor or a policy the interception pipeline cannot enforce with. */
+export class ActionInvalidError extends PandaKernelError {
+  readonly field: string
+
+  constructor(field: string, detail: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.actionInvalid, `invalid action declaration: '${field}' ${detail}`, options)
+    this.name = 'ActionInvalidError'
+    this.field = field
+  }
+}
+
+/** A guard stage refused the action. The reason is mandatory so the refusal is actionable. */
+export class ActionDeniedError extends PandaKernelError {
+  readonly actionId: string
+  readonly reason: string
+
+  constructor(actionId: string, reason: string, options?: ErrorOptions) {
+    super(KERNEL_ERROR_CODES.actionDenied, `action '${actionId}' was denied by its guard: ${reason}`, options)
+    this.name = 'ActionDeniedError'
+    this.actionId = actionId
+    this.reason = reason
+  }
+}
+
+const CAP_CODES = {
+  invocations: KERNEL_ERROR_CODES.invocationCapExceeded,
+  cost: KERNEL_ERROR_CODES.costCapExceeded,
+  concurrency: KERNEL_ERROR_CODES.concurrencyCapExceeded,
+} as const
+
+export type BudgetCap = keyof typeof CAP_CODES
+
+/**
+ * A declarative cap would have been exceeded, so the action was refused before it
+ * ran. One class over three codes: the classes would have been identical, but the
+ * codes must differ so a log record can say WHICH cap fired (see KERNEL_ERROR_CODES).
+ */
+export class BudgetExceededError extends PandaKernelError {
+  readonly cap: BudgetCap
+  readonly actionId: string
+  readonly limit: number
+  /** The total before this invocation — the partial the matrix asks to be reported. */
+  readonly current: number
+  /** What the total would have become had the invocation been admitted. */
+  readonly projected: number
+
+  constructor(cap: BudgetCap, actionId: string, limit: number, current: number, projected: number, options?: ErrorOptions) {
+    super(
+      CAP_CODES[cap],
+      `action '${actionId}' refused: the ${cap} cap of ${limit} would be exceeded (${current} already used, ${projected} required)`,
+      options,
+    )
+    this.name = 'BudgetExceededError'
+    this.cap = cap
+    this.actionId = actionId
+    this.limit = limit
+    this.current = current
+    this.projected = projected
+  }
+}
+
+/**
+ * An interceptor stage itself threw. Raised INSTEAD of running the action for
+ * `pre`, `guard` and `around`: a broken interceptor must not take the kernel down
+ * (AD-5), and must not silently let the action through either.
+ */
+export class StageFailedError extends PandaKernelError {
+  readonly actionId: string
+  /** Closed vocabulary, imported as a TYPE only so nothing runs across the cycle. */
+  readonly stage: ActionStage
+
+  constructor(actionId: string, stage: ActionStage, cause: unknown) {
+    super(KERNEL_ERROR_CODES.stageFailed, `action '${actionId}' was refused: its '${stage}' stage threw`, { cause })
+    this.name = 'StageFailedError'
+    this.actionId = actionId
+    this.stage = stage
   }
 }
 

@@ -27,6 +27,21 @@ export const LOG_EVENTS = [
   'plugin.swap-rejected',
   'plugin.disposed',
   'plugin.disposal-failed',
+  // The interception waterfall (Story 1.7). Six, where the Code Map anticipated
+  // two, and every extra one exists because a reader could not otherwise tell two
+  // different things apart — the same rule that made 1.6 stop recording
+  // `plugin.disposed` for a disposer that had failed:
+  //   invoked   — admitted, budget spent, operation about to run
+  //   completed / failed — whether that spend actually succeeded
+  //   refused   — the guard or a cap said no; nothing was spent
+  //   stage-failed — a pre/guard/around interceptor threw; the action did not run
+  //   post-failed  — the OBSERVER threw after the action already ran
+  'action.invoked',
+  'action.completed',
+  'action.failed',
+  'action.refused',
+  'action.stage-failed',
+  'action.post-failed',
   'kernel.stopped',
 ] as const
 
@@ -327,12 +342,28 @@ export function createMemoryLogSink(): MemoryLogSink {
  * Kernel-internal call sites use this. A direct `sink.record()` caller still
  * gets the raw throw, because a malformed entry there IS a caller bug.
  */
+const lostRecords = new WeakMap<LogSink, number>()
+
 export function recordSafely(log: LogSink, entry: LogEntry): void {
   try {
     log.record(entry)
   } catch {
-    // Contained by contract; a diagnostic never aborts the transition it describes.
+    // Contained by contract; a diagnostic never aborts the transition it
+    // describes. Counted, though: an entry rejected here never reached the sink
+    // at all, so NEITHER of this file's two loss signals fires — `seal` throws
+    // before `seq += 1` and before dispatch, so there is no gap and no `dropped`.
+    // Without this counter, containment is indistinguishable from success.
+    lostRecords.set(log, (lostRecords.get(log) ?? 0) + 1)
   }
+}
+
+/**
+ * Records the kernel could not hand to this sink at all — rejected by the closed
+ * shape rather than lost by a failing write. Complements `state.dropped`, which
+ * counts the other half.
+ */
+export function lostRecordCount(log: LogSink): number {
+  return lostRecords.get(log) ?? 0
 }
 
 /** Classifies a thrown value for a failure record; unknown throwables carry no code. */

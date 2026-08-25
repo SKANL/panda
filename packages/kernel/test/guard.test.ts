@@ -11,10 +11,14 @@ function collectSourceFiles(dir: string): string[] {
   })
 }
 
-function relativeImportsOf(source: string): string[] {
+function importsOf(source: string): string[] {
   return [...source.matchAll(/(?:from\s*|import\s*\(?\s*)['"]([^'"]+)['"]/g)]
     .map((match) => match[1])
-    .filter((specifier): specifier is string => specifier !== undefined && specifier.startsWith('.'))
+    .filter((specifier): specifier is string => specifier !== undefined)
+}
+
+function relativeImportsOf(source: string): string[] {
+  return importsOf(source).filter((specifier) => specifier.startsWith('.'))
 }
 
 describe('@panda/kernel zero-dependency invariant', () => {
@@ -24,11 +28,25 @@ describe('@panda/kernel zero-dependency invariant', () => {
     expect(pkg['peerDependencies'] ?? {}).toEqual({})
   })
 
+  it('exports exactly one entry point, so the surface pins cannot be bypassed by the manifest', () => {
+    // The exported-surface pins read `src/index.ts`. Adding `"./src/*": "./src/*"`
+    // here would expose every internal module — a raw runner included — with the
+    // whole gate green, because nothing else watches this map.
+    const pkg = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    expect(Object.keys(pkg['exports'] as Record<string, unknown>)).toEqual(['.'])
+  })
+
   it('never imports @panda/contracts from kernel sources (AD-1)', () => {
-    const sources = collectSourceFiles(join(packageDir, 'src'))
+    // `test` is scanned too: a kernel TEST importing the contracts package is the
+    // same violation, and only eslint would have noticed. The scan reads IMPORT
+    // SPECIFIERS rather than raw text, so naming the package in a comment or a
+    // test title is not a violation — and this file names it in both.
+    const sources = [...collectSourceFiles(join(packageDir, 'src')), ...collectSourceFiles(join(packageDir, 'test'))]
     expect(sources.length).toBeGreaterThan(0)
     for (const file of sources) {
-      expect(readFileSync(file, 'utf8')).not.toMatch(/@panda\/contracts/)
+      for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
+        expect(specifier.startsWith('@panda/contracts'), `${file} imports '${specifier}'`).toBe(false)
+      }
     }
   })
 
@@ -45,6 +63,11 @@ describe('@panda/kernel zero-dependency invariant', () => {
   })
 
   it('captures static, dynamic, and re-export import forms in the escape scan', () => {
+    // The bare-specifier scan shares this extractor, so this covers both clauses.
+    // The package name is interpolated so this fixture is not itself an import the
+    // scan above would flag — the extractor is deliberately naive about context.
+    const banned = `@panda/${'contracts'}`
+    expect(importsOf(`import { PandaError } from '${banned}'`)).toEqual([banned])
     expect(relativeImportsOf(`import x from '../outside/a'`)).toEqual(['../outside/a'])
     expect(relativeImportsOf(`const m = await import('../outside/b')`)).toEqual(['../outside/b'])
     expect(relativeImportsOf(`export * from '../outside/c'`)).toEqual(['../outside/c'])
