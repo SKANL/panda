@@ -38,3 +38,15 @@ Companion to `prd.md` §8. Each resolved decision's full evidence trail. Web sou
 ## Source-level digests referenced
 
 `references/digest-{gentle-ai,runcell,terax,orca,deepseek-harness}.md` in this folder — five repos cloned to `C:\code\panda\.scratch\references\`, codegraph-indexed, explored with file:line evidence.
+
+---
+
+## FR-29 — SDK surface parity (added 2026-08-25)
+
+**Why this is being added.** §0 says panda is *"a headless TypeScript SDK and CLI"* and §2 says it *"ships as an SDK first: a headless kernel usable from any project"*. That promise had no requirement. F8's requirements — FR-24 through FR-28 — are all CLI surface, and the knowledge graph over these artifacts shows nothing else claiming the SDK. A promise with no requirement gets no story, no acceptance criterion, and therefore no defence against drift: the composition for `panda run` was written inside `@panda/cli`, where a third party could not reach it, and nothing in the plan was positioned to notice. This is the same structural gap as the six NFRs that reached implementation with no story.
+
+**FR-29: SDK surface parity — every capability the `panda` binary exposes is reachable by importing packages, without installing `@panda/cli`. The CLI parses arguments, formats output and maps results to exit codes; it holds no capability of its own.**
+
+**Testable behaviour.** For each CLI command, a consumer that has NOT installed `@panda/cli` can obtain the same result by importing the packages that own the capability, with no code copied from the CLI. Proven positively — a consumer test that imports only the owning package and asserts the observable result the CLI produces — rather than by scanning the CLI's sources for forbidden text, which a composition can be rewritten to evade.
+
+**Scope note.** FR-29 constrains where capability lives, not what it is. It adds no capability of its own and is satisfied incrementally: each CLI command satisfies it as that command is built.

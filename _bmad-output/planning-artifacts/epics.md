@@ -116,6 +116,10 @@ FR-25: Epic 5 - portability commands
 FR-26: Epic 5 - doctor diagnostics
 FR-27: Epic 5 - environment status
 FR-28: Epic 5 - method hot-swap
+FR-29: Epic 2 - SDK surface parity (added 2026-08-25; see prds/.../addendum-prd.md).
+  Every capability the binary exposes is reachable by importing packages, without
+  @panda/cli. Satisfied incrementally, one command at a time. Story 2.0 satisfies it
+  for `panda run`.
 
 ## Epic List
 
