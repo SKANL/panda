@@ -60,28 +60,18 @@ const PACKAGE_DIRS = [
 ] as const
 
 /**
- * The four packages `@panda/session` pulls in. They are listed because pnpm has
- * to be told WHERE each one comes from: the packed manifest carries
- * `"@panda/contracts": "0.0.0"`, a version no registry has, so without an
- * override the install would go looking for it. Wrong or missing entries here
- * make the install fail loudly, which is the behaviour wanted — the failure
- * mode this file exists to prevent is a SILENT resolution through the
- * workspace, and an override naming a tarball cannot reach one.
+ * The four packages `@panda/session` pulls in. Every one is declared as a DIRECT
+ * `file:` dependency of the consumer project, exactly as a third party handed a
+ * set of tarballs would have to declare them: the packed manifest says
+ * `"@panda/contracts": "0.0.0"`, a version no registry has, and npm satisfies
+ * that requirement from the top-level `file:` install of the same version.
+ *
+ * This list used to feed `pnpm.overrides`, and that is what broke CI — see the
+ * Spec Change Log #26. A missing entry here fails the install loudly, which is
+ * the behaviour wanted; the failure this file exists to prevent is a SILENT
+ * resolution through the workspace, and a tarball cannot reach one.
  */
 const SESSION_DEPENDENCIES = ['adapter-cli', 'contracts', 'kernel', 'workspace-local'] as const
-
-/**
- * The `@types/node` the repository itself resolved. Pinned EXACTLY rather than
- * ranged so the consumer install stays `--offline`: an exact version is already
- * in the pnpm store after `pnpm install`, a range would need registry metadata.
- * It is here because the shipped declarations need an ambient `AbortSignal`
- * (`@panda/contracts/dist/executor.d.ts`), which is a normal requirement for a
- * Node SDK and is stated in the spec's Verification rather than hidden behind
- * `skipLibCheck`.
- */
-const TYPES_NODE_VERSION: string = (
-  createRequire(import.meta.url)('@types/node/package.json') as { version: string }
-).version
 
 /**
  * The one skip, and it announces itself. `process.stderr.write`, not
@@ -336,19 +326,23 @@ const CONSUMER_TSCONFIG = JSON.stringify(
   {
     compilerOptions: {
       target: 'es2023',
-      lib: ['es2023'],
+      // `dom` for one reason, measured: the shipped declarations need an
+      // ambient `AbortSignal` and NOTHING else outside `es2023`. It is supplied
+      // either by this lib or by `@types/node`, and taking it from the lib means
+      // the consumer project installs no type package at all — which is what
+      // keeps the whole install `file:`-only and offline.
+      lib: ['es2023', 'dom'],
       module: 'nodenext',
       moduleResolution: 'nodenext',
       strict: true,
       noEmit: true,
-      // A REALISTIC strict Node consumer, not a lenient one. With
-      // `skipLibCheck: true` the shipped declarations passed while
-      // `@panda/contracts/dist/executor.d.ts` needed an ambient `AbortSignal`
-      // nothing supplied; that is what `types: ["node"]` answers, and running
-      // the check this way is what keeps the requirement honest instead of
-      // hidden behind a flag.
+      // STRICT, not lenient. `skipLibCheck: true` skips every `.d.ts` —
+      // including the ones this story ships — so it hid that
+      // `@panda/contracts/dist/executor.d.ts` needs an ambient `AbortSignal`
+      // nothing supplied. Measured with `lib: ["es2023"]` alone: `TS2304:
+      // Cannot find name 'AbortSignal'`. So the check is doing work.
       skipLibCheck: false,
-      types: ['node'],
+      types: [],
     },
     include: ['consumer.ts'],
   },
@@ -423,13 +417,15 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
           version: '0.0.0',
           private: true,
           type: 'module',
-          dependencies: { '@panda/session': tarball('session') },
-          devDependencies: { '@types/node': TYPES_NODE_VERSION },
-          pnpm: {
-            overrides: Object.fromEntries(
-              SESSION_DEPENDENCIES.map((packageDir) => [`@panda/${packageDir}`, tarball(packageDir)]),
-            ),
-          },
+          // Every `@panda/*` in the closure, DIRECT, each on its own tarball —
+          // and nothing else at all, so the install has no registry package to
+          // want and `--offline` is a fact rather than a hope.
+          dependencies: Object.fromEntries(
+            ['session', ...SESSION_DEPENDENCIES].map((packageDir) => [
+              `@panda/${packageDir}`,
+              tarball(packageDir),
+            ]),
+          ),
         },
         null,
         2,
@@ -440,13 +436,18 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     await writeFile(join(projectDir, 'consumer.ts'), CONSUMER_TYPES, 'utf8')
     await writeFile(join(projectDir, 'tsconfig.json'), `${CONSUMER_TSCONFIG}\n`, 'utf8')
 
-    // `--ignore-workspace` and `--offline` are both assertions rather than
-    // conveniences: the first refuses to let any parent workspace answer, the
-    // second refuses the registry. What is left is the tarballs and whatever
-    // `pnpm install` already put in the store, which is the only thing this
-    // proof is willing to have resolved.
-    const installed = await run('pnpm', ['install', '--ignore-workspace', '--offline'], projectDir, RUN_TIMEOUT_MS)
-    expect(installed.code, `pnpm install failed in the consumer project:\n${installed.output}`).toBe(0)
+    // npm, deliberately, and not the pnpm this repository is built with. pnpm
+    // produces the tarballs; the consumer is whoever received them, and npm is
+    // both what they most likely run and the thing that keeps this half of the
+    // proof independent of the workspace's own tooling. It also ships with Node,
+    // so there is no second binary to probe.
+    //
+    // `--offline` is an assertion rather than a convenience: every dependency is
+    // a `file:` tarball, so nothing here has a registry package to want, and the
+    // flag is what makes a future one fail loudly instead of quietly dialling
+    // out.
+    const installed = await run('npm', ['install', '--offline'], projectDir, RUN_TIMEOUT_MS)
+    expect(installed.code, `npm install failed in the consumer project:\n${installed.output}`).toBe(0)
 
     installedManifest = JSON.parse(
       await readFile(join(projectDir, 'node_modules', '@panda', 'session', 'package.json'), 'utf8'),
@@ -603,11 +604,12 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
   })
 
   it('declares @panda/* dependency ranges the packed versions actually satisfy', () => {
-    // The proof installs through `pnpm.overrides`, which resolve every
-    // `@panda/*` to a tarball whatever the range says — so a manifest requiring
-    // `"@panda/kernel": "^9.9.9"` installs and imports here and hands a registry
-    // consumer an `ETARGET`. The overrides are what keep the install offline;
-    // this is what stops them from masking the drift they enable.
+    // The consumer installs every `@panda/*` as a direct `file:` dependency,
+    // and npm satisfies each packed `"0.0.0"` requirement from the top-level
+    // install of that same version. That is a real resolution, but it is a
+    // LENIENT one: a manifest requiring `"@panda/kernel": "^9.9.9"` beside a
+    // top-level kernel would still be handed the tarball here and would hand a
+    // registry consumer an `ETARGET`. This is what stops that drift travelling.
     //
     // ponytail: exact equality, not semver range satisfaction. Every package is
     // `0.0.0` and every declared range is that literal, so a range parser would

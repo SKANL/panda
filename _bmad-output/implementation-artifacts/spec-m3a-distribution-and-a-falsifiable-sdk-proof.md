@@ -161,6 +161,9 @@ nobody sets is a proof nobody runs, which is why #20 wired the CI step that
 actually makes it run.
 
 **8. The install resolves through `pnpm.overrides` + `file:` tarballs, offline.**
+SUPERSEDED by #26 — the override half was silently ignored by pnpm 11 and broke
+CI. The tarball-only, registry-free half survives; the mechanism changed.
+
 The packed manifest carries `"@panda/contracts": "0.0.0"` — pnpm rewrote
 `workspace:*` on pack, measured — and no registry has that version, so each
 transitive `@panda/*` needs an override naming its tarball. The tarballs are
@@ -363,6 +366,142 @@ installed, and `build` is not a lifecycle script, so the unshipped
 manifest rewrite, which is the exact class of packer-specific mechanism #13 just
 deleted. It is publish-time cosmetics, and publishing is Ask-First.
 
+### Review round 2 — CI, red on Linux only
+
+**26. The consumer install was resolving through `pnpm.overrides`, which pnpm 11
+does not read. The consumer now declares its whole `@panda/*` closure — five
+direct `file:` dependencies — and installs them with npm.**
+
+The symptom was `ERR_PNPM_NO_OFFLINE_META: Failed to resolve
+@panda/adapter-cli@0.0.0 in package mirror …/registry.npmjs.org/@panda/adapter-cli.jsonl`,
+on both Node 24 and 26, with `pnpm check` green on both — and passing on Windows.
+
+IT IS NOT THE OPERATING SYSTEM. The temp project carried no `packageManager`
+field, so corepack handed it whatever pnpm is installed globally: **10.33.4** on
+this machine, and **11.23.0** on the runner, because `pnpm/action-setup@v4`
+installs the version the repo's `packageManager` names. Measured by adding
+`"packageManager": "pnpm@11.23.0"` to the same temp project on Windows, which
+reproduced the CI error byte for byte and printed the reason pnpm had been
+printing all along:
+
+```
+[WARN] The "pnpm" field in package.json is no longer read by pnpm.
+The following keys were ignored: "pnpm.overrides".
+```
+
+So under pnpm 11 the overrides were dropped silently, the transitive
+`@panda/adapter-cli@0.0.0` went looking for registry metadata, and `--offline`
+refused. The proof's own `pnpm --version` probe read the REPOSITORY's pnpm —
+11.23.0 — while the consumer install ran a different one. Nothing connected the
+two, and nothing could have noticed.
+
+WHAT THE `--offline` ASSERTION ACTUALLY PROVED, which is the lesson worth
+keeping. `pnpm install --offline` exiting 0 is satisfied by two different
+worlds: "every dependency came from a tarball", and "every dependency came from
+a warm store this machine happened to have". The proof asserted the exit code
+and never the shape, so it could not tell them apart — and under pnpm 10 the
+overrides quietly made it the first while under pnpm 11 it needed the second.
+The fix is structural rather than another assertion: the consumer project's
+dependencies are now `file:` tarballs and NOTHING else, so there is no registry
+package left for a store to have been warm about. A guard over the fixture this
+file writes itself would assert nothing a reader could not already see.
+
+THE DIRECT-DEPENDENCY SHAPE DOES NOT WORK UNDER pnpm, measured before switching:
+with all five `@panda/*` declared as top-level `file:` dependencies and no
+overrides at all, pnpm 11.23.0 still answers `ERR_PNPM_NO_OFFLINE_META: Failed
+to resolve @panda/contracts@0.0.0`. pnpm does not satisfy a dependency's
+registry-shaped `"0.0.0"` requirement from a top-level `file:` install of that
+same version. npm does — measured on npm 11.11.0, `added 5 packages`, exit 0,
+`--offline`, with the runtime session and the strict typecheck both green
+afterwards.
+
+So the consumer install moved to **npm**: pnpm produces the tarballs, npm is the
+party that received them. That is the shape that works, and it is also the point
+— the consumer half of a proof about distribution should not depend on this
+workspace's own package manager, and npm ships with Node, so there is no second
+binary to probe.
+
+THE COST, stated rather than hidden: npm's flat `node_modules` is a weaker
+isolation than pnpm's strict layout. Under pnpm, a consumer that installed only
+`@panda/session` structurally could not resolve `@panda/contracts`, and that was
+part of what the old shape proved. With every transitive declared directly —
+which is what the fix requires under any package manager — that property is gone
+regardless of which one installs. It is still pinned inside the workspace by
+`packages/session/test/guard.test.ts` and by `consumer.test.ts`'s single-import
+rule, and the consumer script executed here still imports `@panda/session` and
+nothing else.
+
+**27. The consumer typecheck installs no type package at all (amends #18).**
+`@types/node` pinned at an exact version was the previous answer, and it brought
+its own dependency: `undici-types`, which is not beside a hand-copied
+`@types/node`, so a strict check failed with five `TS2307: Cannot find module
+'undici-types'`. Measured instead: `lib: ["es2023", "dom"]` with `types: []` and
+`skipLibCheck: false` compiles the consumer clean. The shipped declarations need
+an ambient `AbortSignal` and nothing else outside `es2023` — that is a sharper
+statement of the requirement than "install `@types/node`", and it is what lets
+the consumer project hold `file:` dependencies exclusively (#26). The check is
+still doing work: with `lib: ["es2023"]` alone it fails `TS2304: Cannot find
+name 'AbortSignal'`.
+
+**28. Linux says something about the CLI bin that Windows did not (amends
+#14).** On Windows, a fresh install with no `dist/` simply produced no `panda`
+shim. Measured in `podman run node:24-alpine`, `pnpm install --frozen-lockfile`
+prints it twice, as a warning rather than a failure:
+
+```
+[WARN] Failed to create bin at /w/node_modules/.bin/panda.
+ENOENT: no such file or directory, open '/w/packages/cli/dist/bin/panda.js'
+```
+
+The install still exits 0 and everything downstream is green, so this is noise
+rather than breakage — but it is noise on every install, in CI included, and it
+comes from the root `@panda/cli` devDependency whose only purpose was the
+`pnpm exec panda` that #14 already retired. Removing that devDependency would
+silence it and would change `pnpm-lock.yaml`; that is the owner's call, not a
+patch to slip in here.
+
+**29. Verified on Linux in a container, because the defect this round repaired
+was invisible on Windows.** `podman run --rm -e CI=true node:24-alpine` over a
+clean copy of the tree — Linux x86_64, Node v24.19.0, pnpm 11.23.0 (the major
+that broke CI), npm 11.17.0:
+
+```
+OVL_INSTALL_EXIT=0   OVL_CHECK_EXIT=0   OVL_BUILD_EXIT=0   OVL_PROOF_EXIT=0
+proof: Test Files 1 passed (1)   Tests 8 passed | 1 skipped (9)
+```
+
+`CI=true` is required or pnpm refuses to purge a modules directory with no TTY.
+Copy the tree INTO the container (`cp -r /src /app`) rather than working in a
+bind mount — see below.
+
+TWO PRE-EXISTING TESTS FLAKED DURING THIS VERIFICATION. Neither is touched by
+this story, both are timing-sensitive, and both are recorded here rather than
+quietly re-run until green:
+
+- `packages/projection/test/inspect.test.ts` — "agrees with apply about a file
+  that moved under the merge" — failed in both runs done over a Windows-backed
+  bind mount and PASSED on the container's own filesystem, plus every run on
+  Windows. `hasFileChangedSince` detects a mid-merge rewrite by comparing
+  `mtimeMs` and `size`; both writes in that test are `{ "numStartups": N }\n`,
+  21 bytes each, so only the timestamp can carry the signal. Probed in that same
+  container, writing 21 bytes twice back to back: on the container's `/tmp`
+  (where the fixture lives, via `os.tmpdir()`) `mtimeMs` came back
+  `1787729302141.4963` BOTH times, while the bind mount moved 13 ms. So a
+  same-size rewrite inside one millisecond is undetectable by that check. Real,
+  small, and owned by `@panda/projection`; the upgrade path is
+  `stat(path, { bigint: true }).mtimeNs` or a content hash.
+- `packages/registry/test/lock.test.ts` — "release never deletes a successor's
+  lock" — failed once on Windows with `ENOENT` on the restored lock file, then
+  passed 3/3 on re-run and in the full gate afterwards. A rename/restore race on
+  a filesystem that briefly denies the path.
+
+ONE WRONG THEORY, recorded so nobody re-measures it: line endings.
+`core.autocrlf=true` here leaves some working-tree files CRLF, so a tar of the
+working tree is not what CI checks out. Normalising every text file to LF
+(leaving `packages/projection/test/goldens/**`, which `.gitattributes` marks
+`-text`) changed nothing — the projection clause failed identically before and
+after.
+
 ## Design Notes
 
 **Why the compiler and not a bundler.** Verified before speccing: TypeScript 7.0.2 with `rewriteRelativeImportExtensions` emits exactly what is needed — `./run-session.js` from `./run-session.ts`, `@panda/kernel` left alone, declarations and maps beside them. A bundler would be a new dependency solving a problem the lockfile already solves, and it would flatten the package boundaries AD-2 exists to keep visible.
@@ -381,8 +520,10 @@ deleted. It is publish-time cosmetics, and publishing is Ask-First.
 - `pnpm proof:consumer-install` -- expected: builds, packs all nine, installs into a project under the OS temp directory and runs a real session there. Measured: 8 passed / 1 skipped, ~13s. It builds first, so it never needs `pnpm build` run beforehand. `PANDA_CONSUMER_INSTALL=0` skips it and says so on stderr; anything else wrong -- a missing pnpm included -- fails it.
 - `pnpm panda -- <args>` -- runs the CLI from source with no build, via `--conditions=panda-source`. `pnpm exec panda` does NOT work in the repo (Spec Change Log #14).
 - CI runs `pnpm check`, then `pnpm build`, then the proof, on Node 24 and 26.
+- The producer half runs on pnpm (build, pack); the CONSUMER half installs with `npm install --offline` and only `file:` tarballs, so no store or cache needs to be warm anywhere (Spec Change Log #26).
+- Verified on Linux as well as Windows, because the CI-only failure this replaced was invisible here: `podman run --rm -e CI=true -v <clean checkout>:/w -w /w node:24-alpine` with `corepack enable`, then `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm proof:consumer-install`. `CI=true` is needed or pnpm refuses to purge a modules directory without a TTY. Expect ONE red clause from `pnpm check` in a container that this story does not own and CI does not see — `packages/projection/test/inspect.test.ts`, explained in Spec Change Log #29.
 
 **Stated limitations of the artifact, recorded rather than solved:**
 - **Nothing installs by name.** All nine packages are `"private": true`, version `0.0.0` and unpublished, so a consumer must be handed all nine tarballs and wire every transitive `@panda/*` by hand -- which is what the proof's `pnpm.overrides` do. That is the direct, intended consequence of the frozen block's Ask-First on publishing, not a defect to fix here.
-- **A strict consumer needs `@types/node`.** The shipped declarations use an ambient `AbortSignal`; with `skipLibCheck: false` and no `@types/node`, `@panda/contracts/dist/executor.d.ts` fails `TS2304`. Normal for a Node SDK, and the proof now compiles under exactly those settings so it stays true.
+- **A strict consumer needs an ambient `AbortSignal`.** The shipped declarations use it and need nothing else outside `es2023`; either `@types/node` or the DOM lib supplies it. With neither, `@panda/contracts/dist/executor.d.ts` fails `TS2304` under `skipLibCheck: false` — measured. The proof compiles a consumer under exactly those strict settings, taking `AbortSignal` from `lib: ["es2023", "dom"]` and installing no type package at all.
 - **`npm pack` still leaves `workspace:*` in dependencies.** npm has no workspace protocol; pnpm and yarn rewrite it, npm cannot. Pack with pnpm.
