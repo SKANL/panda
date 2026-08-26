@@ -10,7 +10,7 @@ import {
   type InitMachineOptions,
   type InitResult,
 } from '@panda/environment'
-import { resolveExecutor, runSession, type SessionOptions } from '@panda/session'
+import { readExecutorConfigLayers, runSession, type SessionOptions } from '@panda/session'
 
 // Exit codes (documented in the package README):
 //   0 — run completed with an ok envelope / init completed with no failed target
@@ -156,21 +156,30 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
 
   try {
     // The two capability calls, in order, with nothing between them the CLI
-    // decided: which executor is `@panda/session`'s answer, and so is the run.
-    const selection = await resolveExecutor({
+    // decided: reading panda's documents is `@panda/session`'s answer, and so is
+    // the run. The layers are handed FORWARD rather than resolved here so the
+    // documents are read once and the KERNEL's configuration is the one that
+    // decides — the CLI holds no kernel and composes nothing (Story M3.B).
+    const configLayers = await readExecutorConfigLayers({
       executorId,
       homeDir: options.homeDir,
       projectDir: options.cwd,
     })
-    reportSelection(selection, options.createAdapter !== undefined, err)
     const envelope = await runSession({
       prompt,
-      executorId: selection.executorId,
+      configLayers,
       adapterOptions: options.adapterOptions,
       cwd: options.cwd,
       createAdapter: options.createAdapter,
       createProvider: options.createProvider,
       onInterrupt: options.onInterrupt ?? defaultInterruptRegistration,
+      // Which agent is about to produce the output, said BEFORE anything is
+      // constructed, exactly where the old `resolveExecutor` call said it.
+      onSelection: (selection) => reportSelection(selection, options.createAdapter !== undefined, err),
+      // A configuration key panda read and could not use. Reported, never fatal:
+      // one forward-looking key in `~/.panda/config.json` used to fail every run
+      // on the machine, and silence would have been the other wrong answer.
+      onWarning: (message) => err(message),
     })
     // Printed AFTER cleanup now, where the old inline composition printed before
     // it. Deliberate, and the trade is worth naming: output can no longer be

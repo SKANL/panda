@@ -80,6 +80,38 @@ export default tseslint.config(
               message:
                 'cross-package imports must use the workspace package name, never a relative path out of the package (AD-2)',
             },
+            {
+              // The thin-binding pin, made STRUCTURAL. It has now been defeated
+              // twice by the same shape of move and never by a new idea: Story
+              // 2.0 by relative cross-package imports (closed by the clause
+              // above), and Story M3.B by RE-EXPORT — `@panda/session` briefly
+              // re-exported `createKernel` and both plugin factories, and a
+              // complete working session composition was planted in
+              // `packages/cli/src/` importing only `@panda/session`, with
+              // eslint, tsc and all 53 CLI assertions green. The dependency
+              // test watches the manifest and the specifier scan watches the
+              // package NAME; neither can see a capability that arrived through
+              // a package the CLI is allowed to import.
+              //
+              // So the restriction is on the NAMES, from any `@panda/*` module.
+              // Which package re-exports them stops mattering, which is the
+              // property the two previous versions lacked.
+              group: ['@panda/*'],
+              importNames: [
+                'createKernel',
+                'createSessionKernel',
+                'createExecutorPlugin',
+                'createWorkspacePlugin',
+                'createExecutorAdapter',
+                'seedExecutorConfig',
+                'selectExecutor',
+                'EXECUTOR_CATALOGUE',
+                'EXECUTOR_SERVICE',
+                'WORKSPACE_SERVICE',
+              ],
+              message:
+                '@panda/cli composes nothing: it may not hold a kernel, mount a plugin, resolve a service or build an adapter, whichever package re-exports the capability (thin-binding pin, AD-2)',
+            },
           ],
         },
       ],

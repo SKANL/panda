@@ -20,7 +20,8 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*"
+    "@panda/contracts": "workspace:*",
+    "@panda/kernel": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

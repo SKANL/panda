@@ -1,10 +1,20 @@
-export { runSession, SESSION_ACTION_COST, SESSION_ACTION_ID, type SessionOptions } from './run-session.ts'
+export {
+  createSessionKernel,
+  runSession,
+  SESSION_ACTION_COST,
+  SESSION_ACTION_ID,
+  type SessionKernelOptions,
+  type SessionOptions,
+} from './run-session.ts'
 // The selection, beside the run it feeds (FR-29). A consumer that imports this
 // package gets BOTH halves of `panda run` — which executor, and the session —
 // without `@panda/cli`. `ExecutorSelection.available` carries the id list, so
 // nothing else of the catalogue has to be on the surface to print alternatives.
 export {
   resolveExecutor,
+  readExecutorConfigLayers,
+  type ExecutorConfigDocument,
+  type ExecutorConfigLayers,
   type ExecutorSelection,
   type ResolveExecutorOptions,
 } from './executors.ts'
@@ -37,4 +47,15 @@ export type {
   WorkspaceProvider,
 } from '@panda/contracts'
 export { createMemoryLogSink } from '@panda/kernel'
-export type { ActionPolicy, LogRecord, LogSink, MemoryLogSink } from '@panda/kernel'
+// `PandaKernel` is a TYPE and nothing else — it is what names
+// `SessionOptions.kernel` and the return of `createSessionKernel`, and it erases
+// at runtime. `createKernel` itself, both plugin FACTORIES and the config
+// seed/select helpers were briefly re-exported here for a host that wanted to
+// assemble a kernel; every one of them was withdrawn on review, because a
+// factory a caller can invoke with an `ActivationContext` of its own hands back
+// a real vendor adapter wired to the caller's own pipeline. A session-only
+// consumer's bypass surface went from nothing to one, and a complete session
+// composition was planted inside `@panda/cli` importing only this package with
+// the whole gate green. `createSessionKernel` above replaces all five: it gives
+// a host the shared-kernel capability and hands back no factory.
+export type { ActionPolicy, LogRecord, LogSink, MemoryLogSink, PandaKernel } from '@panda/kernel'

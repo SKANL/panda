@@ -19,3 +19,21 @@ export type {
   SpawnOptions,
   SpawnOutcome,
 } from './spawn-seam.ts'
+export {
+  DEFAULT_EXECUTOR_ID,
+  EXECUTOR_CATALOGUE,
+  availableExecutorIds,
+  createExecutorAdapter,
+  unknownExecutor,
+  type ShippedExecutor,
+} from './catalogue.ts'
+export {
+  DEFAULT_EXECUTOR_ACTION_COST,
+  EXECUTOR_CONFIG_KEY,
+  EXECUTOR_PLUGIN_ID,
+  EXECUTOR_SERVICE,
+  createExecutorPlugin,
+  type ExecutorPlugin,
+  type ExecutorPluginOptions,
+  type ExecutorService,
+} from './plugin.ts'

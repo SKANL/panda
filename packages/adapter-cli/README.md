@@ -22,9 +22,23 @@ an engine-owned `data` key) with a coded error.
 Adding a fourth executor means adding a record — `test/trait-stub.test.ts` proves it by passing
 the whole clause suite with a trait record the engine has never seen.
 
-Only `panda run` consumes an adapter today, and it is hardwired to Claude Code: **codex and
-opencode are library surface for now**. Adding an executor selector to the CLI is deliberately
-out of scope for this story.
+All three are reachable from `panda run --executor <id>` and from
+`.panda/config.json`'s `executor` key (Story 2.7c). This package owns the catalogue that maps an
+id to its adapter — `EXECUTOR_CATALOGUE`, `DEFAULT_EXECUTOR_ID`, `createExecutorAdapter` — because
+the kernel plugin below has to perform that lookup for itself.
+
+### As a kernel plugin
+
+`createExecutorPlugin()` mounts an adapter on a `@panda/kernel` container. It reads WHICH executor
+from the kernel's composed configuration (its own `executor` key, the same one `.panda/config.json`
+spells), rejects activation when that key names nothing this package ships, and provides the
+`executor` service.
+
+That service is a **runner**, not an adapter: `{ executorId, run(actionId, request) }`. The adapter
+is closed over and never handed out, so every run registers an action on the KERNEL's interception
+waterfall and a cap refuses before a process is spawned. What that closes is the container's
+surface — anyone who imports `createClaudeCodeAdapter` from here can still drive one directly, and
+`deferred-work.md` keeps that open rather than claiming otherwise.
 
 ### Finding the result in a JSONL stream
 

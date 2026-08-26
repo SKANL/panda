@@ -41,6 +41,9 @@ importers:
       '@panda/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@panda/kernel':
+        specifier: workspace:*
+        version: link:../kernel
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -197,6 +200,9 @@ importers:
       '@panda/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@panda/kernel':
+        specifier: workspace:*
+        version: link:../kernel
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

@@ -1,8 +1,13 @@
 # @panda/session
 
 The panda session: everything `panda run` does except argv, JSON and exit codes.
-Create a workspace, obtain an adapter, run a prompt under a cancellation signal
-through the kernel's interception waterfall, release and dispose.
+Compose through a kernel, create a workspace, run a prompt under a cancellation
+signal through that kernel's interception waterfall, release and dispose.
+
+The adapter and the workspace provider are **mounted as kernel plugins**, not
+constructed: `createSessionKernel` registers both, seeds the kernel's layered
+configuration from panda's own documents, and `runSession` consumes the
+`executor` and `workspace` services by name.
 
 Installing `@panda/cli` is not required — that is the point of this package. Nor
 is installing `@panda/contracts` or `@panda/kernel`: every type and helper the
@@ -35,14 +40,23 @@ try {
 - **The provider.** The session disposes whatever `createProvider` returns, on
   every path. Return a **fresh** provider per session; a pooled one comes back
   disposed and the next session fails with `PANDA_CONTRACT_PROVIDER_DISPOSED`.
+  `createProvider` is **refused** beside a supplied `kernel` — a supplied kernel
+  already carries a provider, and pooling one behind its shared pipeline made the
+  second run fail `PANDA_KERNEL_ACTION_INVALID` on a repeated workspace id.
+- **The kernel.** A kernel `runSession` built itself is stopped on every path,
+  which is what runs every mounted plugin's disposer. A kernel you passed in is
+  yours to stop; the session never does, so several sessions can share one.
 - **Interrupts.** There is no default — a library that installs
   `process.on('SIGINT')` steals the signal from its host. Pass `onInterrupt` to
   wire your own (`@panda/cli` passes its SIGINT/SIGTERM registration).
 
 ## Budgets and the record stream
 
-The executor invocation is an action on a `createActionPipeline` waterfall, so
-declarative caps apply to it and every invocation is recorded:
+The executor invocation is an action on the **kernel's** waterfall, so
+declarative caps apply to it and every invocation is recorded. `log` receives the
+waterfall's records; the kernel's lifecycle records (manifest validation,
+activation, disposal) stay in the kernel's own stream — build the kernel yourself
+to read those, as the shared-kernel example below does:
 
 ```ts
 import { createMemoryLogSink, runSession, SESSION_ACTION_ID } from '@panda/session'
@@ -61,11 +75,68 @@ try {
 Records are subject-scoped to the workspace, so match with
 `record.subject.startsWith(SESSION_ACTION_ID + '#')`.
 
+## Panda's own configuration
+
+`runSession` reads no files. Hand it the documents instead, and they seed the
+kernel's layered configuration — the ONE composed document both the executor
+selection and every mounted plugin read:
+
+```ts
+import { readExecutorConfigLayers, runSession } from '@panda/session'
+
+const configLayers = await readExecutorConfigLayers({ projectDir: process.cwd() })
+await runSession({ prompt: 'list files', configLayers })
+```
+
+`resolveExecutor()` still exists and still answers *which executor*, but a
+selection alone carries no document: `runSession({ executorId })` seeds only
+panda's defaults and that one choice, so nothing a user wrote reaches a mounted
+plugin. Pass `configLayers` whenever you want the document to configure the run.
+
+Resolution order is `defaults → global → project → agent → invocation`. Naming a
+`cwd` makes the workspace root this invocation's answer; omitting one lets a
+`workspace.rootDir` in the document decide. A key panda reads and cannot use is
+reported through `onWarning` and never fails the run.
+
+## One kernel, many sessions — one budget
+
+`runSession` builds a kernel per call unless you hand it one. `createSessionKernel`
+builds one you own, and then the pipeline, its caps and its record stream are
+shared by every session on it:
+
+```ts
+import { createMemoryLogSink, createSessionKernel, runSession } from '@panda/session'
+
+const log = createMemoryLogSink()
+const kernel = createSessionKernel({
+  log, // the WHOLE kernel stream: activation and disposal, not only the waterfall
+  actionPolicy: { maxTotalCost: 1.5 },
+  executorId: 'codex',
+  onWarning: (message) => console.error(message),
+})
+
+await runSession({ prompt: 'first', kernel })
+// Refused: PANDA_KERNEL_COST_CAP_EXCEEDED, before the executor is spawned.
+await runSession({ prompt: 'second', kernel }).catch(() => {})
+await kernel.stop() // disposes every mounted plugin, in reverse order
+```
+
+`createSessionKernel` is the only composition surface this package exposes, and
+that is deliberate: it hands back a started kernel and no plugin factory. A
+`PluginFactory` a caller can invoke with an `ActivationContext` of its own
+construction yields a real vendor adapter wired to the caller's own pipeline, so
+re-exporting the factories put a bypass on the surface of a package whose reason
+to exist is that the executor goes through the waterfall.
+
+A kernel you supply owns its configuration, its plugins, its pipeline, its sink
+and its provider, so `configLayers`, `cwd`, `executorId`, `adapterOptions`,
+`createAdapter`, `createProvider`, `onSelection`, `log` and `actionPolicy` are
+**refused** beside it rather than silently ignored.
+
 **Read the caps honestly.** One session registers one action of cost 1 and
-invokes it once, on a pipeline of its own. So `maxInvocations`, `maxTotalCost`
-and `maxConcurrent` currently collapse to a single boolean — *may this session
-spawn an executor at all* — and `maxInvocations: 1` is a no-op, not a budget.
-Five sessions with `maxInvocations: 1` run five executors, because each owns its
-pipeline. A real token budget needs a cost the adapter reports after the run and
-a pipeline shared across sessions; both are tracked in
-`_bmad-output/implementation-artifacts/deferred-work.md`.
+invokes it once, so within a single session `maxInvocations`, `maxTotalCost` and
+`maxConcurrent` still collapse to a single boolean — *may this session spawn an
+executor at all* — and `maxInvocations: 1` is a no-op there. Across sessions on
+one kernel they are real, and the error `code` says which cap fired. A token
+budget still needs a cost the adapter reports **after** the run; that half is
+tracked in `_bmad-output/implementation-artifacts/deferred-work.md`.

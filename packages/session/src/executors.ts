@@ -2,68 +2,42 @@ import { lstat, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
-  CLAUDE_CODE_TRAITS,
-  CODEX_TRAITS,
-  OPENCODE_TRAITS,
-  createClaudeCodeAdapter,
-  createCodexAdapter,
-  createOpenCodeAdapter,
+  DEFAULT_EXECUTOR_ID,
+  EXECUTOR_CATALOGUE,
+  EXECUTOR_CONFIG_KEY,
+  availableExecutorIds,
+  createExecutorAdapter,
+  unknownExecutor,
 } from '@panda/adapter-cli'
-import type { CliExecutorAdapter, CliExecutorAdapterOptions, ExecutorTraits } from '@panda/adapter-cli'
+import type { CliExecutorAdapterOptions, ShippedExecutor } from '@panda/adapter-cli'
 import { PANDA_ERROR_CODES, PandaError, isRecord } from '@panda/contracts'
-import { createLayeredConfig } from '@panda/kernel'
+import { createLayeredConfig, deepMerge } from '@panda/kernel'
 import type { ConfigLayer, LayeredConfig } from '@panda/kernel'
 
-/**
- * One shipped adapter: its OWN trait record, and the factory that builds it.
- *
- * The pair is what the catalogue stores, and the trait record is what supplies
- * the key. There is deliberately no `id` field here to write beside it — a
- * second spelling of the name is the thing this file exists to prevent.
- */
-export interface ShippedExecutor {
-  readonly traits: ExecutorTraits
-  readonly create: (options?: CliExecutorAdapterOptions) => CliExecutorAdapter
+// Executor SELECTION: which shipped adapter this run uses, decided through the
+// layered configuration panda already owns.
+//
+// The catalogue itself moved to `@panda/adapter-cli` with Story M3.B — the
+// package that ships the three adapters is the one whose kernel plugin has to
+// turn a configured id into one. It is re-exported here unchanged, because
+// `@panda/session` is the FR-29 surface: a consumer that installed only this
+// package still gets the whole selection vocabulary from one import.
+export {
+  DEFAULT_EXECUTOR_ID,
+  EXECUTOR_CATALOGUE,
+  // Re-exported, never re-declared. A second `const EXECUTOR_CONFIG_KEY` lived
+  // here and a third literal lived in `run-session.ts`, so the REPORTED
+  // selection and the MOUNTED adapter were derived independently from the same
+  // document: renaming one produced `executor: codex (selected by the 'project'
+  // layer)` on stderr while `claude` was spawned, exit 0. This package's whole
+  // catalogue design exists because a second spelling drifted from the thing it
+  // named; the key gets the same treatment.
+  EXECUTOR_CONFIG_KEY,
+  availableExecutorIds,
+  createExecutorAdapter,
+  type ShippedExecutor,
 }
-
-const SHIPPED: readonly ShippedExecutor[] = [
-  { traits: CLAUDE_CODE_TRAITS, create: createClaudeCodeAdapter },
-  { traits: CODEX_TRAITS, create: createCodexAdapter },
-  { traits: OPENCODE_TRAITS, create: createOpenCodeAdapter },
-]
-
-/**
- * Every adapter panda ships, keyed by each adapter's own `executorId` TRAIT.
- *
- * Keyed from the traits, never from a list of string literals written beside
- * them: Story 2.7a shipped an executor that was never once exercised because a
- * parallel name list drifted from the thing it named. A name that exists here is
- * a name whose trait record supplied it, so a fourth adapter appears by being
- * shipped rather than by being listed twice.
- *
- * The key alone does not close the whole hole — a mis-paired factory would key
- * codex's traits to opencode's constructor — so `test/executors.test.ts` builds
- * every entry and asserts the ADAPTER answers with the key it was found under.
- */
-export const EXECUTOR_CATALOGUE: ReadonlyMap<string, ShippedExecutor> = new Map(
-  SHIPPED.map((executor) => [executor.traits.executorId, executor]),
-)
-
-/**
- * What panda runs when nothing selects otherwise. Taken from the trait record,
- * so it is one of the catalogue's own keys by construction, and used as the
- * `defaults` LAYER rather than as a constructor fallback — the difference being
- * that a layer can be overridden and reported on, and a constructor cannot.
- */
-export const DEFAULT_EXECUTOR_ID: string = CLAUDE_CODE_TRAITS.executorId
-
-/** Every id a selection may name, in catalogue order. */
-export function availableExecutorIds(): readonly string[] {
-  return [...EXECUTOR_CATALOGUE.keys()]
-}
-
-/** The key panda reads out of its configuration document. */
-export const EXECUTOR_CONFIG_KEY = 'executor'
+export type { CliExecutorAdapterOptions }
 
 // ponytail: `.panda/config.json` is spelled here rather than imported from
 // `@panda/environment`, which owns the same `<scope>/.panda` convention. That
@@ -140,13 +114,6 @@ function unusable(filePath: string, detail: string, cause?: unknown): PandaError
     PANDA_ERROR_CODES.configurationUnusable,
     `panda's configuration at '${filePath}' cannot be used: ${detail}`,
     cause === undefined ? undefined : { cause },
-  )
-}
-
-function unknownExecutor(executorId: string): PandaError {
-  return new PandaError(
-    PANDA_ERROR_CODES.executorNotFound,
-    `panda has no adapter named '${executorId}'; available executors: ${availableExecutorIds().join(', ')}`,
   )
 }
 
@@ -270,44 +237,72 @@ async function readConfigDocument(filePath: string): Promise<Record<string, unkn
 }
 
 /**
- * Reads one document into one layer, or leaves the layer absent.
+ * Marks a document `readExecutorConfigLayers` actually read off disk.
  *
- * The `setLayer` call is WRAPPED because the kernel's validation is what rejects
- * a hostile document, and it names the offending KEY rather than the file: a
- * `__proto__` key in the machine document and in the project document produced
- * byte-identical stderr naming neither, and an unbounded nesting depth (~3000
- * levels) produced a bare `RangeError` carrying no `code` at all — an UNCODED
- * crash on the exact input class the matrix says must be refused coded. The
- * kernel's own error travels on as the `cause`, so its code is preserved in the
- * chain rather than swallowed.
+ * Module-private and unforgeable from outside this file. The layer a selection
+ * is reported under is the one printed on stderr — "a swap you cannot see is not
+ * one you can trust" — and without this brand a caller could hand `runSession` a
+ * document it invented, name it `project`, and have `panda run` print
+ * `selected by the 'project' layer` for a file that does not exist. A supplied
+ * document is composed into the `agent` layer instead: still narrower than the
+ * project document, still reported honestly as coming from the running host.
  */
-async function applyDocument(
-  config: LayeredConfig,
-  layer: 'global' | 'project',
-  filePath: string,
-): Promise<void> {
-  const document = await readConfigDocument(filePath)
-  if (document === undefined) return
-  try {
-    config.setLayer(layer, document)
-  } catch (error) {
-    throw unusable(filePath, `the '${layer}' configuration layer rejected it: ${describeError(error)}`, error)
-  }
+const READ_FROM_DISK = Symbol('panda.executor-config.read-from-disk')
+
+/** One of panda's own configuration documents, and where it came from. */
+export interface ExecutorConfigDocument {
+  /** The path it was read from, so a layer that rejects it can name the file. */
+  readonly filePath: string
+  readonly document: unknown
+}
+
+function readDocument(filePath: string, document: unknown): ExecutorConfigDocument {
+  return { filePath, document, [READ_FROM_DISK]: true } as ExecutorConfigDocument
+}
+
+function wasReadFromDisk(entry: ExecutorConfigDocument): boolean {
+  return (entry as { [READ_FROM_DISK]?: unknown })[READ_FROM_DISK] === true
 }
 
 /**
- * Which executor this run uses, resolved through the kernel's layered
- * configuration: `defaults` → `global` → `project` → `invocation`.
+ * Panda's own documents, READ but not yet composed.
  *
- * This — not `runSession` — is what reads the filesystem. A session primitive
- * whose behaviour depends on files under the running user's home is not usable
- * from a host that already knows what it wants, and it would make every existing
- * `panda run` test depend on the `~/.panda` of whoever ran the suite.
- *
- * Ships from `@panda/session` beside `runSession`, so FR-29 holds: a third party
- * imports this package and gets the selection AND the run, with no CLI involved.
+ * This exists so the documents are read ONCE per run. Story M3.B made the
+ * kernel's layered configuration the one the mounted plugins read, and the
+ * kernel is constructed inside `runSession` — so a caller that resolved a
+ * selection first and then ran would have read `.panda/config.json` twice, with
+ * a window between them in which the two could disagree. Handing the SNAPSHOTS
+ * forward closes that window: `seedExecutorConfig` composes them into whichever
+ * configuration is going to be used, and nothing re-reads a file.
  */
-export async function resolveExecutor(options: ResolveExecutorOptions = {}): Promise<ExecutorSelection> {
+export interface ExecutorConfigLayers {
+  /**
+   * Values composed UNDER panda's own built-in default, so any document can
+   * still override them. `@panda/session` puts its computed workspace root here
+   * when the caller named no `cwd`, which is what lets a user's
+   * `workspace.rootDir` actually decide the directory.
+   */
+  readonly defaults?: unknown
+  /** `<homeDir>/.panda/config.json`, when it exists. */
+  readonly global?: ExecutorConfigDocument
+  /** `<projectDir>/.panda/config.json`, when it exists and is not the machine one. */
+  readonly project?: ExecutorConfigDocument
+  /** This invocation's explicit override, e.g. `panda run --executor codex`. */
+  readonly invocation?: unknown
+}
+
+/**
+ * Reads panda's own documents into layer snapshots. The ONLY filesystem access
+ * in executor selection.
+ *
+ * A MISSING document is an absent layer. A document that exists and cannot be
+ * used is a coded error — reading a corrupt file and shrugging back to the
+ * default runs a different agent than the user configured, silently, which is
+ * the failure this selection exists to remove.
+ */
+export async function readExecutorConfigLayers(
+  options: ResolveExecutorOptions = {},
+): Promise<ExecutorConfigLayers> {
   // Every field read ONCE, before the first await, for the same reason
   // `runSession` does it: a live read after control has returned to the caller's
   // event loop lets an accessor answer with a temp directory now and the real
@@ -316,25 +311,87 @@ export async function resolveExecutor(options: ResolveExecutorOptions = {}): Pro
   const home = scopeRoot('the home directory', homeDir)
   const project = scopeRoot('the project directory', projectDir)
 
-  const config = createLayeredConfig()
-  // Panda's built-in default is a LAYER, never a constructor fallback. That is
-  // what makes "nothing configured" a reportable provenance rather than an
-  // invisible branch.
-  config.setLayer('defaults', { [EXECUTOR_CONFIG_KEY]: DEFAULT_EXECUTOR_ID })
-
+  const layers: { global?: ExecutorConfigDocument; project?: ExecutorConfigDocument; invocation?: unknown } = {}
   // Documents go in whole, not just their `executor` key: `setLayer` is what
   // rejects a prototype-polluting document, and it can only reject what it sees.
-  await applyDocument(config, 'global', executorConfigPath(home))
+  const globalPath = executorConfigPath(home)
+  const globalDocument = await readConfigDocument(globalPath)
+  if (globalDocument !== undefined) layers.global = readDocument(globalPath, globalDocument)
   // Running panda FROM your home directory is ONE document, not two. Loading it
   // into both layers reported `project` as the deciding layer for a project that
   // does not exist — a false provenance on the one line this story adds.
-  if (project !== home) await applyDocument(config, 'project', executorConfigPath(project))
+  if (project !== home) {
+    const projectPath = executorConfigPath(project)
+    const projectDocument = await readConfigDocument(projectPath)
+    if (projectDocument !== undefined) layers.project = readDocument(projectPath, projectDocument)
+  }
   if (executorId !== undefined) {
     const requested = executorId.trim()
     if (requested.length === 0) throw blankExecutor()
-    config.setLayer('invocation', { [EXECUTOR_CONFIG_KEY]: requested })
+    layers.invocation = { [EXECUTOR_CONFIG_KEY]: requested }
   }
+  return layers
+}
 
+/**
+ * Composes panda's defaults and the given documents into ONE layered
+ * configuration: `defaults` -> `global` -> `project` -> `invocation`.
+ *
+ * The `setLayer` calls are WRAPPED because the kernel's validation is what
+ * rejects a hostile document, and it names the offending KEY rather than the
+ * file: a `__proto__` key in the machine document and in the project document
+ * produced byte-identical stderr naming neither, and an unbounded nesting depth
+ * (~3000 levels) produced a bare `RangeError` carrying no `code` at all — an
+ * UNCODED crash on the exact input class the matrix says must be refused coded.
+ * The kernel's own error travels on as the `cause`, so its code is preserved in
+ * the chain rather than swallowed.
+ *
+ * Since Story M3.B this is what seeds the KERNEL's configuration, so the mounted
+ * plugins and the executor selection read one composed document rather than two.
+ */
+export function seedExecutorConfig(config: LayeredConfig, layers: ExecutorConfigLayers = {}): void {
+  // Panda's built-in default is a LAYER, never a constructor fallback. That is
+  // what makes "nothing configured" a reportable provenance rather than an
+  // invisible branch. Caller-supplied defaults compose UNDER it, so a document
+  // still wins over both.
+  config.setLayer('defaults', deepMerge(layers.defaults ?? {}, { [EXECUTOR_CONFIG_KEY]: DEFAULT_EXECUTOR_ID }))
+  // A document panda READ goes into the layer its file belongs to. A document a
+  // caller merely handed over goes into `agent` — the layer for "the running
+  // host supplied this" — so the provenance panda reports can never be a claim
+  // the caller made up. Two supplied documents compose in the same order.
+  let supplied: unknown
+  for (const layer of ['global', 'project'] as const) {
+    const entry = layers[layer]
+    if (entry === undefined) continue
+    if (!wasReadFromDisk(entry)) {
+      supplied = supplied === undefined ? entry.document : deepMerge(supplied, entry.document)
+      continue
+    }
+    try {
+      config.setLayer(layer, entry.document)
+    } catch (error) {
+      throw unusable(entry.filePath, `the '${layer}' configuration layer rejected it: ${describeError(error)}`, error)
+    }
+  }
+  if (supplied !== undefined) {
+    try {
+      config.setLayer('agent', supplied)
+    } catch (error) {
+      throw new PandaError(
+        PANDA_ERROR_CODES.configurationUnusable,
+        `the configuration this host supplied cannot be used: the 'agent' layer rejected it: ${describeError(error)}`,
+        { cause: error },
+      )
+    }
+  }
+  if (layers.invocation !== undefined) config.setLayer('invocation', layers.invocation)
+}
+
+/**
+ * The selection an already-seeded configuration decides, with the layer that
+ * decided it. Pure: it reads the composed view and touches no file.
+ */
+export function selectExecutor(config: LayeredConfig): ExecutorSelection {
   // The value AND its provenance from ONE dump entry, so the two cannot disagree.
   const decided = config
     .dump()
@@ -355,22 +412,24 @@ export async function resolveExecutor(options: ResolveExecutorOptions = {}): Pro
 }
 
 /**
- * The adapter for one catalogue id, or panda's default when none is named.
+ * Which executor this run uses, resolved through the kernel's layered
+ * configuration: `defaults` -> `global` -> `project` -> `invocation`.
  *
- * The default flows from `DEFAULT_EXECUTOR_ID` through the same catalogue lookup
- * every other id takes, so there is no path on which a hardcoded constructor
- * runs. An id the catalogue does not hold is a coded failure, never a fallback.
+ * This — not `runSession` — is what reads the filesystem. A session primitive
+ * whose behaviour depends on files under the running user's home is not usable
+ * from a host that already knows what it wants, and it would make every existing
+ * `panda run` test depend on the `~/.panda` of whoever ran the suite.
  *
- * `options` is the adapter's OWN seam — a child-process spawner, or a binary
- * path that overrides the trait's command. `SessionOptions.adapterOptions`
- * threads it through from `runSession` and from `panda run`, so it is a live
- * seam rather than flexibility no caller could reach.
+ * Ships from `@panda/session` beside `runSession`, so FR-29 holds: a third party
+ * imports this package and gets the selection AND the run, with no CLI involved.
+ *
+ * `panda run` does NOT call this: it reads the layers once and hands them to
+ * `runSession`, which seeds the KERNEL's configuration and selects from that one
+ * composed document. The three steps are exactly the three this function performs.
  */
-export function createExecutorAdapter(
-  executorId: string = DEFAULT_EXECUTOR_ID,
-  options?: CliExecutorAdapterOptions,
-): CliExecutorAdapter {
-  const shipped = EXECUTOR_CATALOGUE.get(executorId)
-  if (shipped === undefined) throw unknownExecutor(executorId)
-  return shipped.create(options)
+export async function resolveExecutor(options: ResolveExecutorOptions = {}): Promise<ExecutorSelection> {
+  const layers = await readExecutorConfigLayers(options)
+  const config = createLayeredConfig()
+  seedExecutorConfig(config, layers)
+  return selectExecutor(config)
 }
