@@ -50,11 +50,28 @@ export function groupByKind(entries: readonly RegistryEntry[]): RegistryEntriesB
   return grouped
 }
 
+/**
+ * Whether the run is allowed to LAND what it computes.
+ *
+ * `'inspect'` is the whole of `panda doctor`: the identical merge, the identical
+ * drift classification, the identical ledger read — and neither of the two
+ * writes a run performs. A diagnosis computed by a second code path can disagree
+ * with what applying would do, and it would disagree exactly when a user is
+ * trying to fix something.
+ */
+export type ProjectionMode = 'apply' | 'inspect'
+
 export interface RunProjectionOptions {
   readonly entries: RegistryEntriesByKind
   readonly targets: readonly ProjectionTarget[]
   /** Required: without a ledger panda cannot know which entries are its own. */
   readonly ledger: ProjectionLedger
+  /**
+   * Defaults to `'apply'`. Under `'inspect'` NOTHING is written — not the vendor
+   * file, not the ledger — and `ProjectionResult.written` reads as "these bytes
+   * WOULD have changed", which is the one field whose sentence the mode alters.
+   */
+  readonly mode?: ProjectionMode
 }
 
 export interface ProjectionRun {
@@ -128,18 +145,25 @@ async function projectTarget(
   target: ProjectionTarget,
   entries: RegistryEntriesByKind,
   records: readonly ProjectionLedgerRecord[],
+  apply: boolean,
 ): Promise<{ result: ProjectionResult; records: readonly ProjectionLedgerRecord[] }> {
   const { text: nativeText, snapshot } = await readNativeFile(target.filePath)
   const outcome = await target.merge({ entries, records, nativeText })
   const written = outcome.text !== nativeText
   if (written) {
+    // Checked in BOTH modes, and that is the point rather than an oversight. It
+    // is true that an inspection has no write window to lose — but the
+    // PREDICTION is doctor's whole artifact, and a mode that skipped this would
+    // answer "this file would be rewritten" for a target where applying returns
+    // no result row and a failure instead. `~/.claude.json` is rewritten by
+    // Claude Code itself, so this is the machine doctor gets run on.
     if (await hasFileChangedSince(target.filePath, snapshot)) {
       throw new PandaError(
         PANDA_ERROR_CODES.projectionTargetFailed,
         `projection target '${target.targetId}' failed: file modified during projection: '${target.filePath}'`,
       )
     }
-    await atomicWriteText(target.filePath, outcome.text)
+    if (apply) await atomicWriteText(target.filePath, outcome.text)
   }
   return {
     result: {
@@ -156,12 +180,33 @@ async function projectTarget(
 }
 
 export async function runProjection(options: RunProjectionOptions): Promise<ProjectionRun> {
-  const ledger = await options.ledger.read()
+  // Every caller-controlled field read ONCE, here, before the first await. A
+  // caller object whose `mode` getter answers `'inspect'` now and `'apply'` on
+  // the second read would land bytes on a machine the caller was promised would
+  // not be touched, and `panda doctor` is precisely the command that promises it.
+  const { entries, targets, ledger: store } = options
+  // FAIL CLOSED. Not `mode !== 'inspect'`: that writes for `'Inspect'`,
+  // `'inspect '`, `'dry-run'` and `null`, and the one thing this field decides
+  // is whether panda writes into files it does not own. A no-op `panda init` is
+  // visible in its own output (`written: false` everywhere); a write into a
+  // user's config on the say-so of a typo is not. So both failures are loud.
+  // `=== undefined`, not `??`: `null` is a value a caller PASSED, not an
+  // omission, and coalescing it into the writing default is the same silent
+  // accept this guard exists to remove.
+  const mode = options.mode === undefined ? 'apply' : options.mode
+  if (mode !== 'apply' && mode !== 'inspect') {
+    throw new PandaError(
+      PANDA_ERROR_CODES.projectionModeInvalid,
+      `projection mode ${JSON.stringify(mode)} is not recognised; use 'apply' or 'inspect' (omitted means 'apply')`,
+    )
+  }
+  const apply = mode === 'apply'
+  const ledger = await store.read()
   const warnings: ProjectionWarning[] = [...ledger.warnings]
   const results: ProjectionResult[] = []
   const failures: ProjectionFailure[] = []
 
-  for (const target of options.targets) {
+  for (const target of targets) {
     const scope = { targetId: target.targetId, filePath: resolveOwnedPath(target.filePath) }
     const claimed = ledger.records.filter(
       (record) =>
@@ -170,7 +215,7 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
     )
     let projected: { result: ProjectionResult; records: readonly ProjectionLedgerRecord[] }
     try {
-      projected = await projectTarget(target, options.entries, claimed)
+      projected = await projectTarget(target, entries, claimed, apply)
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
       continue
@@ -184,9 +229,12 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
     // travels, so a caller learns the projection did not COMPLETE; what it no
     // longer learns is a falsehood about what landed on disk.
     results.push(projected.result)
-    if (ledger.state === 'unreadable') continue
+    // The SECOND of the two writes, and inspection skips it here rather than
+    // inside the ledger: a diagnosis that recorded claims for entries it did not
+    // write would tell the next real run that panda owns bytes it never placed.
+    if (!apply || ledger.state === 'unreadable') continue
     try {
-      await options.ledger.update(scope, projected.records)
+      await store.update(scope, projected.records)
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
     }

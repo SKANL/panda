@@ -12,6 +12,7 @@ import type {
 import { createMemoryLogSink } from '@panda/kernel'
 import type { LogSink } from '@panda/kernel'
 import { ProjectionLedger, groupByKind, runProjection } from '@panda/projection'
+import type { ProjectionMode } from '@panda/projection'
 import { RegistryStore } from '@panda/registry'
 import { EXECUTOR_PROFILES, detectExecutors } from './executors.ts'
 import type { ExecutorDetection, ExecutorProfile } from './executors.ts'
@@ -132,8 +133,14 @@ export interface InitProjectOptions extends InitMachineOptions {
   readonly projectDir?: string
 }
 
-/** True when no executor was found — the caller's non-zero-exit condition. */
-export function noExecutorsDetected(result: InitResult): boolean {
+/**
+ * True when no executor was found — the caller's non-zero-exit condition.
+ *
+ * Takes the DETECTION, not an `InitResult`: `panda doctor` has to answer the
+ * same question about the same evidence, and two spellings of "did panda find
+ * anything" is how the two commands come to disagree about one machine.
+ */
+export function noExecutorsDetected(result: { readonly detected: readonly ExecutorDetection[] }): boolean {
   return result.detected.every((detection) => !detection.present)
 }
 
@@ -188,7 +195,7 @@ function scopeUnavailable(detail: string, cause?: unknown): PandaError {
  * vendor config into it; and `panda project init ~/repo/.git` would have done
  * the same inside a git directory. Panda BINDS a project, it does not create one.
  */
-async function scopeDirectory(label: string, value: string): Promise<string> {
+export async function scopeDirectory(label: string, value: string): Promise<string> {
   if (typeof value !== 'string' || value.trim() === '') {
     throw scopeUnavailable(
       `${label} must be a non-empty path, but panda was given ${JSON.stringify(value)}`,
@@ -246,7 +253,16 @@ function targetsFor(
  * subjects are bounded by construction, so the only way this throws is a hostile
  * sink; the sink's own `dropped` counter remains the loss signal.
  */
-function recordProjection(log: LogSink, event: 'action.invoked' | 'action.completed' | 'action.failed', targetId: string): void {
+function recordProjection(
+  log: LogSink | undefined,
+  event: 'action.invoked' | 'action.completed' | 'action.failed',
+  targetId: string,
+): void {
+  // No sink means there is no action to record: `diagnose` passes none, because
+  // an `action.invoked` for a projection that deliberately never ran would put a
+  // projection panda did not perform into the record stream NFR-4 exists to make
+  // reconstructable. `initMachine`/`initProject` always pass one.
+  if (log === undefined) return
   try {
     log.record({ event, subject: `${PROJECTION_ACTION_ID}#${targetId}` })
   } catch {
@@ -254,21 +270,91 @@ function recordProjection(log: LogSink, event: 'action.invoked' | 'action.comple
   }
 }
 
-async function project(
+/**
+ * A per-target row in BOTH modes. `changed` is the one fact whose SENTENCE the
+ * mode decides — the merged text differs from the bytes on disk — so it is named
+ * for the fact and never for the write: `initMachine`/`initProject` map it to
+ * `written`, `diagnose` maps it to `wouldWrite`, and neither reading can be
+ * mistaken for the other by a caller holding the wrong one.
+ */
+export interface ScopeTarget {
+  readonly executorId: string
+  readonly targetId: string
+  readonly filePath: string
+  readonly changed: boolean
+  readonly drift: readonly DriftEntry[]
+  readonly unprojectable: readonly UnprojectableEntry[]
+  readonly error?: TargetFailure
+}
+
+/** Everything one scope's engine run produced, before either caller phrases it. */
+export interface ScopeReport {
+  readonly pandaDir: string
+  /**
+   * This scope's registry document. Under `'apply'` it exists by the time the
+   * report is built; under `'inspect'` it is only a PATH, and whether anything
+   * is there is the answer to "has panda been initialised here".
+   */
+  readonly registryPath: string
+  readonly ledgerPath: string
+  readonly entryCount: number
+  readonly detected: readonly ExecutorDetection[]
+  readonly targets: readonly ScopeTarget[]
+  readonly skipped: readonly SkippedExecutor[]
+  readonly warnings: readonly ProjectionWarning[]
+  /**
+   * Set ONLY under `'inspect'`, and only when panda's own registry document
+   * could not be read. `'apply'` rethrows instead: projecting against a registry
+   * panda cannot read would delete every entry it holds from every vendor file.
+   * When this is set, `targets` is EMPTY — with no registry there is nothing
+   * panda can honestly say projecting would do.
+   */
+  readonly registryError?: TargetFailure
+}
+
+/**
+ * A thrown error flattened to the two fields a caller acts on. A live `Error`
+ * serialises to `{}` for every caller that prints the result.
+ */
+function toTargetFailure(error: unknown): TargetFailure {
+  const code: unknown = (error as { code?: unknown } | null | undefined)?.code
+  return {
+    // Duck-typed on `code`, like the CLI's own `describe()`: the registry throws
+    // `PandaError`, but a code that arrived some other way is still the fact.
+    code: typeof code === 'string' && code.length > 0
+      ? (code as PandaErrorCode)
+      : PANDA_ERROR_CODES.registryStoreUnavailable,
+    message: error instanceof Error ? error.message : String(error),
+  }
+}
+
+/** Panda's own state directory for a scope root. One spelling, two callers. */
+function pandaDirOf(root: string): string {
+  return join(root, '.panda')
+}
+
+function storeFor(scope: 'machine' | 'project', homeDir: string, projectDir: string): RegistryStore {
+  return new RegistryStore(scope === 'machine' ? { homeDir } : { homeDir, projectDir })
+}
+
+/**
+ * The ONLY two writes into panda's own state that `panda init` performs: its
+ * directory, and the registry store document. They live here — OUTSIDE
+ * `runScope`, which `init` and `diagnose` share — so the read-only caller cannot
+ * reach them by construction rather than by remembering not to.
+ * `test/doctor.test.ts` proves the consequence at byte level.
+ */
+async function prepareScope(
   scope: 'machine' | 'project',
+  root: string,
   homeDir: string,
   projectDir: string,
-  log: LogSink,
-): Promise<InitResult> {
-  const root = scope === 'machine' ? homeDir : projectDir
-  const pandaDir = join(root, '.panda')
+): Promise<string> {
+  const pandaDir = pandaDirOf(root)
   // Panda's own directory, created by panda. `recursive` here means "tolerate an
   // existing directory", not "build a tree": the parent was validated as an
   // existing directory above, so the only thing this can still meet is `.panda`
   // occupied by a FILE, which arrives as a bare doubled EEXIST naming nothing.
-  // Everything below this line either writes into panda's own state through its
-  // owner (the registry store, the ledger) or into a vendor's file through the
-  // projection engine.
   try {
     await mkdir(pandaDir, { recursive: true })
   } catch (error) {
@@ -277,18 +363,48 @@ async function project(
       error,
     )
   }
-
-  const store = new RegistryStore(
-    scope === 'machine' ? { homeDir } : { homeDir, projectDir },
-  )
-  let registryPath: string
-  let entries: RegistryEntry[]
+  const store = storeFor(scope, homeDir, projectDir)
   try {
     // Materialised through the store itself, so the document's version and shape
     // stay the registry's to define. A corrupt store fails coded here rather than
     // being silently replaced.
-    registryPath = await store.ensure(scope === 'machine' ? 'global' : 'project')
+    return await store.ensure(scope === 'machine' ? 'global' : 'project')
+  } finally {
+    await store.dispose()
+  }
+}
+
+/**
+ * Registry -> detection -> projection engine, for one scope. `panda init` and
+ * `panda doctor` are THIS function under the two projection modes and nothing
+ * else: same entries, same detection, same targets, same engine call, same drift
+ * classification. Two code paths could disagree about what applying would do,
+ * and they would disagree exactly when a user is trying to fix something.
+ *
+ * Every line below either reads, or writes through the projection engine — which
+ * under `'inspect'` writes nothing at all.
+ */
+export async function runScope(
+  scope: 'machine' | 'project',
+  homeDir: string,
+  projectDir: string,
+  log: LogSink | undefined,
+  mode: ProjectionMode,
+): Promise<ScopeReport> {
+  const store = storeFor(scope, homeDir, projectDir)
+  const registryPath = store.storePath(scope === 'machine' ? 'global' : 'project')
+  let entries: RegistryEntry[] = []
+  let registryError: TargetFailure | undefined
+  try {
     entries = await store.list()
+  } catch (error) {
+    // Panda's OWN two state files, classified the same way. A corrupt ledger is
+    // already a reported finding; a corrupt registry throwing out of the command
+    // whose job is diagnosing panda's state would be the opposite treatment for
+    // the same class of fault. `'apply'` still throws: `panda init` must not
+    // project against a registry it cannot read.
+    if (mode === 'apply') throw error
+    registryError = toTargetFailure(error)
   } finally {
     await store.dispose()
   }
@@ -296,6 +412,22 @@ async function project(
   const detected = await detectExecutors(homeDir)
   const { planned, skipped } = targetsFor(scope, detected, homeDir, projectDir)
   const ledger = new ProjectionLedger({ homeDir })
+  if (registryError !== undefined) {
+    // No engine call at all: every per-target verdict is derived from the
+    // registry, so reporting rows computed against an empty one would tell the
+    // user panda is about to delete entries it simply could not read.
+    return {
+      pandaDir: pandaDirOf(scope === 'machine' ? homeDir : projectDir),
+      registryPath,
+      ledgerPath: ledger.filePath,
+      entryCount: 0,
+      detected,
+      targets: [],
+      skipped,
+      warnings: [],
+      registryError,
+    }
+  }
 
   for (const { target } of planned) recordProjection(log, 'action.invoked', target.targetId)
 
@@ -303,6 +435,7 @@ async function project(
     entries: groupByKind(entries),
     targets: planned.map((plan) => plan.target),
     ledger,
+    mode,
   })
 
   const byId = new Map<string, RegistryEntry[]>()
@@ -313,9 +446,9 @@ async function project(
   // Walked over `planned`, which is catalogue order, so one executor failing can
   // never reshuffle the report — and so a target that BOTH wrote and then failed
   // its ledger update yields ONE row carrying both facts. Two rows, or a row
-  // hardcoding `written: false` for a failure, is how panda came to report
+  // hardcoding `changed: false` for a failure, is how panda came to report
   // `written: false` for bytes it had already landed.
-  const targets: TargetProjection[] = planned.map(({ profile, target }) => {
+  const targets: ScopeTarget[] = planned.map(({ profile, target }) => {
     const result = results.get(target.targetId)
     const failure = failures.get(target.targetId)
     recordProjection(log, failure === undefined ? 'action.completed' : 'action.failed', target.targetId)
@@ -323,7 +456,7 @@ async function project(
       executorId: profile.executorId,
       targetId: target.targetId,
       filePath: target.filePath,
-      written: result?.written ?? false,
+      changed: result?.written ?? false,
       drift: result?.drift ?? [],
       unprojectable: (result?.skippedEntryIds ?? []).map((entryId) => ({
         entryId,
@@ -336,8 +469,7 @@ async function project(
   })
 
   return {
-    scope,
-    pandaDir,
+    pandaDir: pandaDirOf(scope === 'machine' ? homeDir : projectDir),
     registryPath,
     ledgerPath: ledger.filePath,
     entryCount: entries.length,
@@ -345,6 +477,35 @@ async function project(
     targets,
     skipped,
     warnings: run.warnings,
+  }
+}
+
+function toInitResult(scope: 'machine' | 'project', registryPath: string, report: ScopeReport): InitResult {
+  return {
+    scope,
+    pandaDir: report.pandaDir,
+    registryPath,
+    ledgerPath: report.ledgerPath,
+    entryCount: report.entryCount,
+    detected: report.detected,
+    // Spread-minus-`changed`, so a row carrying no `error` key keeps carrying
+    // none: an `error: undefined` in the payload reads to every JSON consumer as
+    // a field panda decided to say nothing about.
+    // Named field by field, NOT spread. A spread rebuilds the row in the spread's
+    // order and silently moved `written` from index 3 to last, after `error`, with
+    // both suites green — and this is a documented payload a caller prints.
+    // `test/init.test.ts` pins the order.
+    targets: report.targets.map((row) => ({
+      executorId: row.executorId,
+      targetId: row.targetId,
+      filePath: row.filePath,
+      written: row.changed,
+      drift: row.drift,
+      unprojectable: row.unprojectable,
+      ...(row.error === undefined ? {} : { error: row.error }),
+    })),
+    skipped: report.skipped,
+    warnings: report.warnings,
   }
 }
 
@@ -363,7 +524,9 @@ export async function initMachine(options: InitMachineOptions = {}): Promise<Ini
   // projected into.
   const { homeDir = homedir(), log } = options
   const home = await scopeDirectory('the home directory', homeDir)
-  return await project('machine', home, home, log ?? createMemoryLogSink())
+  const registryPath = await prepareScope('machine', home, home, home)
+  const report = await runScope('machine', home, home, log ?? createMemoryLogSink(), 'apply')
+  return toInitResult('machine', registryPath, report)
 }
 
 /**
@@ -377,5 +540,7 @@ export async function initProject(options: InitProjectOptions = {}): Promise<Ini
   const { homeDir = homedir(), projectDir = process.cwd(), log } = options
   const home = await scopeDirectory('the home directory', homeDir)
   const projectRoot = await scopeDirectory('the project directory', projectDir)
-  return await project('project', home, projectRoot, log ?? createMemoryLogSink())
+  const registryPath = await prepareScope('project', projectRoot, home, projectRoot)
+  const report = await runScope('project', home, projectRoot, log ?? createMemoryLogSink(), 'apply')
+  return toInitResult('project', registryPath, report)
 }

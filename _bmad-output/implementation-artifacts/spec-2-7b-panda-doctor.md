@@ -2,8 +2,8 @@
 title: 'panda doctor'
 type: 'feature'
 created: '2026-08-25'
-status: 'in-progress'
-review_loop_iteration: 0
+status: 'done'
+review_loop_iteration: 1
 baseline_commit: 'd8b001c'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/spec-2-7a-panda-init-and-project-init.md'
@@ -58,12 +58,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Inspection mode on the projection engine — same computation, no writes
-- [ ] `diagnose` composed from the same detection and engine call as `initProject`
-- [ ] Findings naming executor, file, native location and entry, per drift kind
-- [ ] Unreadable ledger and uninitialised machine reported, never mistaken for clean
-- [ ] CLI binding, exit codes, pin extended, consumer proof (FR-29)
-- [ ] Every matrix row, including the byte-level writes-nothing proof and the convergence loop
+- [x] Inspection mode on the projection engine — same computation, no writes
+- [x] `diagnose` composed from the same detection and engine call as `initProject`
+- [x] Findings naming executor, file, native location and entry, per drift kind
+- [x] Unreadable ledger and uninitialised machine reported, never mistaken for clean
+- [x] CLI binding, exit codes, pin extended, consumer proof (FR-29)
+- [x] Every matrix row, including the byte-level writes-nothing proof and the convergence loop
 
 **Acceptance Criteria:**
 - Given a hand-edited panda-owned entry, when doctor runs, then it is reported as drift naming the entry, the location and the suspected cause, and nothing is written
@@ -72,6 +72,17 @@ context:
 - And a clean environment exits 0 while any finding exits non-zero
 
 ## Design Notes
+## Spec Change Log
+
+- **Review, the clause that held (kept unchanged):** "doctor writes nothing" was verified twice by execution — one reviewer snapshotted contents, kind, size, mode, mtime and ctime across eleven hostile states AND ran a recursive `fs.watch` during the call to catch transient temp and lock files a before/after snapshot cannot see: 0/11 dirty, zero watch events. They then proved the harness could fail by swapping in `initMachine`, which came back 9/11 dirty with lockfiles, `.releasing` and two `.tmp` files firing. A second reviewer confirmed independently over mtime and atime: only atime moves, which is inherent to reading. Moving panda's own writes into a `prepareScope` doctor cannot reach is what earned that, and it was left exactly as it was.
+- **Review, the exit code was wrong on the three states doctor most needs (patch):** taken together a script could not trust the command. A machine `panda init` had never touched reported CLEAN, because `not-initialised` keyed on the `.panda` DIRECTORY and the ledger's own persist creates it for the project scope — so one `project init` anywhere made the machine scope read as initialised forever; it keys on the registry document now. No executor detected exited 0 while `init` exits 2, so `panda doctor && panda init` ran init on an environment doctor had just certified; it is a finding kind now, and both commands ask the question through one function, because two spellings of "did panda find anything" is how they come to disagree about one machine. And `unprojectable` exited 1 FOREVER on a state whose own resolution says nothing will change — a `tool` entry is unprojectable by every executor permanently, so the branch could never be taken back; findings carry a severity now and informational ones are reported in full without being counted.
+- **Review, doctor promised what panda could not perform (patch):** a vendor file panda can read but not write — a root-owned config, a read-only mount, corporate MDM, a file held by the vendor CLI — was reported `out-of-date` with the resolution "`panda init` writes this file so it matches the registry". Init failed `EPERM` on the rename and wrote nothing, and doctor said `out-of-date` again, forever. That breaks the Never clause this spec wrote for exactly this. Writability is probed on the nearest existing ancestor now and reported as its own finding. The second half mattered as much: `access(W_OK)` on win32 reflects only the read-only attribute and not ACLs, so a positive answer is not a guarantee — the resolution says what panda checked and names both limits, rather than making a promise that has to survive being wrong. The unwritable LEDGER is the sharper case: it made inspect report a completely clean row, because that failure is born in the write inspect skips.
+- **Review, the prediction skipped what applying would hit (patch):** the read-write race check ran only under apply, reasoned as "an inspection has no window to lose". True of the write, false of the PREDICTION — which is doctor's whole artifact. For a target whose merge creates the vendor file, inspect reported `written: true` with no error while apply returned no result row and a coded target failure. `~/.claude.json` being rewritten by Claude Code itself is named in the ledger's own comments as a live condition, so that is the machine doctor gets run on. The check runs in both modes now and the two are asserted deep-equal on that state.
+- **Review, the switch meaning "do not touch this machine" failed open (patch):** `'Inspect'`, `'inspect '`, `'dry-run'`, `null` and `0` all wrote, on a function exported as part of the FR-29 parity surface where untyped callers reach it. The original trade — that a junk value silently no-op'ing `panda init` is worse — is backwards for this one field: a no-op init is visible in its own output, a stray write into a user's configuration is not. Anything that is not `apply`, `inspect` or absent is now a coded error, and `undefined` is distinguished from `null` deliberately, because null is a value a caller passed rather than an omission.
+- **Review, panda's own two state files were classified oppositely (patch):** a corrupt LEDGER was reported as a finding; a corrupt REGISTRY threw out of the diagnosis and printed no JSON at all — by the command whose job is diagnosing panda's state. The registry read failure is contained under inspection only (apply still refuses, because init must not project against a registry it cannot read) and returns empty targets: with no registry every per-target verdict would be invented, and "panda is about to remove these" is the worst thing to invent.
+- **Review, the report asserted more than it checked (patch):** `out-of-date` said "does not match the registry" from byte inequality while the ownership layer compares canonically — four of five subtly-clean states were already correct (byte-identical, LF to CRLF, reindent, a foreign key added), and the leak was a key reorder inside panda's own member. The wording now says what was compared. Every projection warning was also relabelled as a ledger problem, true only because one source seeds them today; it switches on the code now, so a new source cannot ship wearing the ledger's resolution text.
+- **Review, pins for what was plumbed (patch):** `panda init`'s JSON key order had silently changed — `written` moved past `error` to last because the row was rebuilt by spread — with both suites green; fields are named in order and the shape is pinned for a clean row and an error row. The "every finding names what it is about" test was fixture-scoped over exactly the kinds that satisfy it; it now judges against a four-way partition asserted TOTAL over the finding kinds, so a new kind lands as a missing partition entry rather than as silence. The writes-nothing snapshot records size and mtime rather than contents alone, matching what its comment always claimed.
+
 
 **Why inspection mode belongs in the engine, not in doctor.** A diagnosis computed by a second code path is a diagnosis that can disagree with what applying would do — and the disagreement would surface exactly when a user is trying to fix something. One engine, one classification, one switch for whether the bytes land.
 

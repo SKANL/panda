@@ -1,6 +1,7 @@
 export { runProjection, groupByKind, hasFileChangedSince } from './engine.ts'
 export type {
   NativeFileSnapshot,
+  ProjectionMode,
   ProjectionRun,
   RunProjectionOptions,
 } from './engine.ts'

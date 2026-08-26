@@ -11,6 +11,16 @@ export {
   type TargetProjection,
   type UnprojectableEntry,
 } from './init.ts'
+export {
+  diagnose,
+  hasProblem,
+  type Diagnosis,
+  type DiagnoseOptions,
+  type DiagnosisFinding,
+  type DiagnosisFindingKind,
+  type DiagnosisFindingSeverity,
+  type DiagnosisTarget,
+} from './doctor.ts'
 export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDetection, type ExecutorProfile } from './executors.ts'
 
 // Re-exported, not merely referenced. Under pnpm's strict layout a consumer that

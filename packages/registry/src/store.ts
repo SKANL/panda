@@ -152,6 +152,21 @@ export class RegistryStore {
     return path
   }
 
+  /**
+   * Where a persisted scope's document LIVES, without creating it — the
+   * read-only half of `ensure`. It exists because "has panda been initialised
+   * here" is a question about that document, and the only other way to ask it
+   * was `ensure`, which answers by creating it. A caller that cannot write
+   * (`panda doctor`) would otherwise have to fork the layout, putting a second
+   * copy of a path this class defines outside this class.
+   *
+   * The path is returned whether or not anything is there; `stat` it to find out.
+   */
+  storePath(scope: Exclude<RegistryScope, 'agent'>): string {
+    validateRegistryScope(scope)
+    return this.#storePath(scope)
+  }
+
   async remove(type: RegistryEntryType, id: string, scope: RegistryScope): Promise<void> {
     const key = `${type}:${id}`
     await this.#mutate(scope, async () => {

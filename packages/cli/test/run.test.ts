@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 import type { ExecutorAdapter, ResultEnvelope, WorkspaceProvider } from '@panda/contracts'
+import { RegistryStore } from '@panda/environment'
 
 function capture(): RunCommandOptions & { out: string[]; err: string[] } {
   const out: string[] = []
@@ -507,5 +508,147 @@ describe('panda init argv and diagnostics', () => {
     const stderr = io.err.join('\n')
     expect(stderr).toContain('PANDA_PROJECTION_LEDGER_UNAVAILABLE')
     expect(stderr).toContain('codex: nothing was projected')
+  })
+})
+// --- panda doctor / panda project doctor (Story 2.7b) ----------------------
+//
+// Same division of labour as init: the CLI's job is argv, output and exit codes,
+// and WHAT was diagnosed belongs to `@panda/environment` (proven in
+// `packages/environment/test/doctor.test.ts`, including the byte-level
+// writes-nothing clause). What is pinned here is the part a script depends on —
+// clean exits 0, any finding exits 1, unable-to-look exits 2 — and that the
+// binding stays thin enough to print facts it did not invent.
+
+describe('panda doctor', () => {
+  it('exits 0 with no findings on an environment that was just projected', async () => {
+    const homeDir = await tempCwd()
+    await writeFile(join(homeDir, '.claude.json'), '{}\n')
+    expect(await runPanda(['init'], { ...capture(), homeDir })).toBe(0)
+
+    const io = capture()
+    const code = await runPanda(['doctor'], { ...io, homeDir })
+
+    expect(code).toBe(0)
+    expect(io.err).toHaveLength(0)
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({ scope: 'machine', findings: [] })
+  })
+
+  it('exits 1 and names the executor, file, location and entry of each finding', async () => {
+    const homeDir = await tempCwd()
+    const claudeJson = join(homeDir, '.claude.json')
+    await writeFile(claudeJson, '{}\n')
+    // A registry entry panda projects, then a user edit on top of it.
+    await writeFile(
+      join(homeDir, '.claude.json'),
+      '{\n  "mcpServers": {\n    "ctx": { "type": "stdio", "command": "theirs", "args": [] }\n  }\n}\n',
+    )
+    const store = new RegistryStore({ homeDir })
+    await store.register({ type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] }, 'global')
+    await store.dispose()
+
+    const io = capture()
+    const code = await runPanda(['doctor'], { ...io, homeDir })
+
+    expect(code).toBe(1)
+    const stderr = io.err.join('\n')
+    expect(stderr).toContain('foreign-collision')
+    expect(stderr).toContain('claude-code')
+    expect(stderr).toContain(claudeJson)
+    expect(stderr).toContain('mcpServers.ctx')
+    // The resolution travels with the finding: what re-projecting would do.
+    expect(stderr).toContain('panda never resolves a collision')
+    const printed = JSON.parse(io.out.join('\n')) as { findings: { kind: string }[] }
+    expect(printed.findings.map((found) => found.kind)).toContain('foreign-collision')
+  })
+
+  it('diagnoses the project it was pointed at, and creates nothing there', async () => {
+    const homeDir = await tempCwd()
+    const projectDir = await tempCwd()
+    await writeFile(join(homeDir, '.claude.json'), '{}\n')
+
+    const io = capture()
+    const code = await runPanda(['project', 'doctor', projectDir], { ...io, homeDir })
+
+    expect(code).toBe(1)
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({
+      scope: 'project',
+      pandaDir: join(projectDir, '.panda'),
+      targets: [{ executorId: 'claude-code', filePath: join(projectDir, '.mcp.json') }],
+    })
+    expect(io.err.join('\n')).toContain('not-initialised')
+    // The command that reports on a machine must not prepare one.
+    expect(readdirSync(projectDir)).toEqual([])
+  })
+
+  it('applies the same argv rules as init, and answers --help', async () => {
+    for (const argv of [['doctor', '--force'], ['doctor', 'somewhere'], ['project', 'doctor', '-f']]) {
+      const io = capture()
+      expect(await runPanda(argv, { ...io, homeDir: await tempCwd() }), argv.join(' ')).toBe(2)
+      expect(io.out).toHaveLength(0)
+    }
+    for (const argv of [['doctor', '--help'], ['project', 'doctor', '-h']]) {
+      const io = capture()
+      expect(await runPanda(argv, { ...io, homeDir: await tempCwd() })).toBe(0)
+      expect(io.out.join('\n')).toContain('panda project doctor')
+      expect(io.err).toHaveLength(0)
+    }
+  })
+
+  it('never certifies an environment `panda init` then refuses', async () => {
+    // `panda doctor && panda init` — the gate a script actually writes. Doctor
+    // exited 0 here while init exited 2 on the same untouched machine.
+    const homeDir = await tempCwd()
+    const doctorIo = capture()
+    const doctorCode = await runPanda(['doctor'], { ...doctorIo, homeDir })
+    const initCode = await runPanda(['init'], { ...capture(), homeDir })
+
+    expect(initCode).toBe(2)
+    expect(doctorCode).not.toBe(0)
+    expect(doctorIo.err.join('\n')).toContain('no-executor')
+    // Two facts findings have no room for, and that init prints on the same
+    // environment: what panda could not check, and what has no location here.
+    const withSkips = capture()
+    const projectDir = await tempCwd()
+    await writeFile(join(homeDir, '.claude.json'), '{}\n')
+    await mkdir(join(homeDir, '.codex'), { recursive: true })
+    await runPanda(['project', 'doctor', projectDir], { ...withSkips, homeDir })
+    expect(withSkips.err.join('\n')).toContain('codex: nothing would be projected')
+
+    const undetermined = capture()
+    const loopHome = await tempCwd()
+    await symlink(join(loopHome, '.claude2'), join(loopHome, '.claude'))
+    await symlink(join(loopHome, '.claude'), join(loopHome, '.claude2'))
+    await runPanda(['doctor'], { ...undetermined, homeDir: loopHome })
+    expect(undetermined.err.join('\n')).toContain('could not determine whether these exist')
+    expect(undetermined.err.join('\n')).toContain('ELOOP')
+  })
+
+  it('exits 0 on a finding that is informational, because no command clears it', async () => {
+    // A registered `tool` is unprojectable by every executor, permanently. It is
+    // reported in full and does not fail the run, or the exit code is a light
+    // that never goes out.
+    const homeDir = await tempCwd()
+    await writeFile(join(homeDir, '.claude.json'), '{}\n')
+    const store = new RegistryStore({ homeDir })
+    await store.register({ type: 'tool', id: 'ripgrep', command: 'rg' }, 'global')
+    await store.dispose()
+    expect(await runPanda(['init'], { ...capture(), homeDir })).toBe(0)
+
+    const io = capture()
+    const code = await runPanda(['doctor'], { ...io, homeDir })
+
+    expect(code).toBe(0)
+    // Printed anyway, with its severity, so a reader can see why 0 is right.
+    expect(io.err.join('\n')).toContain('info: unprojectable')
+  })
+
+  it('exits 2 — not 1 — when it could not look at all', async () => {
+    // "Found problems" and "could not run" must never share an exit code, or a
+    // script cannot tell a diagnosed machine from a broken invocation.
+    const io = capture()
+    const missing = join(await tempCwd(), 'no', 'such', 'project')
+    expect(await runPanda(['project', 'doctor', missing], { ...io, homeDir: await tempCwd() })).toBe(2)
+    expect(io.err.join('\n')).toContain('PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE')
+    expect(io.out).toHaveLength(0)
   })
 })

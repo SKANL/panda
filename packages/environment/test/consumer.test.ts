@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,7 +8,14 @@ import { describe, expect, it } from 'vitest'
 // `@panda/environment`-only install cannot resolve `@panda/registry`,
 // `@panda/projection` or `@panda/kernel` under pnpm's strict layout, so a test
 // that reached for any of them would be proving the claim on a monorepo's terms.
-import { PROJECTION_ACTION_ID, RegistryStore, createMemoryLogSink, initMachine, initProject } from '../src/index.ts'
+import {
+  PROJECTION_ACTION_ID,
+  RegistryStore,
+  createMemoryLogSink,
+  diagnose,
+  initMachine,
+  initProject,
+} from '../src/index.ts'
 
 /**
  * The POSITIVE proof of FR-29: anything `panda init` / `panda project init` can
@@ -121,5 +128,58 @@ describe('a consumer with no @panda/cli installed', () => {
     // Ownership is durable and panda-side; no marker was injected into the vendor file.
     expect((await stat(result.ledgerPath)).isFile()).toBe(true)
     expect(merged).not.toContain('panda')
+  })
+
+  /**
+   * The same FR-29 claim for `panda doctor`: a third party diagnoses an
+   * environment through this package alone. It is asserted in the EXECUTOR'S OWN
+   * TERMS — the file Claude Code reads, the key it reads the server under — and
+   * the diagnosis is checked against what applying then actually does, because a
+   * report that cannot be trusted to match the write is the failure mode this
+   * command exists to not have.
+   *
+   * What makes it fail: move the diagnosis into `@panda/cli` and there is nothing
+   * to import here; compute it from a second code path and the `wouldWrite`
+   * prediction stops matching `written`; let it prepare state and the byte
+   * comparison of the untouched project directory fails.
+   */
+  it('diagnoses without writing, and what it predicted is what applying does', async () => {
+    const { homeDir, projectDir } = await fixture()
+    await writeFile(join(homeDir, '.claude.json'), '{\n  "numStartups": 7\n}\n', 'utf8')
+
+    const store = new RegistryStore({ homeDir })
+    await store.register({ type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] }, 'global')
+    await store.dispose()
+
+    const mcpPath = join(projectDir, '.mcp.json')
+    const before = await readdir(projectDir)
+    const diagnosis = await diagnose({ homeDir, scope: 'project', projectDir })
+
+    // It named the file Claude Code reads for this project, and said projecting
+    // would write it — without creating it, or panda's own directory beside it.
+    expect(diagnosis.targets).toEqual([
+      {
+        executorId: 'claude-code',
+        targetId: 'claude-mcp',
+        filePath: mcpPath,
+        wouldWrite: true,
+        drift: [],
+        unprojectable: [],
+      },
+    ])
+    expect(diagnosis.findings.map((found) => found.kind)).toEqual(['not-initialised', 'out-of-date'])
+    expect(await readdir(projectDir)).toEqual(before)
+    await expect(stat(mcpPath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    // Applying does exactly what the diagnosis said it would, and a second
+    // diagnosis over the converged state is clean.
+    const applied = await initProject({ homeDir, projectDir })
+    expect(applied.targets[0]).toMatchObject({ filePath: mcpPath, written: true })
+    expect(JSON.parse(await readFile(mcpPath, 'utf8'))).toEqual({
+      mcpServers: {
+        context7: { type: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
+      },
+    })
+    expect((await diagnose({ homeDir, scope: 'project', projectDir })).findings).toEqual([])
   })
 })

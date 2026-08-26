@@ -36,6 +36,12 @@ export const PANDA_ERROR_CODES = {
   projectionTraitsInvalid: 'PANDA_PROJECTION_TRAITS_INVALID',
   projectionLedgerUnavailable: 'PANDA_PROJECTION_LEDGER_UNAVAILABLE',
   projectionNativeUnclaimable: 'PANDA_PROJECTION_NATIVE_UNCLAIMABLE',
+  // `runProjection` was asked to run in a mode it does not have. Coded, and
+  // rejected rather than defaulted, because the one thing that mode decides is
+  // whether panda writes into files it does not own: an unrecognised value
+  // silently taken as "apply" writes into a user's config on the say-so of a
+  // typo, and `runProjection` is on the FR-29 surface, so untyped callers reach it.
+  projectionModeInvalid: 'PANDA_PROJECTION_MODE_INVALID',
   // The machine or project scope panda was pointed at cannot be used: a
   // directory that does not exist, a path that is not a directory, an empty
   // string where a home was expected, or panda's own state directory occupied

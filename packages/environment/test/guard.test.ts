@@ -76,6 +76,37 @@ describe('@panda/environment dependency direction (AD-2)', () => {
     }
   })
 
+  it('keeps the diagnosis composed from init.ts, never from its own engine call', () => {
+    // "Doctor is `project init` with application switched off, not a second
+    // implementation" is the whole story, and it is worth nothing as a sentence.
+    // `src/doctor.ts` may not reach the projection engine or the registry: its
+    // only route to a projection is `runScope` in `src/init.ts`, the identical
+    // call `initProject` makes. A second engine call here could classify drift
+    // differently from the one that writes — and would differ exactly when a
+    // user is trying to fix something.
+    //
+    // WHAT THIS DOES NOT COVER, said plainly rather than implied: it is a scan
+    // of ONE file, not of a reachability set. A transitive scan cannot carry
+    // the claim either, because `init.ts` legitimately calls the engine and
+    // `doctor.ts` legitimately imports it. So the LOCAL import list is pinned
+    // exactly instead: a new sibling module that reached the engine on doctor's
+    // behalf has to be imported here, and adding it turns this red.
+    const doctor = join(packageDir, 'src', 'doctor.ts')
+    expect(sourceFiles).toContain(doctor)
+    const specifiers = importsOf(readFileSync(doctor, 'utf8'))
+    expect(specifiers.filter((specifier) => specifier.startsWith('.')).sort()).toEqual([
+      './executors.ts',
+      './init.ts',
+      './init.ts',
+    ])
+    for (const specifier of specifiers) {
+      expect(
+        specifier === '@panda/projection' || specifier === '@panda/registry',
+        `src/doctor.ts imports '${specifier}'`,
+      ).toBe(false)
+    }
+  })
+
   it('exports exactly one entry point, so the surface stays the one the pins watch', () => {
     expect(Object.keys(packageJson['exports'] as Record<string, unknown>)).toEqual(['.'])
   })
@@ -105,8 +136,13 @@ describe('@panda/environment dependency direction (AD-2)', () => {
  * appearing in `src/` — `writeFile`, `rename`, `rm`, `appendFile`, a raw
  * `node:fs` handle — turns this red, whether or not the author remembered that
  * the ledger is the sole authority for what panda may modify.
+ *
+ * `access` and `constants` are the two `panda doctor` added, and both are pure
+ * interrogation: `access(W_OK)` ASKS whether a write would be permitted, so a
+ * diagnosis can stop promising a write panda could not perform without trying
+ * one — which is the thing this command may not do.
  */
-const PERMITTED_FS_IMPORTS = ['mkdir', 'stat']
+const PERMITTED_FS_IMPORTS = ['access', 'constants', 'mkdir', 'stat']
 
 /**
  * Every spelling of the filesystem module, not just the prefixed one: a reviewer

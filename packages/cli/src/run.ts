@@ -1,4 +1,15 @@
-import { initMachine, initProject, noExecutorsDetected, type InitMachineOptions, type InitResult } from '@panda/environment'
+import {
+  diagnose,
+  hasProblem,
+  initMachine,
+  initProject,
+  noExecutorsDetected,
+  type Diagnosis,
+  type DiagnosisFinding,
+  type ExecutorDetection,
+  type InitMachineOptions,
+  type InitResult,
+} from '@panda/environment'
 import { runSession, type SessionOptions } from '@panda/session'
 
 // Exit codes (documented in the package README):
@@ -7,6 +18,11 @@ import { runSession, type SessionOptions } from '@panda/session'
 //   2 — usage error, invalid request, or environment failure (including
 //       "no executor was detected", which is the environment lacking anything
 //       for panda to configure)
+//
+// For `doctor` the same three carry a narrower sentence: 0 is a clean
+// environment, 1 is at least one finding that is a PROBLEM, 2 is doctor being
+// unable to produce a diagnosis at all. A script branches on that, so "found
+// problems" must never share an exit code with "could not run".
 
 /**
  * The seams are PICKED from the capability packages rather than redeclared: this
@@ -26,17 +42,22 @@ export const USAGE = [
   'usage: panda run "<prompt>"',
   '       panda init',
   '       panda project init [directory]',
+  '       panda doctor',
+  '       panda project doctor [directory]',
   '       panda --help',
   '',
   'run           Runs <prompt> through the Claude Code adapter inside a workspace under .panda/workspaces.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
+  'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
+  'project doctor  The same report for a project, matching what project init would do.',
   '',
   'Exit codes: 0 ok · 1 failed/cancelled · 2 usage/environment error.',
   'For init, a target that failed to project exits 1; detecting no executor at all exits 2.',
+  'For doctor, a finding that is a problem exits 1; a clean environment exits 0.',
 ].join('\n')
 
-const DEFAULT_USAGE = USAGE.split('\n').slice(0, 4).join('\n')
+const DEFAULT_USAGE = USAGE.split('\n').slice(0, 6).join('\n')
 
 /**
  * Process-level signal wiring, which is why it lives in the binary's package and
@@ -77,10 +98,21 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
   if (argv[0] === 'init') {
     return await runInit(argv.slice(1), out, err, 0, options.homeDir, (homeDir) => initMachine({ homeDir }))
   }
+  if (argv[0] === 'doctor') {
+    // No directory: the machine scope has one, and it is the home directory.
+    return await runDoctor(argv.slice(1), out, err, 0, () =>
+      diagnose({ homeDir: options.homeDir, scope: 'machine' }),
+    )
+  }
   if (argv[0] === 'project') {
     if (isHelp(argv[1])) {
       out(USAGE)
       return 0
+    }
+    if (argv[1] === 'doctor') {
+      return await runDoctor(argv.slice(2), out, err, 1, (directory) =>
+        diagnose({ homeDir: options.homeDir, scope: 'project', projectDir: directory ?? options.cwd }),
+      )
     }
     if (argv[1] !== 'init') {
       err(DEFAULT_USAGE)
@@ -134,19 +166,17 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
 }
 
 /**
- * The whole of what `panda init` and `panda project init` are: reject bad argv,
- * call the capability in `@panda/environment`, print its result, map it to an
- * exit code. Every fact printed is produced by the capability — the CLI adds no
- * detection, no projection and no interpretation of its own.
+ * Argv validation shared by every subcommand that takes at most one directory.
+ * Returns the exit code when the tokens were help or a usage error, and
+ * `undefined` when they are usable — one rule, so `doctor` cannot drift into
+ * accepting an option `init` rejects.
  */
-async function runInit(
+function usageOutcome(
   tokens: readonly string[],
+  maxPositionals: 0 | 1,
   out: (line: string) => void,
   err: (line: string) => void,
-  maxPositionals: 0 | 1,
-  homeDir: string | undefined,
-  capability: (homeDir: string | undefined, directory: string | undefined) => Promise<InitResult>,
-): Promise<number> {
+): number | undefined {
   const flagToken = optionToken(tokens)
   if (isHelp(flagToken)) {
     // The usage block advertises these subcommands, so asking it for help on one
@@ -168,6 +198,91 @@ async function runInit(
     err(DEFAULT_USAGE)
     return 2
   }
+  return undefined
+}
+
+/**
+ * The whole of what `panda doctor` and `panda project doctor` are: reject bad
+ * argv, call the capability in `@panda/environment`, print its diagnosis, map
+ * findings to an exit code. Every fact printed is the capability's — the CLI
+ * classifies nothing, decides nothing about drift, and writes nothing.
+ */
+async function runDoctor(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  maxPositionals: 0 | 1,
+  capability: (directory: string | undefined) => Promise<Diagnosis>,
+): Promise<number> {
+  const usage = usageOutcome(tokens, maxPositionals, out, err)
+  if (usage !== undefined) return usage
+  try {
+    const diagnosis = await capability(tokens[0])
+    out(JSON.stringify(diagnosis, null, 2))
+    for (const found of diagnosis.findings) err(formatFinding(found))
+    // The same two facts `panda init` prints and findings have no room for: an
+    // executor with no location for this scope is not a problem, and a path
+    // panda could not CHECK is not evidence that nothing is installed.
+    for (const skip of diagnosis.skipped) err(`${skip.executorId}: nothing would be projected: ${skip.reason}`)
+    const undetermined = undeterminedEvidence(diagnosis.detected)
+    if (undetermined !== undefined) err(undetermined)
+    // Severity, not count. Every target failing still exits 1 rather than 2:
+    // doctor DID look — it enumerated the executors, read the ledger and
+    // produced a per-target verdict — and 2 is reserved for the cases where no
+    // diagnosis exists to print at all (a scope directory it cannot use).
+    return hasProblem(diagnosis) ? 1 : 0
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/**
+ * The paths panda could not check, as one line, or nothing when there are none.
+ * Shared with `panda init` because "nothing is installed" and "panda could not
+ * look" are different claims in both commands, and only one of them is ever true.
+ */
+function undeterminedEvidence(detected: readonly ExecutorDetection[]): string | undefined {
+  const undetermined = detected
+    .flatMap((detection) => detection.evidence)
+    .filter((item) => item.exists === undefined)
+  if (undetermined.length === 0) return undefined
+  return `panda could not determine whether these exist, so this is not evidence that nothing is installed: ${undetermined
+    .map((item) => `${item.path} (${item.error ?? 'unknown error'})`)
+    .join(', ')}`
+}
+
+/**
+ * One finding on one line, naming everything it is about. A finding a user
+ * cannot act on is not one, so the executor, the file, the native location and
+ * the entry are printed whenever the capability supplied them — and the
+ * resolution, which is what re-projecting would do about it.
+ */
+function formatFinding(found: DiagnosisFinding): string {
+  const about = [found.executorId, found.filePath, found.location, found.entryId]
+    .filter((part): part is string => part !== undefined)
+    .join(' · ')
+  // The severity is printed, not only acted on: a reader who sees a line on
+  // stderr and an exit code of 0 has to be able to see why the two agree.
+  return `${found.severity}: ${found.kind}${about === '' ? '' : ` (${about})`}: ${found.detail} — ${found.resolution}`
+}
+
+/**
+ * The whole of what `panda init` and `panda project init` are: reject bad argv,
+ * call the capability in `@panda/environment`, print its result, map it to an
+ * exit code. Every fact printed is produced by the capability — the CLI adds no
+ * detection, no projection and no interpretation of its own.
+ */
+async function runInit(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  maxPositionals: 0 | 1,
+  homeDir: string | undefined,
+  capability: (homeDir: string | undefined, directory: string | undefined) => Promise<InitResult>,
+): Promise<number> {
+  const usage = usageOutcome(tokens, maxPositionals, out, err)
+  if (usage !== undefined) return usage
   try {
     const result = await capability(homeDir, tokens[0])
     out(JSON.stringify(result, null, 2))
@@ -184,14 +299,8 @@ async function runInit(
           .map((item) => item.path)
           .join(', ')}`,
       )
-      const undetermined = evidence.filter((item) => item.exists === undefined)
-      if (undetermined.length > 0) {
-        err(
-          `panda could not determine whether these exist, so this is not evidence that nothing is installed: ${undetermined
-            .map((item) => `${item.path} (${item.error ?? 'unknown error'})`)
-            .join(', ')}`,
-        )
-      }
+      const undetermined = undeterminedEvidence(result.detected)
+      if (undetermined !== undefined) err(undetermined)
       return 2
     }
     const failed = result.targets.filter((target) => target.error !== undefined)

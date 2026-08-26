@@ -62,6 +62,39 @@ describe('panda init prepares the machine', () => {
   })
 })
 
+describe('the init payload keeps the shape callers print', () => {
+  it('pins the key order of a target row, with and without an error', async () => {
+    // `written` silently moved from index 3 to LAST, after `error`, when the row
+    // was rebuilt by spread — with both suites green. This is a documented
+    // payload a caller prints, so its order is authored, not inherited.
+    const { homeDir } = await fixture()
+    await withClaude(homeDir, 'this is not json')
+    await withCodex(homeDir)
+
+    const result = await initMachine({ homeDir })
+
+    const failed = result.targets.find((target) => target.error !== undefined)
+    const clean = result.targets.find((target) => target.error === undefined)
+    expect(Object.keys(clean!)).toEqual([
+      'executorId',
+      'targetId',
+      'filePath',
+      'written',
+      'drift',
+      'unprojectable',
+    ])
+    expect(Object.keys(failed!)).toEqual([
+      'executorId',
+      'targetId',
+      'filePath',
+      'written',
+      'drift',
+      'unprojectable',
+      'error',
+    ])
+  })
+})
+
 describe('projection results are specific per target', () => {
   it('distinguishes written from unchanged across two runs', async () => {
     const { homeDir } = await fixture()
