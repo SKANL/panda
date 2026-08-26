@@ -54,6 +54,8 @@ afterAll(() =>
 interface Ran {
   readonly spawned: boolean
   readonly output: string
+  /** Exit status of the shell, and so of `codex`; null when it was killed. */
+  readonly code: number | null
 }
 
 function run(
@@ -93,18 +95,27 @@ function run(
     child.stderr?.on('data', collect)
     child.on('error', () => {
       clearTimeout(timer)
-      resolve({ spawned: false, output })
+      resolve({ spawned: false, output, code: null })
     })
-    child.on('close', () => {
+    child.on('close', (code) => {
       clearTimeout(timer)
-      resolve({ spawned: true, output })
+      resolve({ spawned: true, output, code })
     })
   })
 }
 
 async function codexAvailable(): Promise<boolean> {
   if (process.env['PANDA_LIVE_CODEX'] === '0') return false
-  return (await run(['--version'], undefined, PROBE_TIMEOUT_MS)).spawned
+  // The EXIT STATUS, not `spawned`. With `shell: true` the direct child is the
+  // shell, which starts perfectly on a machine with no codex, prints `codex: not
+  // found` and exits 127 — so `spawned` answers "did a shell start", never "does
+  // codex exist", and the `error` event fires only when the SHELL cannot launch.
+  // CI ran this suite for real against a runner without the binary and failed on
+  // its own differential assertion, which is the failure mode this probe exists
+  // to prevent. A present-but-broken codex also exits non-zero and skips, which
+  // is right: a live smoke proves nothing against a binary that cannot answer.
+  const probe = await run(['--version'], undefined, PROBE_TIMEOUT_MS)
+  return probe.spawned && probe.code === 0
 }
 
 const available = await codexAvailable()
