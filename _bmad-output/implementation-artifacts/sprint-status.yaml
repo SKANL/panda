@@ -67,7 +67,7 @@ development_status:
   # ROADMAP-01 M2: split — 2.7 was the named home for four deferred items.
   2-7a-panda-init-and-project-init: done
   2-7b-panda-doctor: done
-  2-7c-executor-selection-for-panda-run: backlog
+  2-7c-executor-selection-for-panda-run: done
   2-8-native-config-projection-with-ownership-ledger: done
   2-9-filesystem-materialisation-targets: backlog
   2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b

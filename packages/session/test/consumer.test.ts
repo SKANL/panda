@@ -1,4 +1,4 @@
-import { mkdtemp, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 // single public entry. A `@panda/session`-only install cannot resolve
 // `@panda/contracts` or `@panda/kernel` under pnpm's strict layout, so a test
 // that reached for either would be proving the claim on a monorepo's terms.
-import { createMemoryLogSink, runSession, SESSION_ACTION_ID } from '../src/index.ts'
+import { createMemoryLogSink, resolveExecutor, runSession, SESSION_ACTION_ID } from '../src/index.ts'
 import type { ExecutorAdapter, ResultEnvelope, RunRequest } from '../src/index.ts'
 
 /**
@@ -59,5 +59,41 @@ describe('a consumer with no @panda/cli installed', () => {
     await log.drain()
     expect(log.records.map((record) => record.event)).toEqual(['action.invoked', 'action.completed'])
     expect(log.records.every((record) => record.subject.startsWith(`${SESSION_ACTION_ID}#`))).toBe(true)
+  })
+
+  it('chooses WHICH executor from the same entry point, not only how to run one', async () => {
+    // The other half of FR-29 for Story 2.7c. `panda run` is two capability
+    // calls — resolve, then run — and both have to be reachable from this one
+    // import or the CLI still owns half the feature.
+    //
+    // It goes through `../src/index.ts` on purpose: the executor tests import
+    // `../src/executors.ts` directly, so deleting the re-export from `index.ts`
+    // left them green while a real consumer could no longer reach the selection.
+    const homeDir = await mkdtemp(join(tmpdir(), 'panda-consumer-home-'))
+    const projectDir = await mkdtemp(join(tmpdir(), 'panda-consumer-project-'))
+    await mkdir(join(projectDir, '.panda'), { recursive: true })
+    await writeFile(join(projectDir, '.panda', 'config.json'), JSON.stringify({ executor: 'codex' }))
+
+    const selection = await resolveExecutor({ homeDir, projectDir })
+    expect(selection).toEqual({
+      executorId: 'codex',
+      layer: 'project',
+      available: ['claude-code', 'codex', 'opencode'],
+    })
+
+    // And the selection is what `runSession` takes, from the same import.
+    let ran = false
+    await runSession({
+      prompt: 'list files',
+      cwd: projectDir,
+      executorId: selection.executorId,
+      createAdapter: () => ({
+        run: () => {
+          ran = true
+          return Promise.resolve({ status: 'ok', data: null, summary: 'ok', errors: [] })
+        },
+      }),
+    })
+    expect(ran).toBe(true)
   })
 })

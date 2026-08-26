@@ -1,9 +1,10 @@
 import { join } from 'node:path'
-import { createClaudeCodeAdapter } from '@panda/adapter-cli'
+import type { CliExecutorAdapterOptions } from '@panda/adapter-cli'
 import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
 import type { ExecutorAdapter, ResultEnvelope, WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
 import { createActionPipeline, createMemoryLogSink, type ActionPolicy, type LogSink } from '@panda/kernel'
 import { LocalWorkspaceProvider } from '@panda/workspace-local'
+import { createExecutorAdapter } from './executors.ts'
 
 /**
  * The PREFIX every session invocation is recorded under. The registered id is
@@ -35,7 +36,34 @@ export interface SessionOptions {
   readonly prompt: string
   /** Root the default workspace provider builds `.panda/workspaces` under. Defaults to `process.cwd()`. */
   readonly cwd?: string
-  /** Adapter seam; tests inject fakes, production defaults to Claude Code. */
+  /**
+   * Which shipped adapter runs the prompt, by catalogue id (`executors.ts`).
+   * Omitted, the catalogue's DEFAULT id is used — the default is a lookup like
+   * every other id, so no path here constructs a vendor adapter by name.
+   *
+   * The session takes the selection ALREADY MADE and reads no configuration of
+   * its own: `resolveExecutor` is what consults `.panda/config.json`. A session
+   * primitive whose behaviour depended on files under the running user's home
+   * would be unusable from a host that already knows what it wants.
+   */
+  readonly executorId?: string
+  /**
+   * Options handed to the SELECTED adapter: a child-process spawner, or a binary
+   * path that overrides the trait's command. Ignored when `createAdapter` is
+   * supplied, because then the caller built the adapter itself.
+   *
+   * This is the seam that makes `executorId` provable end to end — a fake
+   * spawner here exercises selection, catalogue lookup and vendor argv on the
+   * PRODUCTION path, where injecting `createAdapter` bypasses the very wiring
+   * under test. It is also what gives an embedding host a way to point panda at
+   * a binary that is not on PATH.
+   */
+  readonly adapterOptions?: CliExecutorAdapterOptions
+  /**
+   * Adapter seam; tests and embedding hosts inject their own. When supplied it
+   * WINS over `executorId` and `adapterOptions`: the caller handed panda the
+   * executor, so panda did not select one.
+   */
   readonly createAdapter?: () => ExecutorAdapter
   /**
    * Workspace provider seam; production defaults to the local-dir provider.
@@ -118,7 +146,7 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
   // the hostile one executed. The kernel closes exactly this hole at `register`
   // and says so; a session that read `options.prompt` inside the operation closure
   // would hand it straight back.
-  const { prompt, cwd = process.cwd(), createAdapter, createProvider, onInterrupt, log, actionPolicy } = options
+  const { prompt, cwd = process.cwd(), executorId, adapterOptions, createAdapter, createProvider, onInterrupt, log, actionPolicy } = options
 
   // Before anything is constructed or written: an invalid request must cost no
   // mkdir. The predicate, the code and the message are the contracts package's
@@ -130,6 +158,18 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
       "schema violation: 'prompt' must be a non-empty string",
     )
   }
+
+  // Resolved BEFORE the provider, beside the prompt check and for the same
+  // reason: an invalid request must cost no mkdir. An `executorId` the catalogue
+  // does not hold used to be rejected AFTER `provider.create()`, leaving a
+  // workspace directory on disk that nothing removes. `panda run` never saw it
+  // because `resolveExecutor` validates first — the FR-29 path, where a consumer
+  // calls `runSession` directly, is exactly the one that did.
+  //
+  // The catalogue, never a vendor constructor: `createExecutorAdapter` resolves
+  // the default id the same way it resolves any other, so "nothing selected" and
+  // "codex selected" travel one code path.
+  const adapter = createAdapter?.() ?? createExecutorAdapter(executorId, adapterOptions)
 
   const provider = createProvider?.() ?? new LocalWorkspaceProvider({ rootDir: join(cwd, '.panda', 'workspaces') })
 
@@ -151,7 +191,6 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
 
   try {
     removeSignalHandler = onInterrupt?.(() => controller.abort()) ?? removeSignalHandler
-    const adapter = createAdapter?.() ?? createClaudeCodeAdapter()
     const actions = createActionPipeline(log ?? createMemoryLogSink(), actionPolicy)
     const action = actions.register({
       // Scoped to the workspace so two sessions can share a pipeline the day one

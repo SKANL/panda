@@ -25,6 +25,24 @@ export const PANDA_ERROR_CODES = {
   executorUnavailable: 'PANDA_EXECUTOR_UNAVAILABLE',
   executorRunFailed: 'PANDA_EXECUTOR_RUN_FAILED',
   executorCancelled: 'PANDA_EXECUTOR_CANCELLED',
+  // Panda ships no adapter under the name that was asked for. Deliberately NOT
+  // `executorUnavailable`: that one means the binary did not spawn, and the two
+  // have different fixes — use a name panda has versus install the tool. A
+  // selection that failed because the name was wrong must never be reported as
+  // a missing installation, or the user goes looking for the wrong problem.
+  executorNotFound: 'PANDA_EXECUTOR_NOT_FOUND',
+  // Panda's OWN configuration document exists and cannot be used: unreadable,
+  // not valid JSON, not an object, or holding a value of the wrong type. Coded,
+  // and separate from `executorNotFound`, because the fix is different again
+  // (repair the file versus correct the name) — and separate from the layered
+  // config's own `PANDA_KERNEL_INVALID_LAYER`, which is what rejects a hostile
+  // key once the document has parsed.
+  //
+  // A document that is ABSENT is not this: it is a layer panda does not have.
+  // Falling back to the default because a configuration could not be read is the
+  // exact failure executor selection exists to remove — it runs a DIFFERENT
+  // agent than the user configured, silently, wearing the disguise of robustness.
+  configurationUnusable: 'PANDA_CONFIGURATION_UNUSABLE',
   registryInvalidEntry: 'PANDA_REGISTRY_INVALID_ENTRY',
   registryContention: 'PANDA_REGISTRY_CONTENTION',
   registryStoreUnavailable: 'PANDA_REGISTRY_STORE_UNAVAILABLE',

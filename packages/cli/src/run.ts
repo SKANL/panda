@@ -10,7 +10,7 @@ import {
   type InitMachineOptions,
   type InitResult,
 } from '@panda/environment'
-import { runSession, type SessionOptions } from '@panda/session'
+import { resolveExecutor, runSession, type SessionOptions } from '@panda/session'
 
 // Exit codes (documented in the package README):
 //   0 — run completed with an ok envelope / init completed with no failed target
@@ -32,21 +32,28 @@ import { runSession, type SessionOptions } from '@panda/session'
  * goes.
  */
 export interface RunCommandOptions
-  extends Pick<SessionOptions, 'cwd' | 'createAdapter' | 'createProvider' | 'onInterrupt'>,
+  extends Pick<SessionOptions, 'cwd' | 'adapterOptions' | 'createAdapter' | 'createProvider' | 'onInterrupt'>,
     Pick<InitMachineOptions, 'homeDir'> {
   readonly stdout?: (line: string) => void
   readonly stderr?: (line: string) => void
 }
 
 export const USAGE = [
-  'usage: panda run "<prompt>"',
+  'usage: panda run [--executor <id>] "<prompt>"',
   '       panda init',
   '       panda project init [directory]',
   '       panda doctor',
   '       panda project doctor [directory]',
   '       panda --help',
   '',
-  'run           Runs <prompt> through the Claude Code adapter inside a workspace under .panda/workspaces.',
+  'run           Runs <prompt> through the selected executor inside a workspace under .panda/workspaces.',
+  '  --executor <id>  Overrides the configured selection; --executor=<id> also works.',
+  '                   Without it the selection comes from <project>/.panda/config.json, then',
+  '                   ~/.panda/config.json, then the built-in default. The selection and the layer',
+  '                   that decided it are reported on stderr.',
+  '                   It overrides a configuration panda can READ; a document that exists and',
+  '                   cannot be used still fails, because running a different agent than the one',
+  '                   configured is the failure this selection exists to remove.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
@@ -126,21 +133,40 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     err(DEFAULT_USAGE)
     return 2
   }
-  const flagToken = argv.slice(1).find((token) => token.startsWith('--'))
-  if (flagToken !== undefined) {
-    err(`unrecognized option '${flagToken}'`)
+  const runTokens = argv.slice(1)
+  // The only help in the binary that used to REFUSE: `panda run --help` exited 2
+  // with "unrecognized option", and `panda run -h` spawned a real, billed agent
+  // with the prompt `-h`. `run` is now the one subcommand with a flag, so its
+  // own usage block is the natural thing to ask for.
+  if (isRunHelp(runTokens)) {
+    out(USAGE)
+    return 0
+  }
+  const parsed = parseRunTokens(runTokens)
+  if ('usageError' in parsed) {
+    err(parsed.usageError)
     err(DEFAULT_USAGE)
     return 2
   }
-  const prompt = argv.slice(1).join(' ').trim()
+  const { prompt, executorId } = parsed
   if (prompt.length === 0) {
     err(DEFAULT_USAGE)
     return 2
   }
 
   try {
+    // The two capability calls, in order, with nothing between them the CLI
+    // decided: which executor is `@panda/session`'s answer, and so is the run.
+    const selection = await resolveExecutor({
+      executorId,
+      homeDir: options.homeDir,
+      projectDir: options.cwd,
+    })
+    reportSelection(selection, options.createAdapter !== undefined, err)
     const envelope = await runSession({
       prompt,
+      executorId: selection.executorId,
+      adapterOptions: options.adapterOptions,
       cwd: options.cwd,
       createAdapter: options.createAdapter,
       createProvider: options.createProvider,
@@ -163,6 +189,88 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     err(describe(error))
     return 2
   }
+}
+
+/**
+ * Which agent is about to produce the output, and what decided it — a swap you
+ * cannot see is not one you can trust. On stderr, so stdout stays exactly the
+ * envelope JSON a caller pipes into a parser, and BEFORE the run so it still
+ * reaches the user when the run then fails or hangs.
+ *
+ * Two cases, because they are different claims:
+ *   - panda selected and panda ran it: report the selection.
+ *   - a host supplied its own adapter: panda selected nothing, so an unqualified
+ *     selection line would be false. Silence is right for an IMPLICIT selection
+ *     — and wrong for an explicit one, where the user typed `--executor codex`,
+ *     panda resolved it, and something else then ran. That gets said out loud.
+ *
+ * `createAdapter` is an SDK/test seam with no argv spelling, so every actual
+ * invocation of the binary takes the first branch.
+ */
+function reportSelection(
+  selection: { executorId: string; layer: string },
+  overridden: boolean,
+  err: (line: string) => void,
+): void {
+  const line = `executor: ${selection.executorId} (selected by the '${selection.layer}' layer)`
+  if (!overridden) {
+    err(line)
+    return
+  }
+  if (selection.layer === 'invocation') err(`${line} — overridden by the host-supplied adapter`)
+}
+
+/**
+ * Help for `panda run`. `--help` anywhere, because every other `--` token is
+ * already a usage error and so cannot be prompt text; `-h` only when it is the
+ * WHOLE argument list, because a single dash is legitimate inside a prompt and
+ * `panda run explain -h` must stay a prompt.
+ */
+function isRunHelp(tokens: readonly string[]): boolean {
+  return tokens.includes('--help') || (tokens.length === 1 && tokens[0] === '-h')
+}
+
+/**
+ * `panda run`'s argv: an optional `--executor <id>` (or `--executor=<id>`) and
+ * the prompt words. Every other `--` token stays a usage error, and a SINGLE
+ * dash still falls through as prompt text, which is what `panda run` has always
+ * done — a prompt is free text and `-x` is a legitimate part of one.
+ */
+function parseRunTokens(
+  tokens: readonly string[],
+): { prompt: string; executorId: string | undefined } | { usageError: string } {
+  const EXECUTOR_FLAG = '--executor'
+  const words: string[] = []
+  let executorId: string | undefined
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token === undefined) continue
+    if (token === EXECUTOR_FLAG) {
+      const value = tokens[index + 1]
+      // A following option is not a value: `panda run --executor --help` must be
+      // a usage error, not a run of an executor named '--help'.
+      if (value === undefined || value.length === 0 || value.startsWith('-')) {
+        return { usageError: `option '${EXECUTOR_FLAG}' requires an executor id` }
+      }
+      executorId = value
+      index += 1
+      continue
+    }
+    if (token.startsWith(`${EXECUTOR_FLAG}=`)) {
+      const value = token.slice(EXECUTOR_FLAG.length + 1)
+      // The SAME guard as the two-token form: `--executor=-x` reached the
+      // catalogue while `--executor -x` was refused, which is two answers to one
+      // question.
+      if (value.length === 0 || value.startsWith('-')) {
+        return { usageError: `option '${EXECUTOR_FLAG}' requires an executor id` }
+      }
+      executorId = value
+      continue
+    }
+    if (token.startsWith('--')) return { usageError: `unrecognized option '${token}'` }
+    words.push(token)
+  }
+  return { prompt: words.join(' ').trim(), executorId }
 }
 
 /**
