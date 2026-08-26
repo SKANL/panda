@@ -224,21 +224,11 @@ async function isFile(path: string): Promise<boolean> {
 }
 
 /**
- * Whether panda could write at `path` — three-valued, because "panda could not
+ * Whether `access(W_OK)` is granted at `path` or, when nothing is there yet, at
+ * its nearest EXISTING ancestor — three-valued, because "panda could not
  * determine" must not be reported as "panda cannot write".
- *
- * The nearest EXISTING ancestor is what gets checked: a vendor file panda would
- * create does not exist yet, and its creation is gated by the directory the
- * atomic temp+rename lands in.
- *
- * ponytail: `access(W_OK)` is advisory, not a guarantee — on Windows it sees the
- * read-only attribute and not ACLs, and nothing survives another process taking
- * the file between the check and the write. That is why a positive answer only
- * lets the `out-of-date` resolution say panda CHECKED, never that it will
- * succeed. Upgrade path: none worth having; a trial write is exactly the thing
- * this command may not do.
  */
-async function writableLocation(path: string): Promise<boolean | undefined> {
+async function permitsWrite(path: string): Promise<boolean | undefined> {
   let candidate = path
   for (;;) {
     try {
@@ -254,6 +244,43 @@ async function writableLocation(path: string): Promise<boolean | undefined> {
       candidate = parent
     }
   }
+}
+
+/**
+ * Whether panda could write at `path` — modelling the write panda ACTUALLY
+ * performs, which is not `open(path, 'w')`. Every byte panda lands goes through
+ * one atomic writer: a temp file created in the target's own directory, then
+ * renamed over the target.
+ *
+ * So the permission that decides the outcome is the DIRECTORY's, on both
+ * platforms — the temp file has to be created there, and rename() consults the
+ * containing directory, never the mode of the name it replaces. A 0444 target
+ * whose directory is writable is replaced without complaint on POSIX. Windows
+ * is the exception, and only Windows: rename over a file carrying the read-only
+ * attribute fails EPERM there, so that one check is guarded by the platform
+ * rather than applied to both. Both halves measured by execution (see the
+ * differential rows in `test/doctor.test.ts`).
+ *
+ * ponytail: `access(W_OK)` is advisory, not a guarantee — on Windows it sees the
+ * read-only attribute and not ACLs, and nothing survives another process taking
+ * the directory between the check and the write. That is why a positive answer
+ * only lets the `out-of-date` resolution say panda CHECKED, never that it will
+ * succeed. Upgrade path: none worth having; a trial write is exactly the thing
+ * this command may not do.
+ *
+ * ponytail: a SYMLINKED target is probed at the link's own directory, not at the
+ * directory of the file `realpath` resolves to, which is where the writer lands
+ * it. Ceiling accepted deliberately: `realpath` is not one of the four fs verbs
+ * this package is allowed to import (`test/guard.test.ts`), and the answer is
+ * advisory either way. Upgrade path: the engine reports the resolved write
+ * target alongside the row, and this probes that.
+ */
+async function writableLocation(path: string): Promise<boolean | undefined> {
+  if (process.platform === 'win32' && (await isFile(path))) {
+    const target = await permitsWrite(path)
+    if (target !== true) return target
+  }
+  return await permitsWrite(dirname(path))
 }
 
 /**

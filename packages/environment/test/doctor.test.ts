@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { RegistryStore } from '@panda/registry'
 import { afterAll, describe, expect, it } from 'vitest'
 import { DIAGNOSIS_FINDING_KINDS, diagnose, hasProblem } from '../src/doctor.ts'
@@ -386,15 +386,76 @@ describe('the exit code is a promise a script can keep', () => {
   })
 })
 
+// --- The two rows below are DIFFERENTIAL ------------------------------------
+//
+// The invariant is not "a 0444 file is reported not-writable". It is that
+// doctor's verdict and what `panda init` really does never disagree — which is
+// this spec's whole thesis, and which a fixed mode number quietly replaced with
+// one platform's semantics. `chmod(file, 0o444)` blocks nothing on POSIX,
+// because panda writes through a temp file renamed over the target and rename()
+// consults the containing DIRECTORY, never the mode of the name it replaces; on
+// win32 the read-only attribute is exactly what refuses the rename, and a 0555
+// directory is what blocks nothing. So each row builds the state that is
+// genuinely unwritable HERE, proves it by attempting the real write, and only
+// then asks doctor to agree with the outcome that was observed.
+
+/**
+ * Performs EXACTLY the write a projection performs — a temp file created in the
+ * target's own directory, renamed over the target — carrying the target's
+ * current bytes, so landing it proves the location accepts writes while
+ * changing nothing about what is there.
+ */
+async function writeLands(target: string): Promise<boolean> {
+  const temp = `${target}.control-write.tmp`
+  const { mode } = await stat(target)
+  try {
+    await writeFile(temp, await readFile(target))
+    await rename(temp, target)
+  } catch {
+    await rm(temp, { force: true }).catch(() => {})
+    return false
+  }
+  // The rename replaced the INODE, so the target now wears the temp file's mode
+  // — the control would otherwise destroy the very state it was performed on,
+  // and the diagnosis below would be about a file that no longer exists.
+  await chmod(target, mode)
+  return true
+}
+
+/**
+ * Makes `target` a location panda cannot write, whichever way actually blocks
+ * the temp+rename on this platform, and returns the undo — or `undefined` when
+ * the control write landed anyway, which means the state this test needs could
+ * not be produced here (running as root, a filesystem that ignores modes) and
+ * the caller must skip rather than assert something untrue.
+ */
+async function unwritable(target: string): Promise<(() => Promise<void>) | undefined> {
+  const [path, closed, open] =
+    process.platform === 'win32' ? [target, 0o444, 0o666] : [dirname(target), 0o555, 0o777]
+  await chmod(path, closed)
+  const undo = (): Promise<void> => chmod(path, open)
+  if (await writeLands(target)) {
+    await undo()
+    return undefined
+  }
+  return undo
+}
+
+const CANNOT_BLOCK = `could not make the location unwritable on ${process.platform}: the control write landed anyway, so there is no unwritable state to diagnose here`
+
 describe('panda doctor never promises a write panda cannot perform', () => {
-  it('reports a read-only vendor file as not-writable instead of out-of-date', async () => {
+  it('reports an unwritable vendor location as not-writable instead of out-of-date', async (context) => {
     const { homeDir } = await fixture()
     const claudeJson = await withClaude(homeDir)
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
     await initMachine({ homeDir })
     // The entry changes, so projecting would rewrite the file — and cannot.
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server-2', args: [] })
-    await chmod(claudeJson, 0o444)
+    const undo = await unwritable(claudeJson)
+    // `return`, not a bare call: `skip` throws, but its `never` is not narrowed
+    // through a contextually-typed parameter, so the `finally` below would read
+    // as possibly-undefined without it.
+    if (undo === undefined) return context.skip(CANNOT_BLOCK)
     try {
       const diagnosis = await diagnose({ homeDir })
 
@@ -413,16 +474,41 @@ describe('panda doctor never promises a write panda cannot perform', () => {
       // a write that already failed once.
       expect(kinds(await diagnose({ homeDir }))).toContain('not-writable')
     } finally {
+      await undo()
+    }
+  })
+
+  it('agrees with the write that lands, on the very state the other platform refuses', async () => {
+    const { homeDir } = await fixture()
+    const claudeJson = await withClaude(homeDir)
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
+    await initMachine({ homeDir })
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server-2', args: [] })
+    // The control for the row above: a 0444 target inside a writable directory
+    // is unwritable on win32 and perfectly writable on POSIX. Whichever it is
+    // here, doctor must say the same thing the write itself does — asserting a
+    // fixed kind on this state is what shipped a finding CI could disprove.
+    await chmod(claudeJson, 0o444)
+    try {
+      const blocked = !(await writeLands(claudeJson))
+      expect(kinds(await diagnose({ homeDir })).includes('not-writable')).toBe(blocked)
+      const applied = await initMachine({ homeDir })
+      expect(applied.targets[0]?.written).toBe(!blocked)
+    } finally {
       await chmod(claudeJson, 0o666)
     }
   })
 
-  it('reports a read-only ledger, which inspection can never discover by failing', async () => {
+  it('reports an unwritable ledger, which inspection can never discover by failing', async (context) => {
     const { homeDir } = await fixture()
     await withClaude(homeDir)
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
     const applied = await initMachine({ homeDir })
-    await chmod(applied.ledgerPath, 0o444)
+    const undo = await unwritable(applied.ledgerPath)
+    // `return`, not a bare call: `skip` throws, but its `never` is not narrowed
+    // through a contextually-typed parameter, so the `finally` below would read
+    // as possibly-undefined without it.
+    if (undo === undefined) return context.skip(CANNOT_BLOCK)
     try {
       const diagnosis = await diagnose({ homeDir })
 
@@ -436,7 +522,7 @@ describe('panda doctor never promises a write panda cannot perform', () => {
       const second = await initMachine({ homeDir })
       expect(second.targets[0]?.error?.code).toBe('PANDA_PROJECTION_LEDGER_UNAVAILABLE')
     } finally {
-      await chmod(applied.ledgerPath, 0o666)
+      await undo()
     }
   })
 })
