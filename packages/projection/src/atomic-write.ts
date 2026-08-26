@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 
 // Atomic persistence for target files: temp file in the same directory, then
 // rename over the target. Atomicity here means reader visibility (readers only
@@ -10,6 +11,14 @@ import { basename, dirname, join } from 'node:path'
 //
 // The previous file's permissions are copied onto the temp file before the
 // rename so a projection never widens or narrows the target's mode.
+//
+// SYMLINKS ARE FOLLOWED, NEVER REPLACED. `~/.claude.json -> ~/dotfiles/claude.json`
+// is the ordinary way people keep these files in a repo, and rename() over a
+// symlink destroys the link and orphans the source: every later edit in the
+// dotfiles repo goes nowhere, `git status` there shows nothing, and panda exits
+// 0. So the link is resolved first and the rename lands on the real file. A link
+// that cannot be resolved — dangling, a cycle — is a coded refusal, because the
+// only alternative is to materialise a regular file where the user put a link.
 
 async function priorMode(path: string): Promise<number | undefined> {
   try {
@@ -20,15 +29,41 @@ async function priorMode(path: string): Promise<number | undefined> {
   }
 }
 
+/**
+ * The real file the write must land on. Identity for a regular file or an
+ * absent one; the link's destination for a symlink.
+ */
+async function writeTargetOf(path: string): Promise<string> {
+  let link: boolean
+  try {
+    link = (await lstat(path)).isSymbolicLink()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return path
+    throw error
+  }
+  if (!link) return path
+  try {
+    return await realpath(path)
+  } catch (error) {
+    const detail = (error as NodeJS.ErrnoException)?.code ?? String(error)
+    throw new PandaError(
+      PANDA_ERROR_CODES.projectionNativeUnclaimable,
+      `native config file '${path}' is a symlink panda cannot resolve (${detail}); refusing to replace the link with a regular file`,
+      { cause: error },
+    )
+  }
+}
+
 export async function atomicWriteText(path: string, contents: string): Promise<void> {
-  const dir = dirname(path)
+  const target = await writeTargetOf(path)
+  const dir = dirname(target)
   await mkdir(dir, { recursive: true })
-  const mode = await priorMode(path)
-  const tempPath = join(dir, `${basename(path)}.${randomUUID()}.tmp`)
+  const mode = await priorMode(target)
+  const tempPath = join(dir, `${basename(target)}.${randomUUID()}.tmp`)
   try {
     await writeFile(tempPath, contents, 'utf8')
     if (mode !== undefined) await chmod(tempPath, mode)
-    await rename(tempPath, path)
+    await rename(tempPath, target)
   } catch (error) {
     await unlink(tempPath).catch(() => {})
     throw error

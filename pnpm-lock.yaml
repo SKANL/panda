@@ -57,6 +57,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@panda/environment':
+        specifier: workspace:*
+        version: link:../environment
       '@panda/session':
         specifier: workspace:*
         version: link:../session
@@ -79,6 +82,31 @@ importers:
       '@panda/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
+
+  packages/environment:
+    dependencies:
+      '@panda/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@panda/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@panda/projection':
+        specifier: workspace:*
+        version: link:../projection
+      '@panda/registry':
+        specifier: workspace:*
+        version: link:../registry
+    devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3

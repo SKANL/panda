@@ -2,8 +2,8 @@
 title: 'panda init and project init'
 type: 'feature'
 created: '2026-08-25'
-status: 'in-progress'
-review_loop_iteration: 0
+status: 'done'
+review_loop_iteration: 1
 baseline_commit: '45450b2'
 context:
   - '{project-root}/_bmad-output/planning-artifacts/ROADMAP-01-composition-first.md'
@@ -60,12 +60,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Consumer-tier package with machine init and project init
-- [ ] Executor detection from filesystem evidence, with the evidence reported
-- [ ] Projection through the Story 2.8 engine and ledger; writes recorded through a sink
-- [ ] Result shape distinguishing written / unchanged / drifted / unprojectable per target
-- [ ] CLI bindings + the pin extended; consumer test proving FR-29
-- [ ] Every matrix row
+- [x] Consumer-tier package with machine init and project init
+- [x] Executor detection from filesystem evidence, with the evidence reported
+- [x] Projection through the Story 2.8 engine and ledger; writes recorded through a sink
+- [x] Result shape distinguishing written / unchanged / drifted / unprojectable per target
+- [x] CLI bindings + the pin extended; consumer test proving FR-29
+- [x] Every matrix row
 
 **Acceptance Criteria:**
 - Given a project with detected executors, when project init runs, then each executor's own configuration contains the registry's entries in that executor's vocabulary at the location it reads
@@ -74,6 +74,16 @@ context:
 - And drift is reported and never overwritten, unprojectable entries are reported with a reason, and a second run writes nothing
 
 ## Spec Change Log
+
+- **Review, a symlinked config was silently replaced by a regular file (patch, USER DATA):** `~/.claude.json -> ~/dotfiles/claude.json` is the single most common way people manage these files, and the atomic rename landed on the link — orphaning the dotfiles source, so every later edit there went nowhere and `git status` in that repo showed nothing. Fixed at the root in `atomicWriteText`: the target is `lstat`ed, a symlink is resolved, and the bytes land on the real file. A link that cannot be resolved fails coded rather than materialising a regular file. Every target and the ledger inherit it.
+- **Review, panda accused the user of editing bytes panda wrote (patch, USER DATA):** the engine writes the vendor file and updates the ledger afterwards, so a ledger failure threw with the bytes already on disk while the result reported `written: false`. The next run then classified panda's own write as `edited` and refused to touch it — the entry never tracked the registry again. Fixed at the root: the result is produced before the ledger update and travels alongside a ledger failure, and the caller now emits one row per PLANNED target carrying both.
+- **Review, detection failed in the wrong direction (patch):** every `stat` failure read as "absent", so a permission error, a dangling symlink or an unreadable home all made the CLI print "no executor configuration was found under any of…" and exit 2 — about paths where an entry demonstrably existed. It told the user nothing was installed when the truth was that panda could not look. Evidence now carries a third state and the errno; only ENOENT and ENOTDIR are absence, and the exit says so.
+- **Review, panda built directories it was asked to bind (patch):** `panda project init <typo>` created the whole tree and wrote into it, `homeDir: ''` — which is `process.env.HOME ?? ''` in a consumer, the exact shape FR-29 sells — relocated the machine scope into the working directory, and `panda project init -f` created a directory named `-f`. Scope directories are resolved once, rejected when empty, and required to exist: panda binds a project, it never creates one.
+- **Review, silence read as success (patch):** a run where every entry drifted, or where the only detected executor had no project-scope config and nothing was projected, exited 0 with an empty stderr — indistinguishable from success in a script. Warnings, drift, unprojectable reasons and skips now reach stderr. `result.warnings` in particular is the ledger's channel for reporting that panda has lost its own ownership records.
+- **Review, two of this story's guards did not guard (patch):** the finding worth remembering, because this epic's whole correction is about criteria satisfiable without the feature working. The FR-29 consumer test — the positive proof that the SDK works without the CLI — had an unpinned import list: a reviewer rewrote it to import from `@panda/registry` and `@panda/kernel` directly and it passed 7/7, leaving the re-export closure undefended. And the "only the projection engine writes a vendor file" scan was evadable twice over, by `from 'fs/promises'` without the `node:` prefix and by `atomicWriteText`, which this package already imports. The import list is pinned exactly now, the scan matches both specifier spellings, and `atomicWriteText` stopped being exported at all — nothing outside projection used it.
+- **Review, one of the three executors was never exercised (patch):** no fixture created `~/.config/opencode`, so OpenCode was never detected present and no projection ever ran into an OpenCode file. Pointing its evidence path at a wrong directory broke NOTHING, because the absent-branch tests wanted `present === false` — exactly what a wrong path produces. That is the four-story inertness scoped to one executor, inside the story written to prevent it. OpenCode now has the fixture pair the others had, asserted in OpenCode's own schema — `mcp.<id>` with `type: 'local'` and `command` AS the argv array — and the same mutation now breaks four tests. Evidence-path values for all three executors are pinned against literals.
+- **Review, concurrent runs lost a ledger claim permanently (patch):** two `ProjectionLedger` instances over one document had per-instance serialisation, so concurrent machine and project init ended with one record and the other entry reported as a foreign collision forever. Serialisation is keyed by resolved ledger path now, and the header comment that claimed merging alone made this safe says why it does not. Cross-process remains open and filed.
+- **Review, `ensure` was not what its docstring said (patch):** it claimed to rewrite an existing valid document with identical content, and in fact rewrote the store's reconstruction — destroying unknown top-level keys on every `panda init`, and spending a lock and an atomic rename each time, so a read-only init could die of contention. It is create-only now, with tests in its own package.
 
 ## Design Notes
 

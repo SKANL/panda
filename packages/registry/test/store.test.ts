@@ -261,3 +261,65 @@ describe('RegistryStore', () => {
     })
   })
 })
+
+// --- ensure(): the store document a fresh machine has to end up with -------
+
+describe('RegistryStore.ensure', () => {
+  it('creates a readable store document for a scope that has never been written', async () => {
+    const dirs = await makeDirs()
+    const path = await makeStore(dirs).ensure('global')
+
+    expect(path).toBe(join(dirs.homeDir, '.panda', 'registry.json'))
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ version: 1, entries: [] })
+    // The format stays the store's: a caller writing `{version, entries}` by
+    // hand would fork it the first time either side changed.
+    expect(await makeStore(dirs).list()).toEqual([])
+  })
+
+  it('leaves an existing document byte-for-byte alone, unknown keys included', async () => {
+    const dirs = await makeDirs()
+    const path = join(dirs.homeDir, '.panda', 'registry.json')
+    await mkdir(join(dirs.homeDir, '.panda'), { recursive: true })
+    // A key this build does not model — a newer panda's, or a human's note.
+    const original = '{"version":1,"entries":[{"type":"tool","id":"demo"}],"writtenBy":"panda-next"}'
+    await writeFile(path, original, 'utf8')
+
+    await makeStore(dirs).ensure('global')
+
+    // Re-persisting would write this build's RECONSTRUCTION of the document and
+    // destroy `writtenBy` — on every `panda init`, silently.
+    expect(await readFile(path, 'utf8')).toBe(original)
+  })
+
+  it('does not take the lock, so preparing a machine cannot lose to a concurrent writer', async () => {
+    const dirs = await makeDirs()
+    const path = await makeStore(dirs).ensure('global')
+    // A live, healthy lock held by this very process: any contender waits out
+    // its deadline and fails with CONTENTION. A read-only ensure must not.
+    await writeFile(
+      `${path}.lock`,
+      JSON.stringify({ pid: process.pid, host: 'localhost', acquiredAt: new Date().toISOString(), token: 't' }),
+      'utf8',
+    )
+    await expect(makeStore(dirs).ensure('global')).resolves.toBe(path)
+  })
+
+  it('fails coded on a corrupt document instead of replacing it', async () => {
+    const dirs = await makeDirs()
+    const path = join(dirs.homeDir, '.panda', 'registry.json')
+    await mkdir(join(dirs.homeDir, '.panda'), { recursive: true })
+    await writeFile(path, 'not json', 'utf8')
+
+    await expect(makeStore(dirs).ensure('global')).rejects.toMatchObject({
+      code: PANDA_ERROR_CODES.registryStoreUnavailable,
+    })
+    expect(await readFile(path, 'utf8')).toBe('not json')
+  })
+
+  it('refuses the agent scope, which is in-memory and has no document', async () => {
+    const dirs = await makeDirs()
+    await expect(
+      (makeStore(dirs) as unknown as { ensure(scope: string): Promise<string> }).ensure('agent'),
+    ).rejects.toBeInstanceOf(PandaError)
+  })
+})

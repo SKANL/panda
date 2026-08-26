@@ -1,6 +1,6 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 import type {
@@ -261,9 +261,20 @@ describe('runProjection', () => {
 
     // An unrecorded write is not a warning: the file already holds new bytes
     // while the ledger holds the old hash, which locks panda out of its own
-    // entry forever. The caller has to know the projection did not complete.
-    expect(run.results).toEqual([])
+    // entry forever. The caller has to know the projection did not complete —
+    // and that is what `failures` carries.
     expect(run.failures[0]!.error.code).toBe(PANDA_ERROR_CODES.projectionLedgerUnavailable)
+
+    // But the RESULT still travels, and reports the write that actually
+    // happened. Suppressing it here reported `written: false` for bytes already
+    // on disk, and the next run then classified them as `edited` — panda
+    // accusing the user of editing what panda itself wrote, after which the
+    // entry never tracks the registry again. The bytes are the evidence.
+    expect(run.results).toHaveLength(1)
+    expect(run.results[0]).toMatchObject({ targetId: 'claude-mcp', written: true })
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({
+      mcpServers: { context7: { type: 'stdio' } },
+    })
   })
 
   it('does not CREATE a config file for an empty registry', async () => {
@@ -366,5 +377,107 @@ describe.skipIf(process.platform === 'win32')('atomic write file modes', () => {
       ledger: ledgerIn(dir),
     })
     expect((await stat(filePath)).mode & 0o777).toBe(0o600)
+  })
+})
+
+// --- The two ways a projection could damage state it does not own ----------
+
+describe('projection never replaces what it was pointed at', () => {
+  it('writes THROUGH a symlinked config instead of replacing the link', async () => {
+    const homeDir = await makeHome()
+    const dotfiles = join(homeDir, 'dotfiles')
+    await mkdir(dotfiles, { recursive: true })
+    const real = join(dotfiles, 'claude.json')
+    await writeFile(real, '{\n  "numStartups": 3\n}\n', 'utf8')
+    const link = join(homeDir, '.claude.json')
+    try {
+      await symlink(real, link)
+    } catch {
+      // Windows without Developer Mode refuses symlink() for unprivileged users;
+      // the clause is real everywhere it can be created.
+      return
+    }
+
+    const run = await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [createClaudeMcpTarget({ filePath: link })],
+      ledger: ledgerIn(homeDir),
+    })
+    expect(run.failures).toEqual([])
+    expect(run.results[0]!.written).toBe(true)
+
+    // `~/.claude.json -> ~/dotfiles/claude.json` is how these files are kept in
+    // a repo. A rename over the link leaves a regular file, orphans the source,
+    // and every later edit in the dotfiles repo goes nowhere — silently, exit 0.
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+    const source = JSON.parse(await readFile(real, 'utf8')) as Record<string, unknown>
+    expect(source['numStartups']).toBe(3)
+    expect(source['mcpServers']).toMatchObject({ context7: { type: 'stdio' } })
+  })
+
+  it('refuses a dangling symlink with a code instead of materialising a file', async () => {
+    const homeDir = await makeHome()
+    const link = join(homeDir, '.claude.json')
+    try {
+      await symlink(join(homeDir, 'nowhere', 'claude.json'), link)
+    } catch {
+      return
+    }
+    const run = await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [createClaudeMcpTarget({ filePath: link })],
+      ledger: ledgerIn(homeDir),
+    })
+    expect(run.results).toEqual([])
+    expect(run.failures[0]!.error.code).toBe(PANDA_ERROR_CODES.projectionNativeUnclaimable)
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+  })
+
+  it('names the file and the reason when the config path is not a readable file', async () => {
+    const homeDir = await makeHome()
+    const filePath = join(homeDir, '.claude.json')
+    await mkdir(filePath, { recursive: true })
+    const run = await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [createClaudeMcpTarget({ filePath })],
+      ledger: ledgerIn(homeDir),
+    })
+    // A bare EISDIR names neither the path nor what panda wanted with it.
+    expect(run.failures[0]!.error.code).toBe(PANDA_ERROR_CODES.projectionNativeUnclaimable)
+    expect(run.failures[0]!.error.message).toContain(filePath)
+    expect(run.failures[0]!.error.message).toContain('EISDIR')
+  })
+})
+
+describe('two ledgers over one file cannot lose a claim', () => {
+  it('keeps both claims when concurrent runs share the ledger path', async () => {
+    const homeDir = await makeHome()
+    const machineFile = join(homeDir, '.claude.json')
+    const projectFile = join(homeDir, 'project', '.mcp.json')
+    await mkdir(join(homeDir, 'project'), { recursive: true })
+
+    // Two ProjectionLedger INSTANCES over the same document, which is exactly
+    // what `initMachine()` and `initProject()` running concurrently are. An
+    // instance-scoped queue serialises neither, and `update` rewrites the whole
+    // document from a read taken before the other one wrote: one claim is lost
+    // permanently and its entry is a foreign collision from then on.
+    await Promise.all([
+      runProjection({
+        entries: groupByKind(ENTRIES),
+        targets: [createClaudeMcpTarget({ filePath: machineFile })],
+        ledger: new ProjectionLedger({ homeDir }),
+      }),
+      runProjection({
+        entries: groupByKind(ENTRIES),
+        targets: [createClaudeMcpTarget({ filePath: projectFile })],
+        ledger: new ProjectionLedger({ homeDir }),
+      }),
+    ])
+
+    const ledger = await new ProjectionLedger({ homeDir }).read()
+    expect(ledger.state).toBe('readable')
+    expect(ledger.records.map((record) => record.filePath).sort()).toEqual(
+      [resolve(machineFile), resolve(projectFile)].sort(),
+    )
   })
 })

@@ -36,6 +36,13 @@ export const PANDA_ERROR_CODES = {
   projectionTraitsInvalid: 'PANDA_PROJECTION_TRAITS_INVALID',
   projectionLedgerUnavailable: 'PANDA_PROJECTION_LEDGER_UNAVAILABLE',
   projectionNativeUnclaimable: 'PANDA_PROJECTION_NATIVE_UNCLAIMABLE',
+  // The machine or project scope panda was pointed at cannot be used: a
+  // directory that does not exist, a path that is not a directory, an empty
+  // string where a home was expected, or panda's own state directory occupied
+  // by a file. Coded because every one of these is reachable from a caller's
+  // argv or a consumer's `process.env.HOME ?? ''`, and a raw ENOENT/EEXIST
+  // names neither the path nor what panda wanted from it.
+  environmentScopeUnavailable: 'PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

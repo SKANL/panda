@@ -25,9 +25,13 @@ import { atomicWriteText } from './atomic-write.ts'
 // written over; it is reported and left exactly as it is.
 //
 // Writes MERGE: a run replaces only the records for the target and file it just
-// projected. It can never drop a claim for a file it did not touch, which is
-// what makes two targets sharing one ledger — or two runs over different files
-// — safe without a cross-process lock.
+// projected, so it can never drop a claim for a target+file pair it did not
+// touch. Merging alone is NOT enough, because `update` rewrites the whole
+// document from a read taken before it: two interleaved read-modify-writes lose
+// one side's claim permanently, and the entry is then a foreign collision
+// forever. Serialisation therefore keys on the LEDGER FILE and is process-wide
+// — two ProjectionLedger INSTANCES over one path share a queue, which is what
+// two concurrent inits in one process actually are.
 
 const LEDGER_FILE_NAME = 'projection-ledger.json'
 
@@ -109,18 +113,28 @@ function detailOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * Read-modify-write queues, keyed by resolved ledger path. Module-level on
+ * purpose: an instance-level queue serialises one ProjectionLedger object, and
+ * every caller that constructs its own — `initMachine` and `initProject` run
+ * concurrently, for instance — gets its own object over the SAME file.
+ *
+ * ponytail: in-process only, so two panda PROCESSES can still interleave and
+ * lose a claim. A cross-process lock cannot be borrowed from @panda/registry
+ * (AD-2/AD-7: that edge was removed in Story 2.8 and leaked PANDA_REGISTRY_*
+ * codes out of a projection API); extracting a leaf lock package with its own
+ * codes is the upgrade path, recorded in deferred-work.md.
+ */
+const LEDGER_QUEUES = new Map<string, Promise<unknown>>()
+
 export class ProjectionLedger {
   readonly filePath: string
-  // ponytail: in-process serialisation only. It closes the read-modify-write
-  // window for every target in a run and for two targets sharing a file, which
-  // is the reachable case; two panda PROCESSES racing are further protected by
-  // merging rather than replacing. A real cross-process lock belongs in a leaf
-  // package with its own error codes, not borrowed from @panda/registry (AD-2,
-  // AD-7) — extract one if concurrent panda processes ever become real.
-  #queue: Promise<unknown> = Promise.resolve()
+  readonly #queueKey: string
 
   constructor(options: ProjectionLedgerOptions = {}) {
     this.filePath = options.filePath ?? join(options.homeDir ?? homedir(), '.panda', LEDGER_FILE_NAME)
+    const resolved = resolveOwnedPath(this.filePath)
+    this.#queueKey = process.platform === 'win32' ? resolved.toLowerCase() : resolved
   }
 
   /** Never throws: the three states are what callers must distinguish. */
@@ -172,7 +186,7 @@ export class ProjectionLedger {
    * read-modify-write window cannot interleave.
    */
   async update(scope: ProjectionLedgerScope, records: readonly ProjectionLedgerRecord[]): Promise<void> {
-    const run = this.#queue.then(async () => {
+    const run = (LEDGER_QUEUES.get(this.#queueKey) ?? Promise.resolve()).then(async () => {
       const current = await this.read()
       if (current.state === 'unreadable') {
         throw new PandaError(
@@ -188,8 +202,15 @@ export class ProjectionLedger {
     })
     // The chain must survive a rejection, or one failed target would deadlock
     // every later one.
-    this.#queue = run.catch(() => undefined)
-    await run
+    const settled = run.catch(() => undefined)
+    LEDGER_QUEUES.set(this.#queueKey, settled)
+    try {
+      await run
+    } finally {
+      // Drop the entry once this is the tail, so a long-lived process does not
+      // accumulate one resolved promise per ledger path it ever touched.
+      if (LEDGER_QUEUES.get(this.#queueKey) === settled) LEDGER_QUEUES.delete(this.#queueKey)
+    }
   }
 
   async #persist(records: readonly ProjectionLedgerRecord[]): Promise<void> {

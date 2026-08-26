@@ -4,7 +4,6 @@ export type {
   ProjectionRun,
   RunProjectionOptions,
 } from './engine.ts'
-export { atomicWriteText } from './atomic-write.ts'
 export { ProjectionLedger, hashOwnedText, resolveOwnedPath, sameOwnedPath } from './ledger.ts'
 export type {
   ProjectionLedgerOptions,

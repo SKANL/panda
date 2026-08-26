@@ -76,8 +76,16 @@ async function readNativeFile(
     const [text, stats] = await Promise.all([readFile(filePath, 'utf8'), stat(filePath)])
     return { text, snapshot: { mtimeMs: stats.mtimeMs, size: stats.size } }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { text: '', snapshot: undefined }
-    throw error
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT') return { text: '', snapshot: undefined }
+    // A directory where the vendor's config file belongs, an unreadable mode, a
+    // dangling link: all reach here as a bare errno naming neither the path nor
+    // what panda wanted with it. Coded, and both facts in the message.
+    throw new PandaError(
+      PANDA_ERROR_CODES.projectionNativeUnclaimable,
+      `native config file '${filePath}' cannot be read (${code ?? 'unknown error'}), so panda cannot place entries there`,
+      { cause: error },
+    )
   }
 }
 
@@ -160,10 +168,25 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
         record.targetId === scope.targetId &&
         sameOwnedPath(resolveOwnedPath(record.filePath), scope.filePath),
     )
+    let projected: { result: ProjectionResult; records: readonly ProjectionLedgerRecord[] }
     try {
-      const projected = await projectTarget(target, options.entries, claimed)
-      if (ledger.state !== 'unreadable') await options.ledger.update(scope, projected.records)
-      results.push(projected.result)
+      projected = await projectTarget(target, options.entries, claimed)
+    } catch (error) {
+      failures.push(toTargetFailure(target.targetId, error))
+      continue
+    }
+    // The result is reported EVEN IF the ledger write below fails, and that
+    // ordering is the whole point: by this line the vendor's file already holds
+    // the new bytes. Reporting `written: false` for them — which is what
+    // dropping the result on a ledger failure amounts to at every caller — makes
+    // panda accuse the user of editing bytes panda wrote on the very next run,
+    // after which the entry never tracks the registry again. The failure still
+    // travels, so a caller learns the projection did not COMPLETE; what it no
+    // longer learns is a falsehood about what landed on disk.
+    results.push(projected.result)
+    if (ledger.state === 'unreadable') continue
+    try {
+      await options.ledger.update(scope, projected.records)
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
     }

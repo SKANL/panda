@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -110,6 +110,46 @@ export class RegistryStore {
         ],
       }))
     })
+  }
+
+  /**
+   * Materialises the store document for a persisted scope and returns its path,
+   * so a machine that has registered nothing still has a readable store on disk
+   * (`panda init`'s guarantee). It lives here rather than in the caller because
+   * the document's version and shape are the store's to define — a caller
+   * writing `{version, entries}` by hand would silently fork the format.
+   *
+   * CREATE-ONLY, and both halves of that matter. An existing document is
+   * VALIDATED and left byte-for-byte alone: rewriting it would persist this
+   * build's reconstruction of it, destroying any top-level key the store does
+   * not model — on every `panda init`. And a read-only call must not queue
+   * behind the lockfile, or preparing a machine could die with
+   * PANDA_REGISTRY_CONTENTION because another panda happened to be writing.
+   * A corrupt document fails coded through #readStore and is never replaced.
+   */
+  async ensure(scope: Exclude<RegistryScope, 'agent'>): Promise<string> {
+    if ((scope as RegistryScope) === 'agent') {
+      throw new PandaError(
+        PANDA_ERROR_CODES.registryInvalidEntry,
+        "invalid registry entry: the 'agent' scope is in-memory and has no store document to create",
+      )
+    }
+    validateRegistryScope(scope)
+    this.#assertActive()
+    const path = this.#storePath(scope)
+    const present = await stat(path).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return false
+        throw unavailable('read', path, error)
+      },
+    )
+    if (present) {
+      await this.#readStore(path)
+      return path
+    }
+    await this.#mutate(scope, () => this.#persist(path, (current) => current))
+    return path
   }
 
   async remove(type: RegistryEntryType, id: string, scope: RegistryScope): Promise<void> {
