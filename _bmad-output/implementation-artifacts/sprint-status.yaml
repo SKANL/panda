@@ -66,7 +66,7 @@ development_status:
   2-6-liveness-detection-hierarchy: backlog  # re-spec onto native hook locations
   # ROADMAP-01 M2: split — 2.7 was the named home for four deferred items.
   2-7a-panda-init-and-project-init: done
-  2-7b-panda-doctor: backlog
+  2-7b-panda-doctor: in-progress
   2-7c-executor-selection-for-panda-run: backlog
   2-8-native-config-projection-with-ownership-ledger: done
   2-9-filesystem-materialisation-targets: backlog
