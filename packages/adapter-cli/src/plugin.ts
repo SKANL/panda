@@ -9,7 +9,7 @@ import {
   createExecutorAdapter,
   unknownExecutor,
 } from './catalogue.ts'
-import type { CliExecutorAdapterOptions } from './traits.ts'
+import { USAGE_DATA_KEY, type CliExecutorAdapterOptions } from './traits.ts'
 
 // The executor adapter, mounted as a kernel plugin (Story M3.B).
 //
@@ -34,8 +34,32 @@ export const EXECUTOR_PLUGIN_ID = 'executor'
 /** The key this plugin reads out of the kernel's composed configuration. */
 export const EXECUTOR_CONFIG_KEY = 'executor'
 
-/** What one executor run costs the budget when nothing configures otherwise. */
+/**
+ * What one executor run is ADMITTED at when nothing configures otherwise, before
+ * the vendor says what it actually spent.
+ *
+ * ponytail: still a flat 1. Panda may not invent a token figure — estimating or
+ * tokenizing is the exact thing this story removes — so the only honest pre-run
+ * number is a placeholder in whatever unit the caller's caps are denominated in.
+ * A host budgeting tokens passes its own `cost`; the settlement then replaces it
+ * with the vendor's own figure either way. Upgrade path: a per-executor estimate,
+ * which is per-model weighting and Ask-First (deferred-work.md).
+ */
 export const DEFAULT_EXECUTOR_ACTION_COST = 1
+
+/**
+ * The vendor's own usage figure, as the adapter put it on the envelope.
+ *
+ * Forwarded whatever it is, never sanitised here: an absent key means "nothing
+ * observed this run" and charges the estimate, while a PRESENT but broken value
+ * is a coded rejection the pipeline owns and records. Quietly turning the second
+ * into the first would hide a lying adapter behind a normal-looking run.
+ */
+function reportedUsage(envelope: ResultEnvelope): number | undefined {
+  const data = envelope.data
+  if (!isRecord(data) || !Object.hasOwn(data, USAGE_DATA_KEY)) return undefined
+  return data[USAGE_DATA_KEY] as number | undefined
+}
 
 /**
  * What `kernel.getService('executor')` hands back.
@@ -55,7 +79,9 @@ export interface ExecutorService {
    * it because the caller owns run identity — the session scopes it to the
    * workspace so two sessions on one pipeline stay distinguishable. The COST is
    * the plugin's, never the caller's: a caller that could price its own run
-   * could price it at zero and walk through a cost cap.
+   * could price it at zero and walk through a cost cap. So is the SETTLEMENT —
+   * the plugin observed the vendor, the caller did not, and a caller that could
+   * reconcile its own run to zero has defeated the budget just as thoroughly.
    */
   run(actionId: string, request: RunRequest): Promise<ResultEnvelope>
 }
@@ -200,6 +226,18 @@ export function createExecutorPlugin(options: ExecutorPluginOptions = {}): Execu
           id: actionId,
           cost,
           run: () => adapter.run(request),
+          // Admitted at the estimate, reconciled to what the vendor reported.
+          // Declared HERE, beside `cost` and `run`, because the pipeline reads
+          // all three once at registration and the caller supplies none of them.
+          //
+          // A failed or cancelled run still resolves an envelope, and the adapter
+          // now reads the vendor's figure off EVERY outcome — a killed child
+          // settles carrying what it had already printed — so whatever it spent
+          // before it gave up is charged. A run that produced no figure keeps its
+          // estimate, and the pipeline floors a settlement at that estimate, so
+          // there is no path on which failing, cancelling or under-reporting is
+          // cheaper than reporting honestly.
+          settle: reportedUsage,
         })
         return await handle.invoke()
       },

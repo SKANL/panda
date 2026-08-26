@@ -74,7 +74,7 @@ development_status:
   # plugin kind and nothing in production mounts plugins yet.
   m3a-distribution-and-a-falsifiable-sdk-proof: done
   m3b-plugins-mount-for-real: done
-  m3c-the-token-budget-stops-being-a-boolean: backlog
+  m3c-the-token-budget-stops-being-a-boolean: done
   2-9-filesystem-materialisation-targets: backlog
   2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b
   2-11-remediate-blocks-written-by-a-previous-build: backlog

@@ -40,16 +40,26 @@ import {
 export const SESSION_ACTION_ID = 'session.executor-run'
 
 /**
- * What one executor run costs the budget.
+ * What one executor run is ADMITTED at, before the vendor says what it spent.
  *
- * ponytail: a flat 1, because nothing in the stack counts tokens — the envelope
- * carries no usage figure and the cost must be declared BEFORE the run, so no
- * honest number exists to charge. Story M3.B removed half of what made the three
- * caps collapse: a kernel-owned pipeline now sees EVERY session's invocation, so
- * `maxInvocations` and `maxTotalCost` finally differ across a host that runs
- * more than one. Within a single session they are still one boolean. Upgrade
- * path: an adapter-reported usage figure settled after the run, which needs a
- * pipeline that can adjust a cost post-hoc (deferred-work.md).
+ * The upgrade path the previous note named is now built. Story M3.C gave the
+ * pipeline settlement — an action is admitted on this estimate and reconciled
+ * against the executor's own reported usage when the run resolves — so within a
+ * single session `maxTotalCost` and `maxInvocations` finally refuse on DIFFERENT
+ * runs: one run of claude-code settles at tens of thousands of tokens, so a cost
+ * cap fires while the invocation count is still 1, and an invocation cap fires
+ * while the settled cost is far under its own limit.
+ *
+ * ponytail: this stays a flat 1 on purpose, and it is the last piece of the old
+ * collapse still standing. Panda may not invent a pre-run token figure — no
+ * estimating, no tokenizer, that is the whole point of settling instead — and
+ * raising it to a token-scale placeholder would silently redefine every cap
+ * already written against "1 = one run". A host that budgets in tokens builds
+ * its own kernel (`createSessionKernel`) and can pass its own estimate through
+ * `createExecutorPlugin({ cost })`; the settlement corrects it either way. What
+ * remains open: a run whose vendor reports nothing is charged this 1, so a
+ * session against such an executor is still capped by count rather than by
+ * spend (deferred-work.md).
  */
 export const SESSION_ACTION_COST = 1
 

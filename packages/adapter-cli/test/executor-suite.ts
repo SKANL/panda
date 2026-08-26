@@ -42,6 +42,11 @@ export interface ExecutorClauseCase {
   readonly expectedResult: string
   /** Everything besides `result` this executor's traits put into `data`. */
   readonly expectedMetadata: Readonly<Record<string, string>>
+  /**
+   * The summed usage figure `okStdout` carries, when this executor reports one.
+   * A NUMBER, and separate from `expectedMetadata`, which is string-only.
+   */
+  readonly expectedUsage?: number
   /** stdout of a run the executor itself reports as failed, while exiting 0. */
   readonly reportedFailureStdout: string
   /** The reason `reportedFailureStdout` states; must reach the envelope. */
@@ -65,7 +70,11 @@ export function runExecutorClauseSuite(cases: readonly ExecutorClauseCase[]): vo
       return { spawner, adapter: clauseCase.makeAdapter({ spawner, ...options }) }
     }
     const okOutcome: SpawnOutcome = { exitCode: 0, stdout: clauseCase.okStdout, stderr: '' }
-    const okData = { result: clauseCase.expectedResult, ...clauseCase.expectedMetadata }
+    const okData = {
+      result: clauseCase.expectedResult,
+      ...clauseCase.expectedMetadata,
+      ...(clauseCase.expectedUsage === undefined ? {} : { usage: clauseCase.expectedUsage }),
+    }
 
     it('passes every clause of the Story 1.4 contract suite', async () => {
       const { spawner, adapter } = adapterWith(okOutcome)

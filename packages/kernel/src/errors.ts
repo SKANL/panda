@@ -22,6 +22,15 @@ export const KERNEL_ERROR_CODES = {
   costCapExceeded: 'PANDA_KERNEL_COST_CAP_EXCEEDED',
   concurrencyCapExceeded: 'PANDA_KERNEL_CONCURRENCY_CAP_EXCEEDED',
   stageFailed: 'PANDA_KERNEL_STAGE_FAILED',
+  // A settlement figure reached the pipeline and could not be charged: not a
+  // number, not finite, negative, or past the integer precision every later
+  // total depends on. Recorded rather than thrown (see `intercept.ts`): the
+  // operation had already run, and turning a completed action into a failed one
+  // because its accounting was junk loses the work AND the reason.
+  settlementInvalid: 'PANDA_KERNEL_SETTLEMENT_INVALID',
+  // An action was admitted while a settlement was mid-flight, so the total it
+  // would have been checked against was already known to be stale.
+  settlementInProgress: 'PANDA_KERNEL_SETTLEMENT_IN_PROGRESS',
 } as const
 
 export type KernelErrorCode = (typeof KERNEL_ERROR_CODES)[keyof typeof KERNEL_ERROR_CODES]

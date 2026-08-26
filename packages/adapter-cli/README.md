@@ -10,7 +10,8 @@ class of its own.
 `ExecutorTraits` = `{executorId, command, args, promptDelivery, promptArgSeparator?, output}`.
 The two real structural axes are prompt delivery and payload shape — everything else is shared
 machinery. The factory validates the record and rejects the shapes that would fail silently
-(empty `command`, empty `resultPath`, empty `errorStatusPrefix`, a `metadata` key colliding with
+(empty `command`, empty `resultPath`, empty `errorStatusPrefix`, `usagePaths` that is empty or
+names an empty path, `usagePaths` without the `usageWhen` that bounds it, a `metadata` key colliding with
 an engine-owned `data` key) with a coded error.
 
 | Executor | Invocation | Prompt | Payload | Result |
@@ -115,3 +116,21 @@ at ≤150ms above raw CLI startup; the deterministic measurement lives in `test/
 and authenticated; otherwise it skips with an explicit reason (never silently passes).
 Set `PANDA_LIVE_SMOKE=0` to disable it explicitly. It is env-gated by design and is never part of
 what `pnpm check` guarantees.
+
+## Token usage
+
+A trait record may declare where its vendor reports what a run spent:
+
+- `usageWhen` — the records that carry usage (`{"type": "turn.completed"}` for codex,
+  `{"type": "step_finish"}` for opencode, `{"type": "result"}` for claude-code).
+- `usagePaths` — the numeric fields inside such a record. They are summed within a record
+  **and across every matching record**, because a vendor that works in steps bills each step.
+
+The total lands on `envelope.data.usage` as a NUMBER — the one non-string value there, and the
+reason `usage` is an engine-owned key a `metadata` key may not collide with. Absent means the
+vendor reported nothing; the figure is never faked, never estimated and never tokenized by panda.
+It fails closed as a whole: if any billed record cannot be read, the run reports no figure rather
+than a sum missing a term.
+
+Every shipped figure is verified against the real binary by `test/usage-live.test.ts`, which is
+also what keeps a fourth adapter from shipping a `usagePaths` nobody ever exercised.

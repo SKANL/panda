@@ -61,6 +61,9 @@ runExecutorClauseSuite([
     ),
     expectedResult: RESULT_TEXT,
     expectedMetadata: {},
+    // 11 + 22: `turn.completed` was already in this fixture because it is what
+    // codex really prints, and M3.C is what finally reads it.
+    expectedUsage: 33,
     reportedFailureStdout: jsonl(
       { type: 'thread.started', thread_id: 't-1' },
       { type: 'error', message: 'stream disconnected before the turn finished' },

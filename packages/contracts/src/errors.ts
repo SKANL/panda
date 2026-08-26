@@ -16,6 +16,8 @@ export const PANDA_ERROR_CODES = {
   kernelCostCapExceeded: 'PANDA_KERNEL_COST_CAP_EXCEEDED',
   kernelConcurrencyCapExceeded: 'PANDA_KERNEL_CONCURRENCY_CAP_EXCEEDED',
   kernelStageFailed: 'PANDA_KERNEL_STAGE_FAILED',
+  kernelSettlementInvalid: 'PANDA_KERNEL_SETTLEMENT_INVALID',
+  kernelSettlementInProgress: 'PANDA_KERNEL_SETTLEMENT_IN_PROGRESS',
   contractEnvelopeInvalid: 'PANDA_CONTRACT_ENVELOPE_INVALID',
   contractWorkspaceUnknownId: 'PANDA_CONTRACT_WORKSPACE_UNKNOWN_ID',
   contractWorkspaceInvalidHandle: 'PANDA_CONTRACT_WORKSPACE_INVALID_HANDLE',

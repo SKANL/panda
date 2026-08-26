@@ -3,6 +3,20 @@ import { LogRecordInvalidError, isKernelErrorCode, type KernelErrorCode } from '
 /**
  * Record-shape version. A reader of a persisted stream branches on this instead
  * of guessing; it is bumped only when the closed shape below changes.
+ *
+ * Story M3.C added the optional `cost` field and did NOT bump this, deliberately.
+ * The version exists so a reader knows how to parse what it is holding, and every
+ * v1 parse still reconstructs everything v1 promised: `cost` only ever appears on
+ * `action.estimated` and `action.settled`, two events no v1 reader ever knew.
+ * Bumping would tell a correct v1 reader its parse had become invalid, which is
+ * false. A version bump is owed the day an EXISTING event's record changes shape.
+ *
+ * The honest cost of that judgement, understated when it was first written: those
+ * two events are not rare. On a pipeline with a budget configured they appear on
+ * every run of every shipped executor, and a strict reader that validates against
+ * a CLOSED event set — which `LOG_EVENTS` invites — errors on them rather than
+ * skipping them. The judgement stands; a reader that must survive new events has
+ * to tolerate them, and no version number makes an unknown event known.
  */
 export const LOG_RECORD_VERSION = 1
 
@@ -42,6 +56,20 @@ export const LOG_EVENTS = [
   'action.refused',
   'action.stage-failed',
   'action.post-failed',
+  // Cost settlement (Story M3.C), emitted as an adjacent PAIR and only when a
+  // figure actually arrived to reconcile against:
+  //   estimated       — what the invocation was admitted at
+  //   settled         — what it turned out to be, and what the total now carries
+  //   settle-rejected — a figure arrived and was not usable; coded, estimate stands
+  //
+  // A run nothing observed emits NEITHER, so its stream stays byte-identical to
+  // what Story 1.7 produced — which is the behaviour neutrality this story owes a
+  // `panda run` against an executor that reports no usage. The absence of the
+  // pair is what makes that absence readable; the CHARGE is never silently zero,
+  // because the estimate simply stands.
+  'action.estimated',
+  'action.settled',
+  'action.settle-rejected',
   'kernel.stopped',
 ] as const
 
@@ -64,6 +92,18 @@ export interface LogEntry {
   readonly service?: string
   /** The kernel error code that classifies a failure event. */
   readonly code?: KernelErrorCode
+  /**
+   * The amount an `action.estimated` declared or an `action.settled` reconciled
+   * to. Rejected on every other event, for the same reason `service` is: an
+   * unrestricted slot is a general-purpose payload channel, and this shape exists
+   * to have none.
+   *
+   * A NUMBER is not the free-form slot the closed shape forbids — there is no
+   * useful way to hide a credential in a finite non-negative float — and without
+   * it the accounting a budget produces cannot be read back at all, which is the
+   * auditability this story is required to deliver.
+   */
+  readonly cost?: number
 }
 
 /**
@@ -140,7 +180,10 @@ export interface MemoryLogSink extends LogSink {
   readonly records: readonly LogRecord[]
 }
 
-const ENTRY_FIELDS = new Set(['event', 'subject', 'service', 'code'])
+const ENTRY_FIELDS = new Set(['event', 'subject', 'service', 'code', 'cost'])
+
+/** Events allowed to carry a `cost`; every other one is a payload smuggling attempt. */
+const COST_EVENTS = new Set<string>(['action.estimated', 'action.settled'])
 
 /**
  * Upstream `validateManifest` accepts ANY non-empty string as a plugin id, and
@@ -200,6 +243,20 @@ function seal(entry: LogEntry, seq: number): LogRecord {
   if (entry.code !== undefined && !isKernelErrorCode(entry.code)) {
     throw new LogRecordInvalidError('code', `must be one of the kernel error codes (got '${String(entry.code)}')`)
   }
+  if (entry.cost !== undefined) {
+    if (!COST_EVENTS.has(entry.event)) {
+      throw new LogRecordInvalidError(
+        'cost',
+        `is only meaningful on ${[...COST_EVENTS].join(' or ')} (got '${entry.event}')`,
+      )
+    }
+    // The same rule the pipeline enforces on a declared cost, restated at the
+    // sink because a record is read by people who never see the pipeline: a NaN
+    // written into an audit trail makes every later total unreadable.
+    if (typeof entry.cost !== 'number' || !Number.isFinite(entry.cost) || entry.cost < 0) {
+      throw new LogRecordInvalidError('cost', 'must be a finite number of at least 0')
+    }
+  }
   return Object.freeze({
     version: LOG_RECORD_VERSION,
     seq,
@@ -208,6 +265,7 @@ function seal(entry: LogEntry, seq: number): LogRecord {
     subject,
     ...(entry.service === undefined ? {} : { service: identifier('service', entry.service) }),
     ...(entry.code === undefined ? {} : { code: entry.code }),
+    ...(entry.cost === undefined ? {} : { cost: entry.cost }),
   })
 }
 

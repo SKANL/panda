@@ -133,10 +133,23 @@ and its provider, so `configLayers`, `cwd`, `executorId`, `adapterOptions`,
 `createAdapter`, `createProvider`, `onSelection`, `log` and `actionPolicy` are
 **refused** beside it rather than silently ignored.
 
-**Read the caps honestly.** One session registers one action of cost 1 and
-invokes it once, so within a single session `maxInvocations`, `maxTotalCost` and
-`maxConcurrent` still collapse to a single boolean — *may this session spawn an
-executor at all* — and `maxInvocations: 1` is a no-op there. Across sessions on
-one kernel they are real, and the error `code` says which cap fired. A token
-budget still needs a cost the adapter reports **after** the run; that half is
-tracked in `_bmad-output/implementation-artifacts/deferred-work.md`.
+**Read the caps honestly.** A run is ADMITTED at `SESSION_ACTION_COST` (a flat 1)
+and then SETTLED against the token figure the executor itself reported, so
+`maxTotalCost` and `maxInvocations` now refuse on **different runs**: one
+claude-code run settles at tens of thousands of tokens, which trips a cost cap
+while the invocation count is still 1, and a cheap run trips an invocation cap
+with the settled cost nowhere near its own limit. The error `code` still says
+which cap fired.
+
+Two ceilings remain, and both are tracked in
+`_bmad-output/implementation-artifacts/deferred-work.md`. `maxConcurrent` is
+still collapsed with the other two for a session that registers one action and
+awaits it — nothing a single `panda run` does puts two operations in flight. And
+the ESTIMATE is a flat 1 while the settlement is in the vendor's tokens, so a
+host that budgets in tokens should pass its own `cost` through
+`createExecutorPlugin`; panda will not invent a pre-run token figure.
+
+The settlement is also what the record stream carries: with a policy configured,
+each admitted run emits an `action.estimated` and, if the vendor reported a
+figure, an `action.settled`, so the total is reconstructable from the records
+alone. With no policy set, the stream is exactly what it was before.

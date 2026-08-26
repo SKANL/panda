@@ -139,10 +139,27 @@ sink with no product consumer, and "the session constructs the adapter directly"
 This is the story that makes the methodology plugin possible, which is the piece
 the owner says gives panda its value.
 
-**3.C — The token budget stops being a boolean (NFR-1).** An adapter-reported
-usage figure settled after the run, so a cost cap means something; the ≤4KB
-handoff budget expressed where handoffs happen. Token efficiency is a stated
-design principle of this product with, today, zero implementation.
+**3.C — The token budget stops being a boolean (NFR-2, corrected below).** An
+adapter-reported usage figure settled after the run, so a cost cap means
+something. Today `SESSION_ACTION_COST` is a flat 1, which makes `maxTotalCost`
+indistinguishable from `maxInvocations`: the token budget AD-10 names cannot be
+expressed at all.
+
+**Correction to this roadmap, made while specifying 3.C.** The paragraph above
+originally cited **NFR-1**. That is wrong, and the error is worth keeping rather
+than quietly fixing, because it would have shaped the story. NFR-1 is *"handoffs
+carry artifact references, not pasted content; handoff size budget ≤4KB
+typical"* — it is about **handoffs between agents**, which panda v1 does not
+have; they arrive with Workers & Workflows. The requirement 3.C actually serves
+is **NFR-2**: *"token budgets, loop caps, fan-out limits enforced exclusively at
+the kernel tool-call interception waterfall, never prompts."* NFR-2 has a story
+(1.7) and that story built the waterfall — but its **token-budget** clause is
+vacuous, because no token figure exists anywhere in the stack.
+
+So the honest statement of the gap is narrower and sharper than the original:
+NFR-2's mechanism shipped and one of its three named budgets is unimplementable.
+NFR-1 stays orphaned, and correctly so — it cannot get a story until there is a
+handoff to budget.
 
 ### M4 — Finish Epic 2 on the machinery that now works
 

@@ -50,6 +50,45 @@ export interface ExecutorOutputTraits {
   readonly errorMessagePath?: readonly string[]
   /** Extra payload paths copied into `envelope.data` under the given keys. */
   readonly metadata?: Readonly<Record<string, readonly string[]>>
+  /**
+   * Which records report usage. Required whenever `usagePaths` is declared.
+   *
+   * `usagePaths` is summed across EVERY matching record (see below), so the
+   * discriminator is what bounds the sum: without it, any record whose shape
+   * happens to carry the same paths joins the bill and the run is double-charged.
+   * It is `resultWhen` for the accounting half, and it exists for the same reason.
+   */
+  readonly usageWhen?: PathMatch
+  /**
+   * Paths to the vendor's OWN numeric usage fields, summed into `data.usage`.
+   *
+   * A separate channel from `metadata` rather than a loosening of it: `metadata`
+   * keeps strings, several suites assert exactly that, and a usage figure is a
+   * NUMBER an accounting seam adds up. Widening the shared channel to carry both
+   * would have made every existing metadata key silently numeric-capable too.
+   *
+   * A list, because no vendor reports one total for a run: claude-code reports
+   * disjoint components (uncached input, cache creation, cache read, output) that
+   * only mean something added together. Summing figures a vendor printed is not
+   * panda counting tokens — nothing here estimates, tokenizes or infers; every
+   * term is a number the tool itself emitted.
+   *
+   * Summed ACROSS records as well as within one, because a vendor that works in
+   * steps bills every step. Measured on opencode 1.18.23 with a three-step task:
+   * `step_finish` carried 42770, 42875 and 43025, each equal to its OWN
+   * components rather than to a running total. Taking the last one billed 43025
+   * of 128670 — and a task whose last step is trivial bills almost nothing.
+   *
+   * The record carrying usage is usually NOT the record carrying the result —
+   * codex reports it on `turn.completed` and opencode on `step_finish` — so it is
+   * resolved by its own scan, keyed on `usageWhen`.
+   *
+   * Fails CLOSED as a whole: if any matching record fails to resolve every path
+   * to a finite non-negative number, the run reports NO figure at all rather than
+   * a sum missing a term. A partial bill is a wrong bill; an absent one is a case
+   * the pipeline already handles by keeping the estimate.
+   */
+  readonly usagePaths?: readonly (readonly string[])[]
 }
 
 export interface ExecutorTraits {
@@ -107,8 +146,12 @@ const BYTE_ORDER_MARK = '\uFEFF'
 const ARGUMENT_PROMPT_MAX_LENGTH = process.platform === 'win32' ? 30_000 : 100_000
 
 // Keys the engine itself writes into `envelope.data`; a metadata key colliding
-// with one of them would silently overwrite the real result or hide truncation.
-const RESERVED_DATA_KEYS = ['result', 'stdoutTruncated', 'stderrTruncated']
+// with one of them would silently overwrite the real result, hide truncation, or
+// — since M3.C — forge the figure a cost cap is enforced on.
+const RESERVED_DATA_KEYS = ['result', 'stdoutTruncated', 'stderrTruncated', 'usage']
+
+/** The engine-owned `data` key a settled cost is read back from. */
+export const USAGE_DATA_KEY = 'usage'
 
 export function createCliExecutorAdapter(
   traits: ExecutorTraits,
@@ -142,6 +185,24 @@ function validateExecutorTraits(traits: ExecutorTraits): void {
   }
   for (const key of Object.keys(output.metadata ?? {})) {
     if (RESERVED_DATA_KEYS.includes(key)) reject(`'output.metadata' key '${key}' collides with an engine-owned data key`)
+  }
+  if (output.usagePaths !== undefined) {
+    // An empty list declares "this vendor reports usage" and then never produces
+    // a figure — the inert shape this story exists to refuse. An empty PATH
+    // resolves to the record itself, which is never a number, so it would make
+    // every run silently unsettleable.
+    if (output.usagePaths.length === 0) reject("'output.usagePaths' must name at least one path, or be omitted")
+    for (const path of output.usagePaths) {
+      if (path.length === 0) reject("'output.usagePaths' entries must each name at least one property")
+    }
+    // Required, because the figure is SUMMED across matching records: an
+    // undiscriminated sum bills every record that happens to fit the shape.
+    if (output.usageWhen === undefined) {
+      reject("'output.usageWhen' is required beside 'output.usagePaths' — a summed figure needs a bounded set of records")
+    }
+  }
+  if (output.usageWhen !== undefined && output.usageWhen.path.length === 0) {
+    reject("'output.usageWhen.path' must name at least one property")
   }
 }
 
@@ -224,7 +285,13 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
         )
       }
       const outcome = await completion
-      if (cancelledInFlight) return this.#cancelled(startedAt, spawnSetupMs)
+      if (cancelledInFlight) {
+        // A killed child settles through `close` carrying everything it printed,
+        // so the tokens it already spent are right here. Charging a cancelled run
+        // its estimate while its own stdout says otherwise is a hole a caller can
+        // drive through by aborting late.
+        return this.#cancelled(startedAt, spawnSetupMs, this.#unstructuredData(outcome, this.#scan(outcome.stdout).usage))
+      }
       return this.#fromOutcome(outcome, startedAt, spawnSetupMs)
     } finally {
       request.signal?.removeEventListener('abort', abort)
@@ -264,9 +331,17 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
 
   #fromOutcome(outcome: SpawnOutcome, startedAt: number, spawnSetupMs: number): ResultEnvelope {
     const finish = (envelope: ResultEnvelope) => this.#finish(startedAt, spawnSetupMs, envelope)
-    const truncation = truncationData(outcome)
+    // Scanned FIRST, and on every path below. A child that failed, was killed or
+    // was cut off still printed whatever it had already spent, and those bytes are
+    // in hand here — discarding them made failing and cancelling free, which is
+    // exactly the evasion a budget must not have. Measured before this moved: a
+    // cancelled run carrying 500,000 reported tokens in captured stdout was
+    // charged its estimate of 1.
+    const scan = this.#scan(outcome.stdout)
+    const truncation = this.#unstructuredData(outcome, scan.usage)
 
     if (outcome.spawnErrorMessage !== undefined) {
+      // The one path with genuinely nothing to read: no child ever started.
       return finish(
         this.#failed(
           `executor '${this.#command}' is not available: ${outcome.spawnErrorMessage}`,
@@ -293,18 +368,16 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
       )
     }
 
-    const scan = this.#scan(outcome.stdout)
-
     // An executor that reports its own failure is believed regardless of exit
     // code and regardless of WHERE in the stream it said so: OpenCode emits
     // recoverable error events and keeps going, so a positional rule would drop
     // the reason whenever any output followed it.
-    if (scan.failure !== undefined) return finish(this.#failedFromRecord(scan.failure, outcome))
+    if (scan.failure !== undefined) return finish(this.#failedFromRecord(scan.failure, outcome, scan.usage))
 
     if (outcome.exitCode !== 0) {
       // codex and opencode exit non-zero exactly when they have printed their
       // structured error, so the payload — not stderr noise — is the reason.
-      if (scan.result !== undefined) return finish(this.#failedFromRecord(scan.result, outcome))
+      if (scan.result !== undefined) return finish(this.#failedFromRecord(scan.result, outcome, scan.usage))
       const detail =
         outcome.stderr.trim().length > 0
           ? outcome.stderr.trim()
@@ -323,7 +396,7 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
         ),
       )
     }
-    if (scan.result !== undefined) return finish(this.#okFromRecord(scan.result, outcome))
+    if (scan.result !== undefined) return finish(this.#okFromRecord(scan.result, outcome, scan.usage))
     return finish(this.#failed(this.#noResultDetail(scan), PANDA_ERROR_CODES.executorRunFailed, truncation))
   }
 
@@ -346,12 +419,23 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
    * non-object lines, bookkeeping events) costs nothing.
    */
   #scan(stdout: string): PayloadScan {
-    const scan: MutablePayloadScan = { failure: undefined, result: undefined, sawRecord: false }
+    const scan: MutablePayloadScan = { failure: undefined, result: undefined, usage: undefined, sawRecord: false }
     const text = stdout.startsWith(BYTE_ORDER_MARK) ? stdout.slice(BYTE_ORDER_MARK.length) : stdout
+    // Accumulated across every record `usageWhen` selects, and voided outright by
+    // any one of them that cannot be read — see `usagePaths`.
+    let usageTotal: number | undefined
+    let usageVoid = false
     const consider = (record: Record<string, unknown>) => {
       scan.sawRecord = true
       if (scan.failure === undefined && this.#reportsFailure(record)) scan.failure = record
       if (this.#resultText(record) !== undefined) scan.result = record
+      if (usageVoid || !this.#reportsUsage(record)) return
+      const usage = this.#usageOf(record)
+      if (usage === undefined) {
+        usageVoid = true
+        return
+      }
+      usageTotal = (usageTotal ?? 0) + usage
     }
 
     if (this.#traits.output.payload === 'single-object') {
@@ -362,6 +446,7 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
         return scan
       }
       if (isRecord(parsed)) consider(parsed)
+      scan.usage = usageVoid ? undefined : usageTotal
       return scan
     }
 
@@ -376,7 +461,36 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
       }
       if (isRecord(parsed)) consider(parsed)
     }
+    scan.usage = usageVoid ? undefined : usageTotal
     return scan
+  }
+
+  /** Whether this record is one of the ones this vendor reports usage on. */
+  #reportsUsage(record: Record<string, unknown>): boolean {
+    const when = this.#traits.output.usageWhen
+    return (
+      this.#traits.output.usagePaths !== undefined &&
+      when !== undefined &&
+      resolvePath(record, when.path) === when.equals
+    )
+  }
+
+  /**
+   * What one usage record reports, summed over its declared components, or
+   * undefined when it cannot be read.
+   *
+   * Undefined here VOIDS the whole run's figure rather than skipping the record
+   * (see `#scan`): a term the engine could not read is spend it cannot account
+   * for, and dropping it silently under-bills.
+   */
+  #usageOf(record: Record<string, unknown>): number | undefined {
+    let total = 0
+    for (const path of this.#traits.output.usagePaths ?? []) {
+      const value = resolvePath(record, path)
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined
+      total += value
+    }
+    return total
   }
 
   /** The result text a record carries, or undefined when it carries none. */
@@ -405,17 +519,39 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
     return typeof status === 'string' ? status : undefined
   }
 
-  #data(record: Record<string, unknown>, outcome: SpawnOutcome): Record<string, unknown> {
+  /**
+   * `envelope.data` for one payload record.
+   *
+   * `usage` arrives as a separate argument rather than being read off `record`
+   * because the vendor rarely reports it there: codex prints it on
+   * `turn.completed` and opencode on `step_finish`, both AFTER the record that
+   * carried the answer. It is written as a NUMBER — the one non-string value in
+   * this object, and the only one an accounting seam can add up.
+   */
+  /**
+   * `envelope.data` for a failure that has no payload record to report from —
+   * truncation flags and whatever usage the child printed before it died.
+   * `null` when there is nothing at all, which is what those paths used to return
+   * unconditionally.
+   */
+  #unstructuredData(outcome: SpawnOutcome, usage: number | undefined): Record<string, unknown> | null {
+    const truncation = truncationData(outcome)
+    if (truncation === null && usage === undefined) return null
+    return { ...(truncation ?? {}), ...(usage === undefined ? {} : { [USAGE_DATA_KEY]: usage }) }
+  }
+
+  #data(record: Record<string, unknown>, outcome: SpawnOutcome, usage: number | undefined): Record<string, unknown> {
     const result = resolvePath(record, this.#traits.output.resultPath)
     const data: Record<string, unknown> = typeof result === 'string' ? { result } : {}
     for (const [key, path] of Object.entries(this.#traits.output.metadata ?? {})) {
       const value = resolvePath(record, path)
       if (typeof value === 'string') data[key] = value
     }
+    if (usage !== undefined) data[USAGE_DATA_KEY] = usage
     return { ...data, ...(truncationData(outcome) ?? {}) }
   }
 
-  #failedFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome): ResultEnvelope {
+  #failedFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome, usage: number | undefined): ResultEnvelope {
     const output = this.#traits.output
     const status = this.#status(record)
     const reported = stringifyDetail(resolvePath(record, output.errorMessagePath ?? output.resultPath))
@@ -424,14 +560,14 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
     return this.#failed(
       detail.length > 0 ? `${reason}: ${detail}` : reason,
       PANDA_ERROR_CODES.executorRunFailed,
-      this.#data(record, outcome),
+      this.#data(record, outcome, usage),
     )
   }
 
-  #okFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome): ResultEnvelope {
+  #okFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome, usage: number | undefined): ResultEnvelope {
     return {
       status: 'ok',
-      data: this.#data(record, outcome),
+      data: this.#data(record, outcome, usage),
       summary: this.#summarize(this.#resultText(record) ?? ''),
       errors: [],
     }
@@ -447,10 +583,10 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
     return truncate(firstLine ?? `${this.#traits.executorId} completed the task`)
   }
 
-  #cancelled(startedAt: number, spawnSetupMs: number): ResultEnvelope {
+  #cancelled(startedAt: number, spawnSetupMs: number, data: Record<string, unknown> | null = null): ResultEnvelope {
     return this.#finish(startedAt, spawnSetupMs, {
       status: 'cancelled',
-      data: null,
+      data,
       summary: 'execution cancelled before completion',
       errors: [
         {
@@ -479,6 +615,8 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
 interface PayloadScan {
   readonly failure: Record<string, unknown> | undefined
   readonly result: Record<string, unknown> | undefined
+  /** The vendor's summed usage figure, from whichever record reported it. */
+  readonly usage: number | undefined
   /** At least one line parsed as an object, i.e. the output was not garbage. */
   readonly sawRecord: boolean
 }
