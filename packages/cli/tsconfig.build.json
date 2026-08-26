@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.build.base.json",
+  // `bin/panda.ts` lives OUTSIDE `src/` and imports `../src/run.ts`, so
+  // `rootDir: "src"` cannot cover it (TS5011/TS6059). The package root is the
+  // common source directory of the two included trees, which puts the output at
+  // `dist/src/index.js` and `dist/bin/panda.js` and keeps the binary's relative
+  // import of `../src/run.js` resolving exactly as it does in source.
+  "compilerOptions": { "rootDir": ".", "outDir": "dist" },
+  "include": ["src", "bin"]
+}

@@ -69,6 +69,12 @@ development_status:
   2-7b-panda-doctor: done
   2-7c-executor-selection-for-panda-run: done
   2-8-native-config-projection-with-ownership-ledger: done
+  # ROADMAP-02 M3 — the container and the promise. Not an epic: these precede
+  # Epic 3, because the memory provider and the methodology plugin are each a new
+  # plugin kind and nothing in production mounts plugins yet.
+  m3a-distribution-and-a-falsifiable-sdk-proof: done
+  m3b-plugins-mount-for-real: backlog
+  m3c-the-token-budget-stops-being-a-boolean: backlog
   2-9-filesystem-materialisation-targets: backlog
   2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b
   2-11-remediate-blocks-written-by-a-previous-build: backlog

@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.build.base.json",
+  // `rootDir` is explicit because omitting it fails with TS5011: with a single
+  // include the compiler still refuses to infer the common source directory.
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  // `test` is deliberately absent: tests are not part of the published artifact.
+  "include": ["src"]
+}

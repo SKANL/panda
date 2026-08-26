@@ -28,3 +28,17 @@ jobs:
 
       - name: Check (typecheck + test + lint)
         run: pnpm check
+
+      # The build and the FR-29 proof, in the same job so they reuse the install
+      # and the pnpm store the proof's `--offline` consumer install needs.
+      #
+      # `pnpm check` deliberately needs no build, which is what kept a broken
+      # `tsconfig.build.json` invisible: nothing ran the emit path, and nothing
+      # ran the proof either — a script no automation invokes is unreachable by
+      # default, which is worse than a flag nobody sets. Together they cost about
+      # 35s against a ~47s `pnpm check`.
+      - name: Build
+        run: pnpm build
+
+      - name: FR-29 consumer-install proof
+        run: pnpm proof:consumer-install

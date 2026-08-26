@@ -7,15 +7,20 @@
     "node": ">=24"
   },
   "bin": {
-    "panda": "./bin/panda.ts"
+    "panda": "./dist/bin/panda.js"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "panda-source": "./src/index.ts",
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@panda/environment": "workspace:*",
@@ -26,5 +31,8 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

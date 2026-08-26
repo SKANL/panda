@@ -2,10 +2,6 @@ import { defaultExclude, defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // ponytail: one setting. `setupFiles` runs before every test file in this
-    // package and points the OS home directory at an empty temp directory, so no
-    // assertion here can be decided by the `~/.panda` of whoever ran the suite.
-    setupFiles: ['./test/isolate-home.ts'],
     // vitest 4 dropped `**/dist/**` from `defaultExclude` (2 and 3 carried it).
     // Nothing under `src/` is a test file today, so this changes nothing now —
     // it stops the first colocated `*.test.ts` anyone adds from being collected

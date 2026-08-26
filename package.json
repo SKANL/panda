@@ -11,7 +11,10 @@
     "check": "node scripts/check-source-bytes.mjs && pnpm typecheck && pnpm test && pnpm lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build": "pnpm -r build",
+    "panda": "node --conditions=panda-source packages/cli/bin/panda.ts",
+    "proof:consumer-install": "pnpm --filter @panda/session exec vitest run --config vitest.consumer-install.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

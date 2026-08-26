@@ -7,18 +7,30 @@
     "node": ">=24"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./validation": "./src/validation.ts"
+    ".": {
+      "panda-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./validation": {
+      "panda-source": "./src/validation.ts",
+      "types": "./dist/validation.d.ts",
+      "default": "./dist/validation.js"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "devDependencies": {
     "@panda/kernel": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }
