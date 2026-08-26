@@ -199,3 +199,86 @@ declared entry kind that nothing implements. It belongs in M4, not at the front.
   right treatment is a check at design time, not a deliverable.
 - It does not sweep the ledger. Fifty entries is a signal to re-read it once per
   milestone, not a backlog to burn down.
+
+---
+
+## Amendment (2026-08-26) — M3 closed, and one finding reorders M4
+
+M3 shipped: 3.A distribution and a falsifiable SDK proof, 3.B plugins mounting
+for real, 3.C a token budget that is no longer a boolean. Re-measuring the
+question this roadmap is built on:
+
+**12 of 94 exported symbols have no production caller** (it was 14 of 87). After
+discounting the false positives — adapter factories held as values in the
+catalogue, SDK entry points a consumer calls, the test harness — two real ones
+remain, and they are the same two: Story 2.4's provider ports (`ingestProviders`,
+`IngestWriteFailure`), and **`createRegistryPlugin` — a complete plugin that
+nothing mounts.** M3.B put its Ask-First on "making the registry, projection or
+doctor paths mount plugins", so this is a scoped deferral rather than a miss; but
+it means "everything is a plugin" is true of the run path and false of the
+environment path, and Epic 5's diagnostics build on the environment path.
+
+The ledger is 76 entries, 62 open — up from 56/50 before M3, roughly six per
+story. Still a signal to re-read once per milestone rather than a backlog.
+
+### The finding that reorders M4
+
+M3.C surfaced something incidental to token accounting and load-bearing for
+Epic 4. Quoting the ledger, because the wording is exact:
+
+> `WorkspaceHandle.rootPath` is delivered to an executor as the child's cwd and
+> nothing else, so for opencode the workspace is a suggestion rather than a
+> boundary.
+
+It was found by accident: a live check asked opencode to create two files and
+they appeared in `packages/adapter-cli` — the directory the test process was
+launched from — twice, reproducibly, while the child had been spawned with `cwd`
+set to a fresh temp directory outside the repository. Ruled out as a panda bug by
+a control child through the same spawner, which reported the temp directory
+exactly. The mechanism is unproven; an inherited `INIT_CWD` is the named suspect.
+
+**Epic 4 is built entirely on that premise.** FR-19 is *"concurrent isolated
+sessions"*; 4.1 is managed worktrees with durable ownership; 4.2 is concurrency
+across them. If one of three shipped executors does not confine its file
+operations to the workspace it was handed, then two concurrent sessions in two
+worktrees are not isolated, and the isolation panda would be advertising is a
+property of the executor rather than of panda.
+
+This is the shape that made M1 and M3.B right, twice: a premise that is cheap to
+retire now and expensive to discover after three stories are built on it. So it
+goes first.
+
+### M4 — the workspace is a boundary, or panda says it is not
+
+- **4.A — Executor confinement, measured per executor.** Whatever each of the
+  three actually does with the cwd it is given, established by execution against
+  the real binaries and turned into a known quantity. An executor that does not
+  confine must be reported as not confining; panda must not advertise an
+  isolation it cannot demonstrate. The named suspect — an inherited environment
+  hint — is panda's to control, since panda builds the child's environment.
+- **4.B — 2.9, skills as filesystem materialisation.** Unchanged from the
+  original M4, and still first among the Epic 2 leftovers: you cannot export what
+  you cannot materialise.
+- **4.C — the rest of Epic 2** — 2.6 liveness re-spec, 2.11 remediation, and the
+  `profile` entry kind that carries per-executor model selection.
+
+### M5 — Portability, unchanged
+
+Epic 5.1 and 5.2. Still the differentiator, still reachable, now with a verified
+statement about what isolation a bundle's target actually has.
+
+### Also unblocked, and worth stating
+
+The **MethodPlugin contract (5.3/5.4)** — the piece the owner says gives panda
+its value — was blocked on plugin mounting and is not any more. It is a CONTRACT
+addition, which NFR-8's joint-semver rule makes cheapest before more consumers
+exist. It does not go first only because Epic 4's premise is currently unknown
+and a wrong answer there invalidates work; it should be the first thing after
+this milestone unless portability displaces it.
+
+### Recorded from M3, not built
+
+`panda run` cannot set a budget — no flag, no config key, `actionPolicy` has no
+production caller outside `run-session.ts`. M3.C is true for an SDK host and
+vacuous for the shipped binary. A user-facing budget surface deserves its own
+frozen block; the layered configuration already has the shape for it.

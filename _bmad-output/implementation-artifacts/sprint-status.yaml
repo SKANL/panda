@@ -63,6 +63,10 @@ development_status:
   2-3-codex-and-opencode-targets-via-trait-data: superseded
   2-4-toolprovider-and-skillsource-ports: done
   2-5-shipped-adapters-complete-the-set: done
+  # ROADMAP-02 amendment — M4. 4.A first: Epic 4 stands on a premise M3.C found
+  # broken for one of three executors, and a wrong answer there invalidates the
+  # worktree stories built on it.
+  m4a-the-workspace-is-a-boundary-or-panda-says-it-is-not: in-progress
   2-6-liveness-detection-hierarchy: backlog  # re-spec onto native hook locations
   # ROADMAP-01 M2: split — 2.7 was the named home for four deferred items.
   2-7a-panda-init-and-project-init: done
