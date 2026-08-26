@@ -29,6 +29,22 @@ import type { CliExecutorAdapter, CliExecutorAdapterOptions, ExecutorTraits } fr
 // `type == "result"` so a future print-mode event carrying a `usage` of its own
 // cannot join the sum.
 //
+// Confinement, MEASURED (M4.A) by running the real binary and looking at the
+// filesystem, not by reading a flag: told to create a file, claude created it in
+// the cwd it was spawned in while `PWD` named a directory OUTSIDE that cwd and
+// `INIT_CWD` a third one. claude resolves the write against its cwd. It confines
+// a workspace-relative write, which is not the same as being confined: MEASURED
+// in the same story, claude asked for an ABSOLUTE path outside the workspace
+// created the file there without hesitating. panda runs it with
+// `--dangerously-skip-permissions` and spawns an ordinary child with the user's
+// own privileges, so there is nothing between the two. Epic 4 inherits that.
+//
+// `test/confinement-live.test.ts` keeps this true, and it spawns claude
+// deliberately OUTSIDE panda's spawner to do it: panda now hands every child a
+// `PWD` equal to its cwd, so a claude that started following `$PWD` tomorrow
+// would still land in the workspace and a through-panda check could never
+// notice. The lie has to reach the child for the claim to be falsifiable.
+//
 // The same payload also reports `total_cost_usd` and a per-model `modelUsage`
 // (which restates the four figures under different spellings, and is what the live
 // check reads as an INDEPENDENT oracle); money is Ask-First, so neither ships.

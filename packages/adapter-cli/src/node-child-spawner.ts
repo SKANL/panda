@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions as NodeSpawnOptions } from 'node:child_process'
+import { resolve } from 'node:path'
 import type { ChildProcessSpawner, SpawnedChild, SpawnOutcome } from './spawn-seam.ts'
 
 // stdout/stderr capture cap per stream; beyond it we truncate and flag, so a
@@ -59,11 +60,51 @@ export function routesThroughCmdShim(command: string): boolean {
   return process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
 }
 
+/*
+ * The environment a child receives (see `nodeOptions.env` below): panda's own,
+ * with the ONE variable that claims to name the working directory corrected to
+ * the directory the child is actually given.
+ *
+ * `PWD` is not decoration. A tool that resolves relative paths against
+ * `process.env.PWD` instead of `process.cwd()` writes wherever `PWD` points,
+ * and an inherited `PWD` points at the directory PANDA was launched from —
+ * which is how a workspace stops being a boundary. Measured for M4.A against
+ * the real binaries with `PWD` aimed at a decoy directory outside the child's
+ * cwd: `opencode` created its file in the decoy, twice; `claude` used its cwd
+ * and ignored it.
+ *
+ * Corrected rather than deleted, because a shell-hosted tool may legitimately
+ * read `$PWD` and would break on its absence; a `PWD` that agrees with `cwd`
+ * cannot mislead anything. Every other inherited variable is left alone. Of the
+ * 95 a child receives on the machine this was measured on, 39 hold a single
+ * absolute path — `HOME`, `USERPROFILE`, `APPDATA`, `TEMP`, `INIT_CWD`,
+ * `OLDPWD` among them — and exactly one of them CLAIMS to name the child's
+ * working directory. Only that one is panda's to correct. `INIT_CWD`, the
+ * ledger's named suspect, was RULED OUT by the same measurement: it pointed at
+ * a second, different decoy that stayed empty through every run, and deleting a
+ * variable measured not to matter would be the silent scrub this story exists
+ * to avoid.
+ *
+ * What this does NOT do: it does not confine anything. An executor that asks
+ * for an absolute path outside the workspace gets it — measured, with codex —
+ * and `HOME` still points at the real one, so per-user executor state (opencode
+ * keeps ONE SQLite database there) is shared by every concurrent session. panda
+ * makes the workspace TRUE for a workspace-relative write; it is not a sandbox.
+ */
+
 export function createNodeChildSpawner(): ChildProcessSpawner {
   return {
     spawn(command, args, options) {
+      // Resolved once, so a RELATIVE cwd cannot become two different absolute
+      // paths: node resolves `cwd` against the parent's directory, and a relative
+      // `PWD` would be re-resolved against the CHILD's. `resolve` normalises but
+      // does not canonicalise, so `PWD` is the LOGICAL path — through a symlinked
+      // root it names the link where `process.cwd()` names the target, which is
+      // the ordinary shell convention for `$PWD` and not an escape.
+      const cwd = resolve(options.cwd)
       const nodeOptions: NodeSpawnOptions = {
-        cwd: options.cwd,
+        cwd,
+        env: { ...process.env, PWD: cwd },
         windowsHide: true,
         detached: process.platform !== 'win32',
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -71,8 +112,8 @@ export function createNodeChildSpawner(): ChildProcessSpawner {
 
       // Resolving twice is a no-op: whichever settle path lands first wins.
       let resolveDone!: (outcome: SpawnOutcome) => void
-      const done = new Promise<SpawnOutcome>((resolve) => {
-        resolveDone = resolve
+      const done = new Promise<SpawnOutcome>((resolveOutcome) => {
+        resolveDone = resolveOutcome
       })
       let settled = false
       const settle = (outcome: SpawnOutcome) => {

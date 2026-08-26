@@ -60,9 +60,35 @@ adapter would confidently return chain-of-thought as the result.
 ### Working directory
 
 All three CLIs accept a cwd flag (`-C`, `--dir`), and none of them is passed: the spawn seam
-already starts the child in `workspace.rootPath`. One mechanism, shared, already exercised.
-Codex additionally needs `--skip-git-repo-check` because a panda workspace is not necessarily a
-git repository.
+starts the child in `workspace.rootPath`. Codex additionally needs `--skip-git-repo-check`
+because a panda workspace is not necessarily a git repository.
+
+The cwd is **not** the only mechanism, and believing it was is what M4.A found. `opencode`
+resolves its file tools against `$PWD` rather than against `process.cwd()`, so with panda's own
+`PWD` inherited it wrote into the directory panda was launched from — twice, reproducibly. The
+spawner therefore hands every child a `PWD` equal to the cwd it is given. Two mechanisms, and for
+opencode the second one is the load-bearing one.
+
+### What the workspace is, and what it is not
+
+Measured per executor against the real binaries (`test/confinement-live.test.ts`):
+
+| Executor | A workspace-relative write | Notes |
+|---|---|---|
+| `claude-code` | lands in the workspace | resolves against its cwd; ignores a lying `PWD` |
+| `codex` | never happens | `codex exec` defaults to the `read-only` sandbox, so **as panda ships it codex cannot create or edit a file at all** |
+| `opencode` | lands in the workspace | resolves against `$PWD`, which panda sets to the cwd |
+
+**panda makes the workspace true; it does not enforce it.** Told to write to an ABSOLUTE path
+outside the workspace, `claude` did so without hesitating — panda runs it with
+`--dangerously-skip-permissions` and spawns an ordinary child with the user's own privileges, and
+nothing sits between the two. (`codex` refused, but that is codex's own sandbox, not panda's.)
+OS-level sandboxing is a deliberate non-goal here.
+
+And `HOME` is passed through untouched, because scrubbing it would break all three: per-user
+executor state is therefore SHARED across concurrent sessions — `opencode` keeps a single SQLite
+database under `~/.local/share/opencode/`, `claude` a per-project directory under `~/.claude/`.
+Two isolated workspaces do not imply two isolated executors.
 
 ### Argument delivery is a trust boundary
 
@@ -101,8 +127,15 @@ started by a test. The spawner is also the orphan-detection surface: after cance
 after a broken stdin pipe, no child may remain unsettled-and-unkilled.
 
 Two suites do spawn real processes, and neither runs an executor: `test/overhead.test.ts` and
-`test/tree-kill.test.ts` spawn `process.execPath` (part of `pnpm check`, no network, no auth), and
-`test/live-smoke.test.ts` is the only test that runs a real coding CLI.
+`test/tree-kill.test.ts` spawn `process.execPath` (part of `pnpm check`, no network, no auth).
+Three suites run a real coding CLI: `test/live-smoke.test.ts`, `test/usage-live.test.ts` and
+`test/confinement-live.test.ts`.
+
+The spawner also decides the child's ENVIRONMENT, which is otherwise inherited whole. Exactly one
+variable is changed: `PWD` is set to the cwd the child is given, because it is the only inherited
+variable that claims to name the working directory and a stale one redirects `opencode`'s writes.
+Nothing is removed — `INIT_CWD` was the suspect M3.C named and was ruled out by measurement, and
+deleting a variable measured not to matter is a scrub, not a fix.
 
 ## Spawn-overhead instrumentation
 
@@ -116,6 +149,16 @@ at ≤150ms above raw CLI startup; the deterministic measurement lives in `test/
 and authenticated; otherwise it skips with an explicit reason (never silently passes).
 Set `PANDA_LIVE_SMOKE=0` to disable it explicitly. It is env-gated by design and is never part of
 what `pnpm check` guarantees.
+
+## Confinement
+
+`test/confinement-live.test.ts` measures, per executor, where a file the executor was told to
+create actually lands. The same rule applies: a missing or non-answering binary skips with its
+reason, an authenticated-but-logged-out one skips, and `PANDA_LIVE_CONFINEMENT=0` disables it.
+Because that means CI — where none of the three binaries exists — runs it green while measuring
+nothing, its last case PRINTS which executors were measured; read that line before trusting a
+green run. Its deterministic half (what environment the spawner hands a child) runs everywhere and
+needs no binary.
 
 ## Token usage
 
