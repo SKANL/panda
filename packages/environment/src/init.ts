@@ -12,7 +12,7 @@ import type {
 } from '@panda/contracts'
 import { createMemoryLogSink } from '@panda/kernel'
 import type { LogSink } from '@panda/kernel'
-import { ProjectionLedger, groupByKind, runProjection } from '@panda/projection'
+import { ProjectionLedger, groupByKind, runProjection, runRemediation } from '@panda/projection'
 import type { ProjectionMode } from '@panda/projection'
 import { RegistryStore } from '@panda/registry'
 import { EXECUTOR_PROFILES, detectExecutors } from './executors.ts'
@@ -272,7 +272,89 @@ interface PlannedTarget {
   readonly target: ProjectionTarget
 }
 
-function targetsFor(
+/**
+ * Panda's OWN prior output still sitting in a vendor file (correction-01 C6).
+ *
+ * Every field of every row is produced by `runRemediation` under INSPECTION —
+ * the same call, in the same file, that `discard` performs. So the sentence
+ * `panda doctor` prints about a legacy block is the sentence the remediation
+ * will act on, and the two cannot describe different regions.
+ */
+export interface LegacyBlock {
+  readonly executorId: string
+  readonly targetId: string
+  readonly filePath: string
+  /** What panda found and would remove, or why it will not touch it. */
+  readonly detail: string
+  /** Bytes the file would lose; 0 when panda refuses. */
+  readonly byteDelta: number
+  readonly refusal?: TargetFailure
+}
+
+/**
+ * MACHINE SCOPE, AND `'inspect'` HARD-CODED. Two separate deliberate choices:
+ *
+ * Machine scope, because the builds that wrote these locations had no project
+ * scope at all — `panda project init` arrives in Story 2.7a, after correction-01
+ * — so there is no project-scope file that can hold one.
+ *
+ * `'inspect'` written here rather than threaded from `runScope`'s own `mode`,
+ * because `panda init` must never remove a legacy block: removal is a decision,
+ * and this story's whole rule is that a decision is a user's, named one at a
+ * time. Passing the caller's mode through would make `panda init` silently
+ * rewrite a vendor file — pinned by a test in `test/remediate.test.ts`.
+ */
+async function legacyFor(
+  detected: readonly ExecutorDetection[],
+  homeDir: string,
+): Promise<LegacyBlock[]> {
+  const present = new Set(
+    detected.filter((detection) => detection.present).map((detection) => detection.executorId),
+  )
+  const rows: LegacyBlock[] = []
+  for (const profile of EXECUTOR_PROFILES) {
+    if (!present.has(profile.executorId) || profile.legacyConfig === undefined) continue
+    const location = profile.legacyConfig(homeDir)
+    let outcome
+    try {
+      outcome = await runRemediation({
+        remediation: 'discard',
+        legacy: { targetId: profile.targetId, rootPath: homeDir, ...location },
+        mode: 'inspect',
+      })
+    } catch {
+      // A file panda cannot READ is not evidence that litter is in it, and this
+      // finding's only resolution is a removal panda would then be unable to
+      // perform — which is the false promise `panda doctor`'s own Never clause
+      // forbids. Silence here, and the two of these three files that a target
+      // owns already report the read failure as `target-failed`.
+      continue
+    }
+    const change = outcome.changes[0]
+    if (outcome.refusal !== undefined) {
+      rows.push({
+        executorId: profile.executorId,
+        targetId: profile.targetId,
+        filePath: location.filePath,
+        detail: outcome.refusal.message,
+        byteDelta: 0,
+        refusal: outcome.refusal,
+      })
+      continue
+    }
+    if (change === undefined) continue
+    rows.push({
+      executorId: profile.executorId,
+      targetId: profile.targetId,
+      filePath: location.filePath,
+      detail: change.detail,
+      byteDelta: change.byteDelta,
+    })
+  }
+  return rows
+}
+
+export function targetsFor(
   scope: 'machine' | 'project',
   detected: readonly ExecutorDetection[],
   homeDir: string,
@@ -371,6 +453,12 @@ export interface ScopeReport {
   /** One row per VERIFIED skills root; see `InitResult.skills`. */
   readonly skills: readonly ScopeTarget[]
   readonly skipped: readonly SkippedExecutor[]
+  /**
+   * Panda's own prior output found in a vendor file. Computed under `'inspect'`
+   * ONLY: `panda init` neither reports nor removes it, because removing it is a
+   * decision and this story's rule is that a decision is a user's.
+   */
+  readonly legacy: readonly LegacyBlock[]
   readonly warnings: readonly ProjectionWarning[]
   /**
    * Set ONLY under `'inspect'`, and only when panda's own registry document
@@ -403,7 +491,7 @@ function pandaDirOf(root: string): string {
   return join(root, '.panda')
 }
 
-function storeFor(scope: 'machine' | 'project', homeDir: string, projectDir: string): RegistryStore {
+export function storeFor(scope: 'machine' | 'project', homeDir: string, projectDir: string): RegistryStore {
   return new RegistryStore(scope === 'machine' ? { homeDir } : { homeDir, projectDir })
 }
 
@@ -495,6 +583,7 @@ export async function runScope(
       targets: [],
       skills: [],
       skipped,
+      legacy: scope === 'machine' && mode === 'inspect' ? await legacyFor(detected, homeDir) : [],
       warnings: [],
       registryError,
     }
@@ -568,6 +657,7 @@ export async function runScope(
     targets,
     skills: skillRows,
     skipped,
+    legacy: scope === 'machine' && mode === 'inspect' ? await legacyFor(detected, homeDir) : [],
     warnings: run.warnings,
   }
 }

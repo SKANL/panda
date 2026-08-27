@@ -87,16 +87,24 @@ export interface ProjectionLedgerRecord {
 
 /**
  * The three ledger-versus-disk verdicts. All of them are REPORTED and none of
- * them is resolved by writing: panda only ever overwrites content whose hash
- * still matches what panda itself last wrote.
+ * them is resolved by a PROJECTION: panda only ever overwrites content whose
+ * hash still matches what panda itself last wrote. Leaving one of these states
+ * is a decision, and a decision is a user's — see {@link REMEDIATION_KINDS}.
+ *
+ * A VALUE, not only a type, because the totality proof that every reportable
+ * state has an exit needs to enumerate these at runtime rather than repeat them
+ * in a list that can fall behind the union.
  */
-export type DriftKind =
+export const DRIFT_KINDS = [
   /** In the ledger, present on disk, content changed since panda wrote it. */
-  | 'edited'
+  'edited',
   /** In the ledger, absent from disk: the user deleted it; never re-added. */
-  | 'removed-by-user'
+  'removed-by-user',
   /** Occupying the native location but absent from the ledger: not panda's. */
-  | 'foreign-collision'
+  'foreign-collision',
+] as const
+
+export type DriftKind = (typeof DRIFT_KINDS)[number]
 
 export interface DriftEntry {
   readonly kind: DriftKind
@@ -170,6 +178,62 @@ export interface ProjectionConfigTarget {
   readonly targetId: string
   readonly filePath: string
   merge(request: ProjectionMergeRequest): ProjectionMergeOutcome | Promise<ProjectionMergeOutcome>
+  /**
+   * The ledger record that would claim whatever currently occupies one entry's
+   * native location — the ADOPT half of the remediation vocabulary.
+   *
+   * Only the target knows where an entry lives in its own format and what "the
+   * same entry" means there, and `contentHash` has to be computed exactly the
+   * way {@link merge} computes it or the adopted claim would read as `edited`
+   * on the very next run. So the record is built HERE, by the same code, rather
+   * than reconstructed by a caller from the outside.
+   *
+   * OPTIONAL, and the absence is a refusal rather than a gap: a target that
+   * cannot say what occupies its location gets no adoption, because claiming
+   * bytes panda cannot identify is the one thing this vocabulary must not do.
+   */
+  claim?(request: ProjectionClaimRequest): ProjectionClaim
+}
+
+export interface ProjectionClaimRequest {
+  /** Current native text; '' when the file does not exist. */
+  readonly nativeText: string
+  readonly entryId: string
+}
+
+/**
+ * What a target found at one entry's native location.
+ *
+ * The three answers are distinct on purpose: `record` — claimable, and this is
+ * the claim; `refusal` — occupied by something panda must not claim, with the
+ * reason in the target's own words; neither — the location is FREE, so there is
+ * nothing to adopt.
+ */
+export interface ProjectionClaim {
+  /** Vendor-native location the answer is about, e.g. `mcpServers.context7`. */
+  readonly location: string
+  /** Bytes currently occupying the location; 0 when it is free. */
+  readonly byteLength: number
+  readonly record?: ProjectionLedgerRecord
+  readonly refusal?: string
+  /**
+   * Absolute paths a LATER run would be allowed to overwrite and to REMOVE on
+   * this claim's authority.
+   *
+   * Adoption writes no vendor byte, so this is not a list of what changes now —
+   * it is the consequence, and it has to be in the description before the claim
+   * is written because taking it is what makes those paths deletable. Absent for
+   * a config claim, which authorises replacing a REGION inside a file and can
+   * never remove the file itself.
+   */
+  readonly ownedPaths?: readonly string[]
+  /**
+   * True when the registry does NOT hold this entry, so the next ordinary run
+   * would REMOVE what the claim covers rather than converge it. The sharpest
+   * consequence adoption can have, and the one a user must be told before it is
+   * taken.
+   */
+  readonly removedNext?: boolean
 }
 
 // --- Materialisation (correction-01 C4) -------------------------------------
@@ -262,3 +326,91 @@ export interface ProjectionFailure {
 
 /** Registry entries grouped by kind, as projection consumes them. */
 export type RegistryEntriesByKind = Readonly<Record<RegistryEntryType, readonly RegistryEntry[]>>
+
+// --- Remediation (M4.C) -----------------------------------------------------
+//
+// Every verdict above is REPORTED and none is resolved by projecting again —
+// that refusal is the guarantee the whole subsystem rests on and it is correct.
+// What was wrong is that the refusal was TERMINAL: the only exit from `edited`,
+// `removed-by-user` or `foreign-collision` was hand-editing the ownership
+// ledger, which is the file every one of those guarantees is stored in.
+//
+// The vocabulary below is the exit. Four verbs, chosen against what each state
+// actually needs rather than against what is easy to build:
+//
+//   adopt   — panda claims what is at its own location, exactly as it is now.
+//             This is the ownership TRANSFER decision AD-6 always implied and
+//             no story had taken: ownership is a durable record, so transferring
+//             it is writing that record, never inferring one from the path.
+//   release — panda stops claiming a location. The file is not read, not
+//             written, not looked at.
+//   repair  — panda rewrites its OWN ledger document to hold exactly the records
+//             it can still read. Touches no vendor file, ever.
+//   discard — panda removes its OWN prior output from a vendor file
+//             (correction-01 C6): a `$.panda` key or a `# BEGIN panda-managed`
+//             block a previous build wrote at a location no executor reads.
+//
+// THREE OF THE FOUR TOUCH NO USER FILE AT ALL. That is a deliberate design
+// property, not an accident of scope: `adopt` and `release` change what panda
+// CLAIMS and let the ordinary projection converge afterwards, so the one command
+// a user reaches for while something is already wrong cannot lose a byte they
+// wrote. `discard` is the single exception and the only bytes it can remove are
+// panda's own vocabulary.
+//
+// WHAT IS DELIBERATELY NOT HERE: a verb that writes a registry entry's rendering
+// straight into a vendor file. Panda already has one — `panda init` — and it
+// refuses only because the ledger disagrees with the disk. Fixing the
+// disagreement is `adopt`; a second renderer beside the merge is exactly the
+// divergent code path correction-01 and `panda doctor` exist to not have.
+
+export const REMEDIATION_KINDS = ['adopt', 'release', 'repair', 'discard'] as const
+
+export type RemediationKind = (typeof REMEDIATION_KINDS)[number]
+
+/**
+ * One thing a remediation will change — or, under inspection, WOULD change.
+ *
+ * This is the description AND the act: the same value is produced by the same
+ * call in both modes, so a preview cannot describe something other than what
+ * lands. `byteDelta` is 0 for every ledger-only change, which is how a reader
+ * sees at a glance that a remediation is not touching their file.
+ */
+export interface RemediationChange {
+  /** Panda's own ownership record, or a file panda did not author. */
+  readonly subject: 'ledger' | 'native-file'
+  readonly action: 'claim' | 'unclaim' | 'rewrite'
+  /** Absolute path of the file this change lands in. */
+  readonly path: string
+  /** Vendor-native location, or the ledger scope, the change is about. */
+  readonly location: string
+  /** Absolute byte-length delta of `path`; 0 for a ledger claim. */
+  readonly byteDelta: number
+  readonly detail: string
+}
+
+/**
+ * A remediation panda will not perform, flattened to the two fields a caller
+ * acts on. A live `Error` serialises to `{}` for every caller that prints this.
+ */
+export interface RemediationRefusal {
+  readonly code: PandaErrorCode
+  readonly message: string
+}
+
+export interface RemediationOutcome {
+  readonly remediation: RemediationKind
+  readonly targetId: string
+  /** The entry the remediation is about; `''` where the verb has no entry. */
+  readonly entryId: string
+  /** The location the remediation is about — a native location or a file. */
+  readonly location: string
+  /**
+   * Exactly what changed, or under inspection exactly what WOULD change.
+   * Empty with no refusal means the state was already the one asked for.
+   */
+  readonly changes: readonly RemediationChange[]
+  /** False under inspection, and false whenever `refusal` is set. */
+  readonly applied: boolean
+  /** Set when panda refused; `changes` is then what it declined to do, if anything. */
+  readonly refusal?: RemediationRefusal
+}

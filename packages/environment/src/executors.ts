@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProjectionConfigTarget, ProjectionMaterialiseTarget } from '@panda/contracts'
+import type { FileFormat } from '@panda/projection'
 import {
   CLAUDE_MCP_TARGET_ID,
   CLAUDE_SKILLS_TARGET_ID,
@@ -107,6 +108,24 @@ export interface ExecutorProfile {
   readonly machineSkills: ((homeDir: string) => string) | undefined
   readonly skillsTargetId: string | undefined
   readonly createSkillsTarget: ((rootPath: string) => ProjectionMaterialiseTarget) | undefined
+  /**
+   * Where a PREVIOUS panda build wrote panda's own vocabulary, and in which
+   * format — correction-01 C6.
+   *
+   * These are not locations panda writes; they are locations panda has to be
+   * able to CLEAN. Stories 2.2 and 2.3 put a reserved `$.panda` key into the
+   * JSON family and a `# BEGIN panda-managed` block into Codex's TOML, none of
+   * which any executor reads and the Codex one of which stops the user's whole
+   * `config.toml` from loading under `--strict-config`. A machine that ran one
+   * of those builds still has the litter, and the corrected build cannot produce
+   * it — so it is reported and removed rather than merged around.
+   *
+   * MACHINE SCOPE ONLY, and that is a measurement rather than an omission: the
+   * builds that wrote these had no project scope at all (`panda project init`
+   * arrives in Story 2.7a, after correction-01), so there is no project-scope
+   * location that can hold one.
+   */
+  readonly legacyConfig: ((homeDir: string) => { filePath: string; fileFormat: FileFormat }) | undefined
 }
 
 export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
@@ -124,6 +143,15 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineSkills: (homeDir) => join(homeDir, '.claude', 'skills'),
     skillsTargetId: CLAUDE_SKILLS_TARGET_ID,
     createSkillsTarget: (rootPath) => createClaudeSkillsTarget({ rootPath }),
+    // `settings.json`, NOT `~/.claude.json`: correction-01 measured that the
+    // previous build wrote `$.panda.{tools,mcpServers,skills,hooks}` there, into
+    // a file whose schema has none of those keys. Panda's corrected target does
+    // not touch this file at all, which is exactly why nothing would ever clean
+    // it without this entry.
+    legacyConfig: (homeDir) => ({
+      filePath: join(homeDir, '.claude', 'settings.json'),
+      fileFormat: 'jsonc',
+    }),
   },
   {
     executorId: 'codex',
@@ -140,6 +168,13 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineSkills: (homeDir) => join(homeDir, '.codex', 'skills'),
     skillsTargetId: CODEX_SKILLS_TARGET_ID,
     createSkillsTarget: (rootPath) => createCodexSkillsTarget({ rootPath }),
+    // The harmful one. A `# BEGIN panda-managed` block here carries foreign
+    // sub-keys inside `[tools]` and `[skills]`, which are real fixed structs, so
+    // a documented `--strict-config` run fails to load the ENTIRE file.
+    legacyConfig: (homeDir) => ({
+      filePath: join(homeDir, '.codex', 'config.toml'),
+      fileFormat: 'toml',
+    }),
   },
   {
     executorId: 'opencode',
@@ -154,6 +189,13 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineSkills: (homeDir) => join(homeDir, '.config', 'opencode', 'skills'),
     skillsTargetId: OPENCODE_SKILLS_TARGET_ID,
     createSkillsTarget: (rootPath) => createOpenCodeSkillsTarget({ rootPath }),
+    // The same file panda's corrected target merges into, so the reserved key
+    // sits beside the `mcp` entries panda writes today; it is dropped at decode
+    // (`onExcessProperty: 'ignore'`) and read by nothing.
+    legacyConfig: (homeDir) => ({
+      filePath: join(homeDir, '.config', 'opencode', 'opencode.json'),
+      fileFormat: 'jsonc',
+    }),
   },
 ]
 

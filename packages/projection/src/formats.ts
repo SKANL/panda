@@ -1,6 +1,8 @@
 import { PandaError, PANDA_ERROR_CODES, UNPROJECTABLE_ENTRY_IDS, isRecord } from '@panda/contracts'
 import type {
   DriftEntry,
+  ProjectionClaim,
+  ProjectionClaimRequest,
   ProjectionLedgerRecord,
   ProjectionMcpEntry,
   ProjectionMergeOutcome,
@@ -646,6 +648,190 @@ const FORMAT_STRATEGIES: Readonly<Record<FileFormat, FormatStrategy>> = {
   toml: TOML_STRATEGY,
 }
 
+// --- correction-01 C6: panda's own prior output ------------------------------
+//
+// Stories 2.2 and 2.3 wrote panda's OWN vocabulary into vendor files: a reserved
+// `$.panda` root key in the JSON family, and a `# BEGIN panda-managed` block in
+// Codex's TOML. Not one byte of it is read by any executor, and the Codex form
+// is actively harmful — foreign sub-keys inside `[tools]` and `[skills]` make
+// the user's whole `config.toml` fail to load under the documented
+// `--strict-config`. correction-01 C6 makes removing it part of the correction.
+//
+// The corrected build cannot reach that state itself, so this is a LOCATOR, not
+// a drift verdict: it finds panda's own litter on a machine that ran a previous
+// build, and the `discard` remediation removes exactly the region it names. One
+// function, used by the report and by the act — a second locator could describe
+// a region other than the one removed, which is the whole reason `panda doctor`
+// is an inspection mode rather than a copy.
+
+/** The legacy marker the TOML form opens with; also how a reader recognises it. */
+const LEGACY_TOML_BEGIN = '# BEGIN panda-managed'
+const LEGACY_TOML_END = '# END panda-managed'
+
+/** The JSON-family root key a previous build reserved for itself. */
+const LEGACY_JSON_KEY = 'panda'
+
+export interface LegacyPandaBlock {
+  /** Half-open range of the ORIGINAL text, byte-order mark included in the offsets. */
+  readonly start: number
+  readonly end: number
+  readonly detail: string
+}
+
+/**
+ * `block` — panda's own prior output, and exactly what removing it takes out.
+ * `refusal` — something that looks like it and panda will not touch, with why.
+ * Neither — the file holds none.
+ */
+export interface LegacyPandaScan {
+  readonly block?: LegacyPandaBlock
+  readonly refusal?: string
+}
+
+/**
+ * The sub-keys the invalidated builds wrote under the reserved root key, from
+ * correction-01's own evidence table (`$.panda.{tools,mcpServers,skills,hooks}`,
+ * plus the grammar version those builds stamped).
+ *
+ * This list is what makes the JSON side EVIDENCE rather than a name match. A key
+ * called `panda` proves nothing — it is a name a user may have chosen, and AD-6
+ * is explicit that ownership is never inferred, with a bare key name weaker than
+ * the path AD-6 already rules out. So panda claims the key only when its VALUE
+ * is an object whose every member is vocabulary a panda build wrote. Anything
+ * else is somebody's own configuration: not reported, not removed.
+ */
+const LEGACY_JSON_MEMBERS = new Set(['version', 'tools', 'mcpServers', 'skills', 'hooks'])
+
+/** Whether this `panda` value is one a previous panda build wrote. */
+function isLegacyPandaValue(node: Node | undefined): boolean {
+  if (node === undefined || node.type !== 'object') return false
+  const members = (node.children ?? []).map((property) => property.children?.[0]?.value)
+  if (members.length === 0) return false
+  return members.every((name) => typeof name === 'string' && LEGACY_JSON_MEMBERS.has(name))
+}
+
+function scanLegacyJson(body: string, shift: number): LegacyPandaScan {
+  const root = parseTree(body)
+  if (root === undefined || root.type !== 'object') {
+    // Not a refusal to report loudly: a file with no object root never held the
+    // reserved key, because the build that wrote it spliced into an object.
+    return {}
+  }
+  const properties = memberProperties(root, LEGACY_JSON_KEY)
+  const property = properties[0]
+  if (property === undefined) return {}
+  // Somebody's own `panda` key. Silence is the only correct answer: reporting it
+  // would put a `problem` on the exit code for a state panda invented, and the
+  // detail would assert a provenance panda cannot know.
+  if (!properties.some((candidate) => isLegacyPandaValue(candidate.children?.[1]))) return {}
+  if (properties.length > 1) {
+    return {
+      refusal: `'${LEGACY_JSON_KEY}' is declared ${properties.length} times; panda will not guess which of them it wrote. Leave one and re-run, or remove the block by hand`,
+    }
+  }
+  const span = jsonRemovalSpan(body, { start: property.offset, end: property.offset + property.length })
+  return {
+    block: {
+      start: span.start + shift,
+      end: span.end + shift,
+      detail: `the reserved '$.${LEGACY_JSON_KEY}' key a previous panda build wrote — every member of it is panda's own vocabulary and no executor reads any of it`,
+    },
+  }
+}
+
+/** The two TOML multi-line string fences, spelled without a literal triple quote. */
+const TOML_FENCES = ['"'.repeat(3), "'".repeat(3)] as const
+
+/**
+ * The lines that are real TOML lines rather than the interior of a multi-line
+ * string.
+ *
+ * A `# BEGIN panda-managed` inside a multi-line value is three of the USER's own
+ * bytes, and matching it deleted them — measured. Panda never PARSES foreign
+ * TOML and this does not start: it tracks only the two multi-line fences, which
+ * is the whole of what can hide a line-initial `#`. A line inside an open fence
+ * is invisible to the marker scan.
+ *
+ * ponytail: fence counting, not a lexer. A fence sequence inside a single-line
+ * basic string would desynchronise it, and the failure direction is that panda
+ * stops recognising its OWN block and reports nothing — the safe one. Upgrade
+ * path: a real TOML lexer, worth it only if a legacy block is ever found in a
+ * file shaped like that.
+ */
+function tomlCodeLines(lines: readonly TextLine[]): TextLine[] {
+  const code: TextLine[] = []
+  let open: string | undefined
+  for (const line of lines) {
+    if (open === undefined) code.push(line)
+    let rest = line.text
+    for (;;) {
+      if (open === undefined) {
+        const found = TOML_FENCES.map((fence) => ({ fence, at: rest.indexOf(fence) }))
+          .filter((candidate) => candidate.at >= 0)
+          .sort((a, b) => a.at - b.at)[0]
+        if (found === undefined) break
+        open = found.fence
+        rest = rest.slice(found.at + found.fence.length)
+        continue
+      }
+      const closes = rest.indexOf(open)
+      if (closes < 0) break
+      rest = rest.slice(closes + open.length)
+      open = undefined
+    }
+  }
+  return code
+}
+
+function scanLegacyToml(body: string, shift: number): LegacyPandaScan {
+  const lines = tomlCodeLines(splitLines(body))
+  const begins = lines.filter((line) => line.text.trimStart().startsWith(LEGACY_TOML_BEGIN))
+  if (begins.length === 0) {
+    // An END with no BEGIN is a hand-edited remnant panda cannot bound.
+    return lines.some((line) => line.text.trimStart().startsWith(LEGACY_TOML_END))
+      ? { refusal: `'${LEGACY_TOML_END}' appears with no '${LEGACY_TOML_BEGIN}' before it; panda cannot tell where the block starts. Remove what is left of it by hand` }
+      : {}
+  }
+  if (begins.length > 1) {
+    return { refusal: `'${LEGACY_TOML_BEGIN}' appears ${begins.length} times; panda will not guess which block is which. Leave one and re-run, or remove them by hand` }
+  }
+  const begin = begins[0]!
+  const end = lines.find((line) => line.start >= begin.start && line.text.trimStart().startsWith(LEGACY_TOML_END))
+  if (end === undefined) {
+    return { refusal: `'${LEGACY_TOML_BEGIN}' has no matching '${LEGACY_TOML_END}'; panda cannot tell where the block ends. Remove what is left of it by hand` }
+  }
+  // Symmetric with how a TOML region panda owns is taken back today
+  // (`TOML_STRATEGY.remove`): one blank line separated the appended block from
+  // the foreign tail, and removing the block without it leaves that blank behind
+  // in every file a previous build wrote one into.
+  const eol = lineEndingOf(body)
+  const separator = eol + eol
+  const separated =
+    begin.start >= separator.length &&
+    body.slice(begin.start - separator.length, begin.start) === separator
+  const start = separated ? begin.start - eol.length : begin.start
+  return {
+    block: {
+      start: start + shift,
+      end: end.end + shift,
+      detail: `the '${LEGACY_TOML_BEGIN}' block a previous panda build wrote, whose sub-keys under '[tools]' and '[skills]' make this file fail to load under --strict-config`,
+    },
+  }
+}
+
+/**
+ * Panda's own prior output in one vendor file, if any is there.
+ *
+ * READS ONLY. `panda doctor` calls it to report the state and the `discard`
+ * remediation calls it to remove exactly the region it returns.
+ */
+export function scanLegacyPandaBlock(nativeText: string, fileFormat: FileFormat): LegacyPandaScan {
+  const hasBom = nativeText.startsWith(BYTE_ORDER_MARK)
+  const body = hasBom ? nativeText.slice(1) : nativeText
+  const shift = hasBom ? 1 : 0
+  return fileFormat === 'toml' ? scanLegacyToml(body, shift) : scanLegacyJson(body, shift)
+}
+
 // --- registry -> native entries ---------------------------------------------
 
 function byId(a: { id: string }, b: { id: string }): number {
@@ -920,6 +1106,73 @@ function mergeNative(
 }
 
 /**
+ * What currently occupies ONE entry's native location, expressed as the ledger
+ * record that would claim it — the target's half of `adopt`.
+ *
+ * Every predicate below is the merge's own, called on the same text through the
+ * same strategy: `entryConflict` for a location the document spells twice,
+ * `locate` for the region, and `hashOwnedText(strategy.canonical(...))` for the
+ * hash. That is not tidiness. An adopted record whose hash were computed any
+ * other way would fail `stillPandas` on the very next run and the entry would
+ * report `edited` forever — the exact state adoption exists to leave.
+ *
+ * Every failure is a REFUSAL rather than a throw. A malformed vendor file, an
+ * unclaimable container, a duplicated key: each is a reason panda will not take
+ * ownership, and the caller has to be able to print it beside the entry.
+ */
+function claimNative(
+  request: ProjectionClaimRequest,
+  filePath: string,
+  traits: ProjectionTargetTraits,
+): ProjectionClaim {
+  const strategy = FORMAT_STRATEGIES[traits.fileFormat]
+  const location = nativeLocationOf(traits, request.entryId)
+  const refuse = (refusal: string): ProjectionClaim => ({ location, byteLength: 0, refusal })
+  if (UNPROJECTABLE_ENTRY_IDS.has(request.entryId)) {
+    return refuse(`'${request.entryId}' cannot be used as a native config key`)
+  }
+  const hasBom = request.nativeText.startsWith(BYTE_ORDER_MARK)
+  // NOT seeded to '{}' the way the merge seeds an empty document: seeding
+  // invents a document so entries can be ADDED to it, and there is nothing to
+  // adopt in a file that does not exist.
+  const body = hasBom ? request.nativeText.slice(1) : request.nativeText
+  try {
+    strategy.validate(body, filePath, traits)
+  } catch (error) {
+    return refuse(error instanceof Error ? error.message : String(error))
+  }
+  const conflict =
+    strategy.containerConflict(body, traits) ?? strategy.entryConflict(body, traits, request.entryId)
+  // The refusal has to be ACTIONABLE. This is the shape where every panda verb
+  // declines — `adopt` on the ambiguity, `release` because a foreign collision
+  // holds no claim to drop — so the sentence has to name the thing that does
+  // leave it, which is the user's own edit of their own file. Panda's ledger is
+  // not involved and saying so is half the answer.
+  if (conflict !== undefined) {
+    return refuse(
+      `${conflict}. Panda holds no claim here, so no remediation applies: resolve the ambiguity in '${filePath}' itself and re-run`,
+    )
+  }
+  const existing = strategy.locate(body, traits, request.entryId)
+  if (existing === undefined) return { location, byteLength: 0 }
+  const owned = body.slice(existing.start, existing.end)
+  return {
+    location,
+    byteLength: Buffer.byteLength(owned, 'utf8'),
+    // `ownedPaths` deliberately omitted: a config claim authorises replacing one
+    // REGION inside this file and can never remove the file, so there is no path
+    // a later run gains delete authority over.
+    record: {
+      targetId: traits.targetId,
+      filePath: resolveOwnedPath(filePath),
+      nativeLocation: location,
+      entryId: request.entryId,
+      contentHash: hashOwnedText(strategy.canonical(owned)),
+    },
+  }
+}
+
+/**
  * The ONE factory every target flows through: adding a target means writing a
  * trait record — no engine or strategy code changes. An unknown file format is
  * a coded configuration error, not a crash at splice time.
@@ -940,6 +1193,9 @@ export function createProjectionTargetFromTraits(
     filePath,
     merge(request: ProjectionMergeRequest): ProjectionMergeOutcome {
       return mergeNative(request, filePath, traits)
+    },
+    claim(request: ProjectionClaimRequest): ProjectionClaim {
+      return claimNative(request, filePath, traits)
     },
   }
 }

@@ -2,10 +2,16 @@ import { access, constants, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { PANDA_ERROR_CODES } from '@panda/contracts'
-import type { DriftEntry, DriftKind, PandaErrorCode, ProjectionWarning } from '@panda/contracts'
+import type {
+  DriftEntry,
+  DriftKind,
+  PandaErrorCode,
+  ProjectionWarning,
+  RemediationKind,
+} from '@panda/contracts'
 import type { ExecutorDetection } from './executors.ts'
 import { noExecutorsDetected, runScope, scopeDirectory } from './init.ts'
-import type { ScopeTarget, SkippedExecutor, TargetFailure, UnprojectableEntry } from './init.ts'
+import type { LegacyBlock, ScopeTarget, SkippedExecutor, TargetFailure, UnprojectableEntry } from './init.ts'
 
 // `panda doctor`: what `panda init` / `panda project init` WOULD do, and every
 // problem panda can see, with nothing written.
@@ -64,6 +70,18 @@ export type DiagnosisFindingKind =
   | 'not-writable'
   /** A registry entry this target cannot express (correction-01 C5). */
   | 'unprojectable'
+  /**
+   * Panda's OWN prior output, still in a vendor file at a location no executor
+   * reads (correction-01 C6).
+   *
+   * Not drift: no ledger record claims it and no corrected build can produce it.
+   * It is litter a PREVIOUS build left, and until `panda remediate discard`
+   * existed nothing in the product could take it back — which is why it was not
+   * reported before this story. A state panda reports and cannot leave is
+   * exactly what M4.C exists to abolish, so the report and the exit ship
+   * together.
+   */
+  | 'legacy-block'
   /** This target could not be diagnosed at all; the others still were. */
   | 'target-failed'
 
@@ -120,7 +138,134 @@ const RESOLUTION: Record<DiagnosisFindingKind, string> = {
   'out-of-date': 'projecting makes this location match the registry — for a skills root that can mean REMOVING a tree panda wrote, not only writing one. Panda checked the location is writable, which is weaker than a guarantee: an ACL, a mount option or another process holding it can still refuse the write, and on Windows that check sees only the read-only attribute',
   'not-writable': 'panda cannot write here, so projecting fails on this location and changes nothing rather than half-applying it',
   unprojectable: 'no target can express this entry, so projecting again changes nothing for it; it stays out of this configuration',
+  'legacy-block': "`panda remediate discard --executor <id>` removes exactly this block and leaves every other byte of the file alone; projecting again neither reads nor removes it. Where the detail says panda will NOT take it, that is the reason, and panda leaves the file untouched",
   'target-failed': 'projecting again fails the same way for this executor and leaves its file untouched; the other executors are unaffected',
+}
+
+/**
+ * How one reported state is LEFT. Three shapes, because they are three different
+ * promises and collapsing them is how a diagnosis starts lying:
+ *
+ *   `remediation`  — panda performs it, named by the user, one at a time. These
+ *                    are the states whose only previous exit was hand-editing
+ *                    `~/.panda/projection-ledger.json`.
+ *   `command`      — an existing panda command already leaves this state.
+ *   `outside-panda`— panda cannot leave it and says what does. Naming a
+ *                    remediation here would be the same false promise the
+ *                    `out-of-date`/`not-writable` split was written to remove.
+ */
+export type FindingExit =
+  | { readonly by: 'remediation'; readonly remediations: readonly RemediationKind[]; readonly detail: string }
+  | { readonly by: 'command'; readonly command: string; readonly detail: string }
+  | { readonly by: 'outside-panda'; readonly detail: string }
+
+/**
+ * The exit for every state panda reports — TOTAL over {@link DiagnosisFindingKind},
+ * so a finding kind added without one does not compile.
+ *
+ * IT LIVES IN DOCTOR, beside the kinds, and not beside `remediate` — because the
+ * first version put it beside the capability, nothing outside the tests consumed
+ * it, and `panda doctor` went on printing *"panda never overwrites an entry that
+ * changed since it wrote it; projecting again leaves your edit exactly as it is"*
+ * for four of the five states this story gave an exit to. The trap was closed in
+ * the code and left open on the only surface a user reads. Every `resolution`
+ * below is now composed from this record, so the product cannot know an exit the
+ * report does not print.
+ */
+export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
+  edited: {
+    by: 'remediation',
+    remediations: ['adopt', 'release'],
+    detail:
+      "`adopt` takes ownership of what is there now, after which `panda init` replaces it with the registry's version — that is how you get panda's version back, and it is a REPLACEMENT of your edit. `release` drops the claim and leaves your edit alone permanently",
+  },
+  'removed-by-user': {
+    by: 'remediation',
+    remediations: ['release'],
+    detail:
+      '`release` drops the claim, which makes the location free again, so the next `panda init` writes the entry back. To keep it absent instead, the entry has to leave the registry — panda ships no command for that yet, only `RegistryStore.remove` in `@panda/environment`',
+  },
+  'foreign-collision': {
+    by: 'remediation',
+    remediations: ['adopt', 'release'],
+    detail:
+      "`adopt` takes ownership of what occupies panda's location — including panda's OWN tree left unclaimed by a crash, and a tree that is only partly there. `release` is the exit where the collision comes from a claim panda holds and cannot use. Where the detail says the VENDOR's document is ambiguous — a location declared twice, a container panda cannot address — neither verb applies until that is fixed in the file itself, and panda's own ledger is not involved",
+  },
+  'ledger-damaged': {
+    by: 'remediation',
+    remediations: ['repair'],
+    detail:
+      "`repair` rewrites panda's own ledger to hold exactly the records it can read. It describes what it will drop before it drops it, and it touches no vendor file",
+  },
+  'legacy-block': {
+    by: 'remediation',
+    remediations: ['discard'],
+    detail:
+      "`discard` removes exactly the block a previous panda build wrote and nothing else. Where the detail says panda will NOT take it — markers it cannot bound, a key it cannot attribute — that is the reason, panda leaves the file untouched, and the block has to be removed by hand",
+  },
+  'not-initialised': {
+    by: 'command',
+    command: 'panda init',
+    detail: "`panda init` (or `panda project init`) creates panda's state for this scope",
+  },
+  'out-of-date': {
+    by: 'command',
+    command: 'panda init',
+    detail: 'projecting is what makes this location match the registry; that is `panda init`',
+  },
+  'no-executor': {
+    by: 'outside-panda',
+    detail:
+      'panda projects into configurations that already exist and creates none, so this is left by running one of the executors panda knows at least once',
+  },
+  'registry-unreadable': {
+    by: 'outside-panda',
+    detail:
+      "panda never replaces a registry document it cannot read, because doing so would delete every entry it holds from every vendor file. Repair or remove that document; panda's ownership ledger is a different file and is not involved",
+  },
+  'not-writable': {
+    by: 'outside-panda',
+    detail: 'panda cannot grant itself permission; the location has to become writable',
+  },
+  unprojectable: {
+    by: 'outside-panda',
+    detail:
+      'nothing to leave — this is informational and never counted as a problem. No sequence of panda commands makes the entry projectable; it stops being reported when the entry leaves the registry, for which panda ships no command yet, only `RegistryStore.remove` in `@panda/environment`',
+  },
+  'target-failed': {
+    by: 'outside-panda',
+    detail:
+      'the coded error on the finding names the cause; panda leaves this executor untouched until it is addressed, and the others are unaffected',
+  },
+  'projection-warning': {
+    by: 'outside-panda',
+    detail:
+      'a condition the projection run surfaced with no more specific reading than its own code; panda resolves none of it by itself',
+  },
+}
+
+/** Every kind this remediation is the named exit for. Derived, never listed. */
+export function findingKindsFor(remediation: RemediationKind): DiagnosisFindingKind[] {
+  return (Object.keys(FINDING_EXITS) as DiagnosisFindingKind[]).filter((kind) => {
+    const exit = FINDING_EXITS[kind]
+    return exit.by === 'remediation' && exit.remediations.includes(remediation)
+  })
+}
+
+/**
+ * The exit, as the sentence a user reads. Composed from {@link FINDING_EXITS} so
+ * the command the product prints and the command the capability accepts are one
+ * string, and a remediation renamed upstream renames itself here.
+ */
+function exitSentence(kind: DiagnosisFindingKind): string {
+  const exit = FINDING_EXITS[kind]
+  if (exit.by === 'remediation') {
+    return `To LEAVE this state, name it: ${exit.remediations
+      .map((remediation) => `\`panda remediate ${remediation}\``)
+      .join(' or ')}. ${exit.detail}`
+  }
+  if (exit.by === 'command') return `To leave this state: \`${exit.command}\`. ${exit.detail}`
+  return `Panda cannot leave this state itself. ${exit.detail}`
 }
 
 /**
@@ -144,6 +289,12 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   // never be got back to 0. Reported in full, never counted as diagnosed.
   unprojectable: 'info',
   'target-failed': 'problem',
+  // A PROBLEM, and the Codex case is why: a `# BEGIN panda-managed` block puts
+  // foreign sub-keys inside `[tools]` and `[skills]`, so a documented
+  // `--strict-config` run fails to load the user's ENTIRE config.toml. It is
+  // also fully resolvable, which is what earns a non-zero exit — the exit code
+  // is a promise that the light can be got back to green.
+  'legacy-block': 'problem',
 }
 
 /**
@@ -195,6 +346,12 @@ export interface Diagnosis {
    * this" can mean panda REMOVING something.
    */
   readonly skills: readonly DiagnosisTarget[]
+  /**
+   * Panda's own prior output found in a vendor file (correction-01 C6). Every
+   * row here was produced by the `discard` remediation under INSPECTION, so the
+   * sentence reported is the sentence that remediation acts on.
+   */
+  readonly legacy: readonly LegacyBlock[]
   readonly skipped: readonly SkippedExecutor[]
   readonly warnings: readonly ProjectionWarning[]
   /** Empty means clean. `severity: 'problem'` is what a non-zero exit answers for. */
@@ -220,7 +377,16 @@ function finding(
   detail: string,
   about: Omit<DiagnosisFinding, 'kind' | 'severity' | 'detail' | 'resolution'> = {},
 ): DiagnosisFinding {
-  return { kind, severity: SEVERITY[kind], ...about, detail, resolution: RESOLUTION[kind] }
+  // Two halves, always: what PROJECTING again would do (which for five kinds is
+  // "nothing, forever"), and how to LEAVE the state. Shipping only the first is
+  // what made this command tell users four remediable states were terminal.
+  return {
+    kind,
+    severity: SEVERITY[kind],
+    ...about,
+    detail,
+    resolution: `${RESOLUTION[kind]} — ${exitSentence(kind)}`,
+  }
 }
 
 async function isFile(path: string): Promise<boolean> {
@@ -325,6 +491,14 @@ async function findingsFor(
         'no-executor',
         `no configuration was found for any executor panda knows (${diagnosis.detected.map((detection) => detection.executorId).join(', ')})`,
       ),
+    )
+  }
+  for (const block of diagnosis.legacy) {
+    findings.push(
+      finding('legacy-block', block.detail, {
+        executorId: block.executorId,
+        filePath: block.filePath,
+      }),
     )
   }
   for (const warning of diagnosis.warnings) {
@@ -440,6 +614,7 @@ export async function diagnose(options: DiagnoseOptions = {}): Promise<Diagnosis
     // authored and pinned instead of inherited from a rest object.
     targets: report.targets.map(toDiagnosisTarget),
     skills: report.skills.map(toDiagnosisTarget),
+    legacy: report.legacy,
     skipped: report.skipped,
     warnings: report.warnings,
   }

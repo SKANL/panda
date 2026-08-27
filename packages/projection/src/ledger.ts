@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError, PROJECTION_LEDGER_VERSION, isRecord } from '@panda/contracts'
 import type { ProjectionLedgerRecord, ProjectionWarning } from '@panda/contracts'
 import { atomicWriteText } from './atomic-write.ts'
@@ -88,6 +88,31 @@ export function sameOwnedPath(left: string, right: string): boolean {
     : left === right
 }
 
+/**
+ * Whether `path` is strictly inside `root`. Both arguments must already be
+ * resolved — this predicate answers about paths, not about strings a caller
+ * hopes are paths.
+ *
+ * It lives beside {@link resolveOwnedPath} because it is the second half of the
+ * same rule: a path panda acts on is CANONICALISED and then proven to be inside
+ * the location panda owns. Every caller that skips either half has been a
+ * user-data defect — the removal path took raw ledger strings straight to `rm`,
+ * and a relative one resolved against the process working directory.
+ */
+export function isUnderRoot(path: string, root: string): boolean {
+  const rest = relative(root, path)
+  return rest !== '' && !rest.startsWith('..') && !rest.startsWith(sep + '..')
+}
+
+/**
+ * The right to replace the WHOLE ownership document without merging.
+ *
+ * A module-scope symbol rather than a convention: the only way to hold it is to
+ * import it, so "one caller" stops being a claim a text scan makes and becomes
+ * something the runtime enforces. `test/guard.test.ts` pins who imports it.
+ */
+export const LEDGER_REPAIR_AUTHORITY: unique symbol = Symbol('panda.projection.ledger.repair')
+
 export type ProjectionLedgerState = 'absent' | 'readable' | 'unreadable'
 
 export interface ProjectionLedgerRead {
@@ -157,6 +182,18 @@ function normalizeRecords(records: readonly ProjectionLedgerRecord[]): Projectio
     const right = recordKey(b)
     return left < right ? -1 : left > right ? 1 : 0
   })
+}
+
+/**
+ * The exact bytes of the ledger document for a record set.
+ *
+ * Exported so a remediation can PREDICT the document it is about to write and
+ * report the byte delta before writing it, using the same serialisation the
+ * write itself performs. A second spelling here would let a preview report a
+ * size the act does not produce.
+ */
+export function serialiseLedgerDocument(records: readonly ProjectionLedgerRecord[]): string {
+  return JSON.stringify({ version: PROJECTION_LEDGER_VERSION, records: normalizeRecords(records) }, null, 2)
 }
 
 function detailOf(error: unknown): string {
@@ -236,7 +273,7 @@ export class ProjectionLedger {
    * read-modify-write window cannot interleave.
    */
   async update(scope: ProjectionLedgerScope, records: readonly ProjectionLedgerRecord[]): Promise<void> {
-    const run = (LEDGER_QUEUES.get(this.#queueKey) ?? Promise.resolve()).then(async () => {
+    await this.#queued(async () => {
       const current = await this.read()
       if (current.state === 'unreadable') {
         throw new PandaError(
@@ -250,6 +287,87 @@ export class ProjectionLedger {
       )
       await this.#persist([...kept, ...records])
     })
+  }
+
+  /**
+   * Replaces ONE entry's record inside one scope, reading the current document
+   * INSIDE the queue.
+   *
+   * The granularity is the point. A caller that read the ledger, decided, and
+   * then handed `update` a whole replacement set for the scope would resurrect
+   * every claim another writer legitimately dropped in between — panda would
+   * then claim a path it does not own, which on the materialisation path is a
+   * delete authority. Only the named entry moves here; every sibling claim is
+   * whatever the document says at the moment of the write.
+   *
+   * `record === undefined` drops the entry instead of replacing it.
+   */
+  async updateEntry(
+    scope: ProjectionLedgerScope,
+    entryId: string,
+    record: ProjectionLedgerRecord | undefined,
+  ): Promise<void> {
+    await this.#queued(async () => {
+      const current = await this.read()
+      if (current.state === 'unreadable') {
+        throw new PandaError(
+          PANDA_ERROR_CODES.projectionLedgerUnavailable,
+          `projection ledger '${this.filePath}' became unreadable; refusing to overwrite it and orphan every claim it holds`,
+        )
+      }
+      const kept = current.records.filter(
+        (candidate) =>
+          candidate.entryId !== entryId ||
+          candidate.targetId !== scope.targetId ||
+          !sameOwnedPath(resolveOwnedPath(candidate.filePath), scope.filePath),
+      )
+      await this.#persist(record === undefined ? kept : [...kept, record])
+    })
+  }
+
+  /**
+   * Replaces the WHOLE document with whatever `select` returns for the document
+   * as it is INSIDE the queue.
+   *
+   * This is the one write that does not merge, and it exists for exactly one
+   * caller: the user-named `repair` remediation, which is how a ledger holding
+   * records panda cannot read stops being a state with no exit. Nothing else may
+   * use it — `update` is the merging write every projection performs, and its
+   * refusal to overwrite an unreadable ledger is a load-bearing guarantee that
+   * this method deliberately does not have. `test/guard.test.ts` pins the caller
+   * list, because a second one would silently reintroduce the orphan-every-claim
+   * failure Story 2.8 declared terminal.
+   *
+   * `select` runs INSIDE the queue and is handed the read the write will be
+   * based on. A caller that read the document itself and passed the result would
+   * destroy every claim written in between — with no merge to save it, which is
+   * exactly what makes this method the dangerous one. It may throw to abort the
+   * write, which is how `repair` refuses when the document moved under it.
+   */
+  async rewriteAll(
+    authority: typeof LEDGER_REPAIR_AUTHORITY,
+    select: (read: ProjectionLedgerRead) => readonly ProjectionLedgerRecord[],
+  ): Promise<void> {
+    // A CAPABILITY, not a spelling check. The static caller list in
+    // `test/guard.test.ts` catches the honest second caller and was evaded by a
+    // reviewer with `ledger['rewrite' + 'All']([])` — a scan cannot see a name
+    // assembled at runtime. Holding the sentinel can only come from importing
+    // it, which both the symbol scan and the package's import graph do see, so
+    // the obfuscated route now fails at run time instead of silently working.
+    if (authority !== LEDGER_REPAIR_AUTHORITY) {
+      throw new PandaError(
+        PANDA_ERROR_CODES.projectionLedgerUnavailable,
+        `projection ledger '${this.filePath}': rewriting the whole document is reserved for the repair remediation`,
+      )
+    }
+    await this.#queued(async () => {
+      await this.#persist(select(await this.read()))
+    })
+  }
+
+  /** The read-modify-write queue, keyed by ledger path and shared by instances. */
+  async #queued(work: () => Promise<void>): Promise<void> {
+    const run = (LEDGER_QUEUES.get(this.#queueKey) ?? Promise.resolve()).then(work)
     // The chain must survive a rejection, or one failed target would deadlock
     // every later one.
     const settled = run.catch(() => undefined)
@@ -268,10 +386,7 @@ export class ProjectionLedger {
       // The temp file is created inside this directory; on a fresh machine
       // nothing has created ~/.panda yet.
       await mkdir(dirname(this.filePath), { recursive: true })
-      await atomicWriteText(
-        this.filePath,
-        JSON.stringify({ version: PROJECTION_LEDGER_VERSION, records: normalizeRecords(records) }, null, 2),
-      )
+      await atomicWriteText(this.filePath, serialiseLedgerDocument(records))
     } catch (error) {
       throw new PandaError(
         PANDA_ERROR_CODES.projectionLedgerUnavailable,

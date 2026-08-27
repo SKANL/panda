@@ -1,10 +1,19 @@
-export { runProjection, groupByKind, hasFileChangedSince } from './engine.ts'
+export { runProjection, groupByKind, hasFileChangedSince, resolveProjectionMode } from './engine.ts'
 export type {
   NativeFileSnapshot,
   ProjectionMode,
   ProjectionRun,
   RunProjectionOptions,
 } from './engine.ts'
+export { runRemediation } from './remediate.ts'
+export type {
+  AdoptRemediationOptions,
+  DiscardRemediationOptions,
+  LegacyBlockLocation,
+  ReleaseRemediationOptions,
+  RepairRemediationOptions,
+  RunRemediationOptions,
+} from './remediate.ts'
 export { ProjectionLedger, hashOwnedBytes, hashOwnedText, resolveOwnedPath, sameOwnedPath } from './ledger.ts'
 export type {
   ProjectionLedgerOptions,
@@ -12,9 +21,11 @@ export type {
   ProjectionLedgerScope,
   ProjectionLedgerState,
 } from './ledger.ts'
-export { createProjectionTargetFromTraits } from './formats.ts'
+export { createProjectionTargetFromTraits, scanLegacyPandaBlock } from './formats.ts'
 export type {
   FileFormat,
+  LegacyPandaBlock,
+  LegacyPandaScan,
   NativeEntryShape,
   ProjectionTargetTraits,
   TraitTargetOptions,

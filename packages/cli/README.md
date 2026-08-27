@@ -49,6 +49,39 @@ is never a quiet fall back to the default, because running a different agent tha
 the one you configured is the failure this feature exists to remove. `--executor`
 overrides a configuration panda can READ; it does not rescue one it cannot.
 
+## Leaving a state `panda doctor` reported
+
+`panda doctor` reports drift and refuses to resolve it, which is correct and used
+to be terminal: the only exit was hand-editing `~/.panda/projection-ledger.json`,
+the file every safety guarantee in that subsystem is stored in.
+
+```sh
+pnpm panda remediate adopt --executor claude-code --entry context7          # describes
+pnpm panda remediate adopt --executor claude-code --entry context7 --apply  # performs
+```
+
+One finding at a time, named by the user, and only a finding the same run just
+reported — zero matches and more than one match are both refusals, and the
+refusal lists what could have been named. Without `--apply` the command only
+describes, computed by the code that would perform it. Nothing is ever
+remediated automatically or in bulk.
+
+| Verb | What it changes | What it lets a LATER run do |
+| ---- | --------------- | --------------------------- |
+| `adopt` | panda's ledger only | panda OWNS the location: the next `panda init` replaces what is there, and on a skills root can remove it. Every path that becomes deletable is named in the description first |
+| `release` | panda's ledger only | nothing — the claim goes, the file is not even opened, and no later run touches it |
+| `repair` | panda's own ledger document, dropping exactly the records it cannot read | nothing to a vendor file, ever |
+| `discard` | one vendor file, removing only panda's own prior output (correction-01 C6) | nothing further |
+
+Three of the four write nothing but panda's own ledger — but `adopt` is an
+ownership TRANSFER, and owning a location is what makes it replaceable and, on a
+skills root, removable. Read the description: it says which of the two the next
+`panda init` will do and which paths it covers. A `remediate` that panda refuses
+exits 1 with `PANDA_PROJECTION_REMEDIATION_REFUSED` and changes nothing.
+
+`panda doctor` names the verb for every state that has one, so the report and the
+exit are one string.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -56,6 +89,10 @@ overrides a configuration panda can READ; it does not rescue one it cannot.
 | 0 | run completed with a status `ok` envelope |
 | 1 | run returned `failed` or `cancelled` (envelope still printed) |
 | 2 | usage error, invalid request, or environment failure (message on stderr) |
+
+For `doctor` the three narrow: 0 clean, 1 at least one finding that is a problem,
+2 no diagnosis could be produced. For `remediate`: 0 described or performed, 1
+panda refused, 2 usage or environment failure.
 
 An executor name panda has no adapter for (`PANDA_EXECUTOR_NOT_FOUND`) and an
 unusable configuration document (`PANDA_CONFIGURATION_UNUSABLE`) are both 2, and

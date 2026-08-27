@@ -63,6 +63,29 @@ export function groupByKind(entries: readonly RegistryEntry[]): RegistryEntriesB
  */
 export type ProjectionMode = 'apply' | 'inspect'
 
+/**
+ * FAIL CLOSED. Not `mode !== 'inspect'`: that writes for `'Inspect'`,
+ * `'inspect '`, `'dry-run'` and `null`, and the one thing this field decides is
+ * whether panda writes into files it does not own. A no-op run is visible in its
+ * own output; a write into a user's config on the say-so of a typo is not. So
+ * both failures are loud. `=== undefined`, not `??`: `null` is a value a caller
+ * PASSED, not an omission, and coalescing it into the writing default is the
+ * same silent accept this guard exists to remove.
+ *
+ * Shared by `runProjection` and `runRemediation` so the two commands that can
+ * write cannot disagree about what "do not touch this machine" means.
+ */
+export function resolveProjectionMode(mode: ProjectionMode | undefined): ProjectionMode {
+  const resolved = mode === undefined ? 'apply' : mode
+  if (resolved !== 'apply' && resolved !== 'inspect') {
+    throw new PandaError(
+      PANDA_ERROR_CODES.projectionModeInvalid,
+      `projection mode ${JSON.stringify(resolved)} is not recognised; use 'apply' or 'inspect' (omitted means 'apply')`,
+    )
+  }
+  return resolved
+}
+
 export interface RunProjectionOptions {
   readonly entries: RegistryEntriesByKind
   readonly targets: readonly ProjectionTarget[]
@@ -187,22 +210,7 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
   // the second read would land bytes on a machine the caller was promised would
   // not be touched, and `panda doctor` is precisely the command that promises it.
   const { entries, targets, ledger: store } = options
-  // FAIL CLOSED. Not `mode !== 'inspect'`: that writes for `'Inspect'`,
-  // `'inspect '`, `'dry-run'` and `null`, and the one thing this field decides
-  // is whether panda writes into files it does not own. A no-op `panda init` is
-  // visible in its own output (`written: false` everywhere); a write into a
-  // user's config on the say-so of a typo is not. So both failures are loud.
-  // `=== undefined`, not `??`: `null` is a value a caller PASSED, not an
-  // omission, and coalescing it into the writing default is the same silent
-  // accept this guard exists to remove.
-  const mode = options.mode === undefined ? 'apply' : options.mode
-  if (mode !== 'apply' && mode !== 'inspect') {
-    throw new PandaError(
-      PANDA_ERROR_CODES.projectionModeInvalid,
-      `projection mode ${JSON.stringify(mode)} is not recognised; use 'apply' or 'inspect' (omitted means 'apply')`,
-    )
-  }
-  const apply = mode === 'apply'
+  const apply = resolveProjectionMode(options.mode) === 'apply'
   const ledger = await store.read()
   const warnings: ProjectionWarning[] = [...ledger.warnings]
   const results: ProjectionResult[] = []

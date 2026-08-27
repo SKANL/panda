@@ -3,6 +3,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 import type {
   DriftEntry,
+  ProjectionClaim,
   ProjectionLedgerRecord,
   ProjectionMaterialiseTarget,
   ProjectionOwnedPath,
@@ -15,6 +16,7 @@ import {
   canonicalBytesHash,
   hashOwnedBytes,
   hashOwnedText,
+  isUnderRoot,
   resolveOwnedPath,
   sameOwnedPath,
 } from './ledger.ts'
@@ -115,18 +117,14 @@ async function readIfPresent(path: string): Promise<Uint8Array | 'unreadable' | 
   }
 }
 
-/**
- * Whether `path` is strictly inside `root`. The destination of every write is
- * built from a root-relative path a target supplied, and a target is ordinary
- * code: this is the boundary check that stops `../..` in a registry id from
- * turning a projection into an arbitrary write. The REMOVAL path applies the
- * same check to every path a ledger record names, because a record is parsed
- * from a file and is therefore input, not fact.
- */
-function isUnderRoot(path: string, root: string): boolean {
-  const rest = relative(root, path)
-  return rest !== '' && !rest.startsWith('..') && !rest.startsWith(sep + '..')
-}
+// `isUnderRoot` is the shared boundary check in `ledger.ts`, beside the path
+// canonicalisation it is inseparable from. The destination of every write is
+// built from a root-relative path a target supplied, and a target is ordinary
+// code: it is what stops `../..` in a registry id from turning a projection into
+// an arbitrary write. The REMOVAL path applies the same check to every path a
+// ledger record names, because a record is parsed from a file and is therefore
+// input, not fact — and so does the ADOPT path, because the record it writes is
+// an authority to delete on some later run.
 
 function absolutePathOf(root: string, relativePath: string, entryId: string): string {
   const resolved = resolveOwnedPath(join(root, ...relativePath.split('/')))
@@ -223,6 +221,154 @@ function pathKey(path: string): string {
 export interface MaterialiseOutcome {
   readonly result: ProjectionResult
   readonly records: readonly ProjectionLedgerRecord[]
+}
+
+/**
+ * The ledger record that would claim the tree currently at one entry's location
+ * — the materialisation half of `adopt`, and the exit from every reported state
+ * a skills root can be in: a `foreign-collision` (panda's own tree left
+ * unclaimed by a crash included), an `edited` tree, and a tree that is only
+ * PARTLY there.
+ *
+ * IT LIVES HERE, BESIDE THE REMOVAL RULE, ON PURPOSE. A record this returns is
+ * an authority to DELETE on some later run, so every clause of that rule is
+ * applied while the record is built rather than trusted afterwards: the paths
+ * come from the target's own plan (never from a directory listing, so a file the
+ * user put beside panda's is not swept into the claim and cannot later be
+ * removed); each is resolved and containment-checked against the root; a link
+ * anywhere between the root and the file disqualifies it; and a path any OTHER
+ * record already claims is refused rather than duplicated.
+ *
+ * A PARTIALLY PRESENT TREE IS CLAIMED AS THE SUBSET THAT IS THERE, and that is
+ * the correction that gives that state an exit at all. Claiming the whole
+ * planned set would write a record reading `edited` on the very next run — the
+ * state adoption exists to leave — so panda claims exactly the files that exist,
+ * the record reads `intact`, and the ordinary run writes the missing ones back.
+ * Refusing instead (the first shipped shape) left three separate routes into a
+ * tree with no exit but `rm -rf`: `release` on an edited tree, a crash inside
+ * `land()` between two file writes, and a user deleting one file from a skill.
+ *
+ * ponytail: when a record claims MORE paths than the plan wants — a file that
+ * left the source — adoption claims the planned subset and lets that path go
+ * unclaimed, so the ordinary run stops being authorised to take it back and it
+ * stays inside panda's tree. Under-claiming, which is the safe direction and the
+ * one this whole file errs towards; the alternative is claiming the union, which
+ * widens what an explicit user action makes deletable. Upgrade path: claim the
+ * union once a case exists where the leftover file matters.
+ *
+ * WHEN THE ENTRY HAS LEFT THE REGISTRY the plan holds nothing for it, and the
+ * ledger record is the fallback authority — that is the shape reported as
+ * `edited` on the removal path, whose only other exit was `release`, which drops
+ * the claim and leaves the tree on disk forever. Adoption there means the next
+ * ordinary run REMOVES the tree, which is why the claim carries `removedNext`
+ * and the caller has to say so before writing it.
+ */
+export async function claimMaterialised(
+  target: ProjectionMaterialiseTarget,
+  entries: RegistryEntriesByKind,
+  claimed: readonly ProjectionLedgerRecord[],
+  entryId: string,
+): Promise<ProjectionClaim> {
+  const root = resolveOwnedPath(target.rootPath)
+  const plan = await target.plan({ entries, records: claimed, rootPath: root })
+  const planned = plan.entries.find((candidate) => candidate.entryId === entryId)
+  const held = claimed.find(
+    (record) =>
+      record.entryId === entryId &&
+      record.targetId === target.targetId &&
+      sameOwnedPath(resolveOwnedPath(record.filePath), root) &&
+      (record.ownedPaths ?? []).length > 0,
+  )
+  const location = planned?.location ?? held?.nativeLocation ?? entryId
+  const refuse = (refusal: string): ProjectionClaim => ({ location, byteLength: 0, refusal })
+  if (planned === undefined && held === undefined) {
+    const skipped = (plan.skipped ?? []).find((candidate) => candidate.entryId === entryId)
+    return refuse(
+      skipped?.reason ??
+        `panda would not materialise '${entryId}' under '${root}' and holds no record of ever having done so, so there is nothing there for panda to claim`,
+    )
+  }
+
+  // Every path a SURVIVING claim holds, so two registry ids that land on one
+  // path cannot both own it — the same clause 6 the removal path applies, and
+  // for the same reason: a record that claims another entry's file is an
+  // authority to delete it.
+  const otherClaims = new Set(
+    claimed
+      .filter((record) => record.entryId !== entryId)
+      .flatMap((record) => (record.ownedPaths ?? []).map((item) => pathKey(item.path))),
+  )
+
+  // The plan's paths where panda would write, the RECORD's where panda no longer
+  // would. Never a directory listing: a file the user added beside panda's must
+  // stay outside every claim panda writes.
+  let candidates: string[]
+  if (planned !== undefined) {
+    try {
+      candidates = planned.files.map((file) => absolutePathOf(root, file.relativePath, entryId))
+    } catch (error) {
+      return refuse(error instanceof Error ? error.message : String(error))
+    }
+  } else {
+    candidates = (held?.ownedPaths ?? []).map((item) => resolveOwnedPath(item.path))
+  }
+
+  const owned: ProjectionOwnedPath[] = []
+  let byteLength = 0
+  let absent = 0
+  for (const path of candidates) {
+    // Re-checked for the record-derived list too: a record is a file panda
+    // PARSED, so its paths are input rather than fact.
+    if (!isUnderRoot(path, root)) {
+      return refuse(`'${path}' is outside '${root}'; panda will not claim a path it cannot prove it owns`)
+    }
+    if (await traversesLink(path, root)) {
+      return refuse(
+        `'${path}' is reached through a link, so it is not a path panda can prove it owns; panda will not claim it`,
+      )
+    }
+    if (otherClaims.has(pathKey(path))) {
+      return refuse(
+        `'${path}' is already claimed by another registry entry at this root; panda will not claim one file twice`,
+      )
+    }
+    const bytes = await readIfPresent(path)
+    if (bytes === undefined) {
+      // The subset rule. Not a refusal: claiming what IS there is what makes a
+      // partially materialised tree leavable, and the ordinary run writes the
+      // rest back because the record it reads is `intact`.
+      absent += 1
+      continue
+    }
+    if (bytes === 'unreadable') {
+      return refuse(`'${path}' cannot be read, so panda cannot hash what it would be claiming`)
+    }
+    byteLength += bytes.byteLength
+    owned.push({
+      path,
+      contentHash: hashOwnedBytes(bytes),
+      canonicalHash: canonicalBytesHash(bytes),
+    })
+  }
+  if (owned.length === 0) {
+    return refuse(
+      `nothing of '${entryId}' is on disk under '${root}'${absent === 0 ? '' : ` (${absent} path(s) panda would claim are absent)`}; there is nothing to claim`,
+    )
+  }
+  return {
+    location,
+    byteLength,
+    ownedPaths: owned.map((item) => item.path),
+    removedNext: !plan.presentEntryIds.includes(entryId),
+    record: {
+      targetId: target.targetId,
+      filePath: root,
+      nativeLocation: location,
+      entryId,
+      contentHash: treeHash(root, owned),
+      ownedPaths: owned,
+    },
+  }
 }
 
 /**

@@ -556,7 +556,7 @@ describe('every finding names what it is about', () => {
   /** The partition every finding is judged against; it must cover every kind. */
   const SCOPE_LEVEL: DiagnosisFindingKind[] = ['no-executor', 'projection-warning']
   const PANDA_STATE: DiagnosisFindingKind[] = ['not-initialised', 'registry-unreadable', 'ledger-damaged']
-  const TARGET_SCOPED: DiagnosisFindingKind[] = ['target-failed', 'out-of-date', 'not-writable']
+  const TARGET_SCOPED: DiagnosisFindingKind[] = ['target-failed', 'out-of-date', 'not-writable', 'legacy-block']
   const ENTRY_SCOPED: DiagnosisFindingKind[] = ['edited', 'removed-by-user', 'foreign-collision', 'unprojectable']
 
   it('partitions every kind that exists, so no kind escapes the rule below', () => {

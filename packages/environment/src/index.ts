@@ -6,13 +6,17 @@ export {
   type InitMachineOptions,
   type InitProjectOptions,
   type InitResult,
+  type LegacyBlock,
   type SkippedExecutor,
   type TargetFailure,
   type TargetProjection,
   type UnprojectableEntry,
 } from './init.ts'
 export {
+  DIAGNOSIS_FINDING_KINDS,
+  FINDING_EXITS,
   diagnose,
+  findingKindsFor,
   hasProblem,
   type Diagnosis,
   type DiagnoseOptions,
@@ -20,7 +24,9 @@ export {
   type DiagnosisFindingKind,
   type DiagnosisFindingSeverity,
   type DiagnosisTarget,
+  type FindingExit,
 } from './doctor.ts'
+export { remediate, type RemediateOptions, type RemediationReport } from './remediate.ts'
 export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDetection, type ExecutorProfile } from './executors.ts'
 
 // Re-exported, not merely referenced. Under pnpm's strict layout a consumer that
@@ -40,6 +46,7 @@ export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDet
 // deferred-work.md rather than fixed by widening the surface on speculation.
 export { RegistryStore } from '@panda/registry'
 export type { RegistryStoreOptions } from '@panda/registry'
+export { DRIFT_KINDS, REMEDIATION_KINDS } from '@panda/contracts'
 export type {
   DriftEntry,
   DriftKind,
@@ -48,6 +55,10 @@ export type {
   RegistryEntry,
   RegistryEntryType,
   RegistryScope,
+  RemediationChange,
+  RemediationKind,
+  RemediationOutcome,
+  RemediationRefusal,
 } from '@panda/contracts'
 export { createMemoryLogSink } from '@panda/kernel'
 export type { LogRecord, LogSink, MemoryLogSink } from '@panda/kernel'

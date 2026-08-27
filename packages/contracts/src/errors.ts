@@ -62,6 +62,14 @@ export const PANDA_ERROR_CODES = {
   // silently taken as "apply" writes into a user's config on the say-so of a
   // typo, and `runProjection` is on the FR-29 surface, so untyped callers reach it.
   projectionModeInvalid: 'PANDA_PROJECTION_MODE_INVALID',
+  // A remediation panda will not perform. Its own code rather than
+  // `projectionTargetFailed`, because nothing failed: panda looked at what was
+  // asked, found it outside what it owns or unprovable, and declined — which is
+  // a different fact from a projection that broke, and the fix is different too.
+  // Every containment refusal on the one path that changes ownership arrives
+  // under this code, so a caller can branch on "panda would not" without
+  // matching message text.
+  projectionRemediationRefused: 'PANDA_PROJECTION_REMEDIATION_REFUSED',
   // The machine or project scope panda was pointed at cannot be used: a
   // directory that does not exist, a path that is not a directory, an empty
   // string where a home was expected, or panda's own state directory occupied

@@ -82,7 +82,7 @@ development_status:
   m4b-skills-materialise-where-executors-find-them: done           # implements 2.9
   2-9-filesystem-materialisation-targets: superseded  # re-specified as m4b onto verified locations
   2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b
-  m4c-every-state-panda-reports-has-a-way-out: in-progress  # implements 2.11 + the 2.2-era drift-resolution gap
+  m4c-every-state-panda-reports-has-a-way-out: done  # implements 2.11 + the 2.2-era drift-resolution gap
   2-11-remediate-blocks-written-by-a-previous-build: superseded  # folded into m4c, which covers correction-01 C6 and the four terminal states
   epic-2-retrospective: optional
 

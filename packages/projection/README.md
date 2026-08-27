@@ -12,6 +12,47 @@ defined in `@panda/contracts`).
   assumption: concurrent `runProjection` calls over the same projected file are
   unsupported in v1; a file modified externally between read and write fails
   that target instead of landing stale content.
+- `runRemediation` — the way OUT of a state projection reports and refuses to
+  resolve. Four verbs, one subject per call, and the SAME call describes and
+  performs (`mode: 'inspect' | 'apply'`, the engine's own switch), so a preview
+  cannot disagree with the act:
+  - `adopt` — panda takes ownership of what is at its own location, exactly as
+    it is now. It writes only the ledger, and that is not the same as being
+    harmless: owning a location is what lets a LATER `runProjection` replace it,
+    and on a materialisation root REMOVE it. The description names every path
+    that becomes deletable and says which of the two will happen, before the
+    claim is written. A tree that is only partly there is claimed as the subset
+    that exists, so the ordinary run writes the rest back; an entry that has left
+    the registry is claimed from the ledger's own record, and the next run then
+    removes the tree. There is no verb that renders one entry outside the merge.
+  - `release` — panda stops claiming a location. The file is not opened.
+  - `repair` — panda rewrites its OWN ledger to hold exactly the records it can
+    read; the only write that does not merge, and the only exit from a ledger
+    carrying records it cannot use.
+  - `discard` — panda removes its OWN prior output from a vendor file
+    (correction-01 C6): a reserved `$.panda` key whose members are *all* panda's
+    own vocabulary (`version`, `tools`, `mcpServers`, `skills`, `hooks`), or a
+    `# BEGIN panda-managed` block whose sub-keys under `[tools]`/`[skills]` make
+    a Codex `config.toml` fail to load under `--strict-config`. A `panda` key
+    holding anything else is somebody's own configuration: not reported, not
+    removed. A marker inside a multi-line TOML string is the user's bytes and is
+    invisible to the scan.
+
+  Containment is the materialisation rule unchanged: every path is resolved and
+  proven inside the location panda owns, a link at any depth disqualifies it, and
+  a path another surviving claim holds is refused. `discard` checks the REAL
+  path, so a junctioned `~/.claude` cannot land the write outside the scope its
+  refusal promises. `adopt` builds its claim from the TARGET's plan of what panda
+  would write — never from a directory listing — so a file a user put beside
+  panda's is never swept into a record that could later authorise deleting it,
+  and both ledger verbs write ONE entry through `updateEntry` rather than
+  replacing a scope from a read they took earlier. A remediation panda will not
+  perform is returned as a coded `PANDA_PROJECTION_REMEDIATION_REFUSED`, not
+  thrown, because under inspection the refusal is part of the description.
+
+  `runRemediation` defaults to `mode: 'inspect'` — the opposite of
+  `runProjection`, and the same default `panda remediate` uses, so the
+  describe-before-act guarantee is true of the SDK surface and of the command.
 - `ProjectionLedger` — panda's durable record of what it wrote (target, file,
   native location, content hash), in `~/.panda/projection-ledger.json`. Panda
   never marks a vendor's file to prove ownership: a marker has nowhere to live

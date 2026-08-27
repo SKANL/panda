@@ -1,14 +1,18 @@
 import {
+  REMEDIATION_KINDS,
   diagnose,
   hasProblem,
   initMachine,
   initProject,
   noExecutorsDetected,
+  remediate,
   type Diagnosis,
   type DiagnosisFinding,
   type ExecutorDetection,
   type InitMachineOptions,
   type InitResult,
+  type RemediationKind,
+  type RemediationReport,
 } from '@panda/environment'
 import { readExecutorConfigLayers, runSession, type SessionOptions } from '@panda/session'
 
@@ -44,6 +48,8 @@ export const USAGE = [
   '       panda project init [directory]',
   '       panda doctor',
   '       panda project doctor [directory]',
+  '       panda remediate <adopt|release|repair|discard> [--executor <id>] [--entry <id>] [--apply]',
+  '       panda project remediate <adopt|release|repair|discard> [directory] [--executor <id>] [--entry <id>] [--apply]',
   '       panda --help',
   '',
   'run           Runs <prompt> through the selected executor inside a workspace under .panda/workspaces.',
@@ -58,13 +64,31 @@ export const USAGE = [
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
   'project doctor  The same report for a project, matching what project init would do.',
+  'remediate     Leaves ONE state doctor reported, named by the user. Describes and writes nothing',
+  '              unless --apply is given; nothing is ever remediated automatically or in bulk.',
+  "  adopt    Panda claims what is at its own location, exactly as it is. No vendor byte is written;",
+  '           `panda init` then converges it. The exit from a foreign collision and from an edit.',
+  '  release  Panda stops claiming a location. The file is not read, not written, not looked at.',
+  "  repair   Panda rewrites its OWN ownership ledger to hold exactly the records it can read.",
+  "  discard  Panda removes its OWN prior output from a vendor file (correction-01 C6).",
+  '  --executor <id> / --entry <id>  Narrow the finding; required whenever more than one matches.',
+  '  --apply  Perform it. Without this the same call only describes what it would change.',
   '',
   'Exit codes: 0 ok · 1 failed/cancelled · 2 usage/environment error.',
   'For init, a target that failed to project exits 1; detecting no executor at all exits 2.',
   'For doctor, a finding that is a problem exits 1; a clean environment exits 0.',
 ].join('\n')
 
-const DEFAULT_USAGE = USAGE.split('\n').slice(0, 6).join('\n')
+/**
+ * The synopsis block: every line up to the first blank one.
+ *
+ * Derived, not a line COUNT. It was `slice(0, 6)`, and adding two subcommands to
+ * the synopsis silently truncated it for six pre-existing usage-error paths —
+ * they stopped printing `panda --help` and advertised `panda remediate` without
+ * `panda project remediate`. A count is a constant that has to be maintained in
+ * a second place every time the block grows; the blank line maintains itself.
+ */
+const DEFAULT_USAGE = USAGE.split('\n').slice(0, USAGE.split('\n').indexOf('')).join('\n')
 
 /**
  * Process-level signal wiring, which is why it lives in the binary's package and
@@ -111,6 +135,11 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       diagnose({ homeDir: options.homeDir, scope: 'machine' }),
     )
   }
+  if (argv[0] === 'remediate') {
+    return await runRemediate(argv.slice(1), out, err, 1, (selector) =>
+      remediate({ ...selector, homeDir: options.homeDir, scope: 'machine' }),
+    )
+  }
   if (argv[0] === 'project') {
     if (isHelp(argv[1])) {
       out(USAGE)
@@ -119,6 +148,16 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     if (argv[1] === 'doctor') {
       return await runDoctor(argv.slice(2), out, err, 1, (directory) =>
         diagnose({ homeDir: options.homeDir, scope: 'project', projectDir: directory ?? options.cwd }),
+      )
+    }
+    if (argv[1] === 'remediate') {
+      return await runRemediate(argv.slice(2), out, err, 2, (selector, directory) =>
+        remediate({
+          ...selector,
+          homeDir: options.homeDir,
+          scope: 'project',
+          projectDir: directory ?? options.cwd,
+        }),
       )
     }
     if (argv[1] !== 'init') {
@@ -348,6 +387,170 @@ async function runDoctor(
     // produced a per-target verdict — and 2 is reserved for the cases where no
     // diagnosis exists to print at all (a scope directory it cannot use).
     return hasProblem(diagnosis) ? 1 : 0
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/**
+ * `panda remediate`'s argv: the verb, and the two narrowing flags.
+ *
+ * `--apply` is a FLAG rather than the default, and that asymmetry with `panda
+ * init` is the point: a projection converges a machine a user asked panda to
+ * manage, while a remediation changes who owns what. Describing it first is the
+ * frozen requirement, so the plain form describes and the flag performs.
+ */
+function parseRemediateTokens(
+  tokens: readonly string[],
+  maxPositionals: 1 | 2,
+):
+  | { remediation: RemediationKind; executorId?: string; entryId?: string; directory?: string; apply: boolean }
+  | { usageError: string } {
+  let remediation: RemediationKind | undefined
+  let executorId: string | undefined
+  let entryId: string | undefined
+  let directory: string | undefined
+  let apply = false
+  const named: Record<string, (value: string) => void> = {
+    '--executor': (value) => {
+      executorId = value
+    },
+    '--entry': (value) => {
+      entryId = value
+    },
+  }
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token === undefined) continue
+    if (token === '--apply') {
+      apply = true
+      continue
+    }
+    const equals = Object.keys(named).find((flag) => token.startsWith(`${flag}=`))
+    if (equals !== undefined) {
+      const value = token.slice(equals.length + 1)
+      // The SAME guard as the two-token form below: `--entry=-x` reaching the
+      // selector while `--entry -x` is refused would be two answers to one
+      // question, which is the shape `--executor` was already fixed for.
+      if (value.length === 0 || value.startsWith('-')) return { usageError: `option '${equals}' requires a value` }
+      named[equals]!(value)
+      continue
+    }
+    if (named[token] !== undefined) {
+      const value = tokens[index + 1]
+      if (value === undefined || value.length === 0 || value.startsWith('-')) {
+        return { usageError: `option '${token}' requires a value` }
+      }
+      named[token]!(value)
+      index += 1
+      continue
+    }
+    if (token.startsWith('-')) return { usageError: `unrecognized option '${token}'` }
+    if (remediation === undefined) {
+      if (!(REMEDIATION_KINDS as readonly string[]).includes(token)) {
+        return { usageError: `unknown remediation '${token}'; panda has ${REMEDIATION_KINDS.join(', ')}` }
+      }
+      remediation = token as RemediationKind
+      continue
+    }
+    // The project form takes a directory after the verb, exactly like `panda
+    // project init [directory]` and `panda project doctor [directory]`; the
+    // machine form has one scope and takes none.
+    if (maxPositionals === 2 && directory === undefined) {
+      directory = token
+      continue
+    }
+    return { usageError: `unexpected argument '${token}'` }
+  }
+  if (remediation === undefined) {
+    return { usageError: `panda remediate needs a remediation: ${REMEDIATION_KINDS.join(', ')}` }
+  }
+  return { remediation, executorId, entryId, directory, apply }
+}
+
+/**
+ * The whole of what `panda remediate` is: reject bad argv, call the capability,
+ * print what it described or did, map the outcome to an exit code. The CLI
+ * selects no finding, classifies no state and writes nothing — even the sentence
+ * describing a change is the capability's, computed by the code that performs it.
+ */
+async function runRemediate(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  maxPositionals: 1 | 2,
+  capability: (
+    selector: {
+      remediation: RemediationKind
+      executorId?: string
+      entryId?: string
+      mode: 'apply' | 'inspect'
+    },
+    directory: string | undefined,
+  ) => Promise<RemediationReport>,
+): Promise<number> {
+  // `--help` ANYWHERE, like `panda run`: every other `--` token here is already
+  // a usage error, so it cannot be anything else. Matching only the FIRST option
+  // token made `panda remediate adopt --apply --help` a usage error while
+  // `--help --apply` printed help, which is two answers to one question.
+  if (tokens.some((token) => isHelp(token))) {
+    out(USAGE)
+    return 0
+  }
+  const parsed = parseRemediateTokens(tokens, maxPositionals)
+  if ('usageError' in parsed) {
+    err(parsed.usageError)
+    err(DEFAULT_USAGE)
+    return 2
+  }
+  try {
+    const report = await capability(
+      {
+        remediation: parsed.remediation,
+        ...(parsed.executorId === undefined ? {} : { executorId: parsed.executorId }),
+        ...(parsed.entryId === undefined ? {} : { entryId: parsed.entryId }),
+        mode: parsed.apply ? 'apply' : 'inspect',
+      },
+      parsed.directory,
+    )
+    // The full diagnosis is deliberately NOT printed on stdout here: the payload
+    // a caller pipes is the remediation, and `panda doctor` is the command whose
+    // payload is the diagnosis. Named field by field rather than rest-spread, so
+    // this payload's key order is authored and pinned instead of inherited.
+    out(
+      JSON.stringify(
+        {
+          scope: report.scope,
+          remediation: report.remediation,
+          mode: report.mode,
+          ...(report.finding === undefined ? {} : { finding: report.finding }),
+          ...(report.outcome === undefined ? {} : { outcome: report.outcome }),
+          ...(report.refusal === undefined ? {} : { refusal: report.refusal }),
+          candidates: report.candidates,
+        },
+        null,
+        2,
+      ),
+    )
+    const refusal = report.refusal ?? report.outcome?.refusal
+    if (refusal !== undefined) {
+      err(`${refusal.code}: ${refusal.message}`)
+      for (const candidate of report.candidates) err(formatFinding(candidate))
+      return 1
+    }
+    const changes = report.outcome?.changes ?? []
+    if (changes.length === 0) {
+      err(`${parsed.remediation}: nothing to change — the state this resolves is already gone`)
+      return 0
+    }
+    for (const change of changes) {
+      err(
+        `${report.mode === 'apply' ? 'changed' : 'would change'}: ${change.subject} ${change.action} ${change.path} (${change.byteDelta} byte(s)): ${change.detail}`,
+      )
+    }
+    if (report.mode !== 'apply') err('nothing was written; re-run with --apply to perform it')
+    return 0
   } catch (error) {
     err(describe(error))
     return 2

@@ -51,10 +51,14 @@ export {
   type ToolProvider,
 } from './providers.ts'
 export {
+  DRIFT_KINDS,
   PROJECTION_LEDGER_VERSION,
+  REMEDIATION_KINDS,
   projectionTargetLocation,
   type DriftEntry,
   type DriftKind,
+  type ProjectionClaim,
+  type ProjectionClaimRequest,
   type ProjectionConfigTarget,
   type ProjectionFailure,
   type ProjectionLedgerRecord,
@@ -72,6 +76,10 @@ export {
   type ProjectionTarget,
   type ProjectionWarning,
   type RegistryEntriesByKind,
+  type RemediationChange,
+  type RemediationKind,
+  type RemediationOutcome,
+  type RemediationRefusal,
 } from './projection.ts'
 export { isRecord } from './validation.ts'
 export {
