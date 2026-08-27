@@ -97,7 +97,6 @@ const SAMPLE_ENTRY: ProjectionMcpEntry = {
 }
 
 const SAMPLE_REGISTRY: RegistryEntriesByKind = {
-  tool: [],
   skill: [],
   'mcp-server': [
     { type: 'mcp-server', id: SAMPLE_ENTRY.id, command: SAMPLE_ENTRY.command, args: SAMPLE_ENTRY.args },

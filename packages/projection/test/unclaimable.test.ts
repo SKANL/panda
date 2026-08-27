@@ -13,7 +13,6 @@ import { createCodexConfigTarget } from '../src/targets/codex-config.ts'
 // nothing more exotic than a space inside the brackets.
 
 const ENTRIES: RegistryEntriesByKind = {
-  tool: [],
   skill: [],
   'mcp-server': [{ type: 'mcp-server', id: 'ctx', command: 'npx', args: ['-y', 'ctx'] }],
   profile: [],
@@ -57,7 +56,7 @@ describe('a Codex config that already defines the server', () => {
     // is how a config loses a server the user still wants.
     const native = '[mcp_servers]\nctx = { command = "mine" }\n'
     const outcome = await codex().merge({
-      entries: { tool: [], skill: [], 'mcp-server': [], profile: [] },
+      entries: { skill: [], 'mcp-server': [], profile: [] },
       records: [
         {
           targetId: 'codex-config',

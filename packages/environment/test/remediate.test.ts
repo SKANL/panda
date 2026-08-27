@@ -135,6 +135,14 @@ describe('every state panda reports has an exit', () => {
     }
   })
 
+  /** Which kind may name which command. Exhaustive, and checked both ways below. */
+  const COMMAND_EXITS: Partial<Record<DiagnosisFindingKind, string>> = {
+    'not-initialised': 'panda init',
+    'out-of-date': 'panda init',
+    'retired-type': 'panda remove <type> <id>',
+    unprojectable: 'panda remove <type> <id>',
+  }
+
   it('says what leaves the states panda cannot leave itself, rather than promising one it cannot perform', () => {
     for (const kind of DIAGNOSIS_FINDING_KINDS) {
       const exit = FINDING_EXITS[kind]
@@ -143,16 +151,28 @@ describe('every state panda reports has an exit', () => {
       // And a `command` exit may only name a command panda actually ships. The
       // first version asserted `startsWith('panda ')`, which `panda frobnicate`
       // satisfies.
-      // Story M4.D added `panda remove`, and the mechanical half of this clause
-      // now lives in `packages/cli/test/printed-commands.test.ts`: it extracts
-      // every backtick-quoted `panda …` string out of this file's own shipped
-      // source and asks `runPanda` to dispatch it. This list stays because
-      // `@panda/environment` may not import the CLI (its own guard test), so
-      // from here the set is pinned rather than executed.
+      //
+      // The mechanical half is `packages/cli/test/printed-commands.test.ts`,
+      // which now reads THIS RECORD and dispatches every `by: 'command'` exit
+      // through `runPanda`. It used to only scan backtick-quoted strings out of
+      // shipped source, and these are single-quoted — so a planted
+      // `panda evict-retired --all` left that file green while doctor printed
+      // it. This list stays because `@panda/environment` may not import the CLI
+      // (its own guard test), so from here the set is pinned rather than run.
       if (exit.by === 'command') {
-        expect(['panda init', 'panda remove <type> <id>'], kind).toContain(exit.command)
+        // PER KIND, not set membership. As a set, adding one fabrication to the
+        // list excused it for every kind at once; the binding names which kind
+        // may say what, so a swapped or invented command is a deliberate lie in
+        // a specific place rather than a value that happens to be listed.
+        expect(COMMAND_EXITS[kind], kind).toBe(exit.command)
       }
     }
+    // And the binding may not outlive the kinds: a `command` exit added without
+    // an entry here, or an entry left behind by a kind that stopped being one,
+    // both fail rather than pass silently.
+    expect(Object.keys(COMMAND_EXITS).sort()).toEqual(
+      DIAGNOSIS_FINDING_KINDS.filter((kind) => FINDING_EXITS[kind].by === 'command').sort(),
+    )
   })
 
   it('prints the remediation`s NAME in the resolution `panda doctor` shows, for every state that has one', async () => {

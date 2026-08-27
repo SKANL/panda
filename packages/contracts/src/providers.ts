@@ -7,7 +7,7 @@ import type { StandardSchemaV1 } from './standard-schema.ts'
 // requires installing @panda/contracts.
 //
 // Each port is deliberately narrow to ONE family of entry types: a ToolProvider
-// contributes executables (`tool` | `mcp-server`), a SkillSource contributes
+// contributes executables (`mcp-server`), a SkillSource contributes
 // skills (`skill`). The driver rejects an out-of-family contribution instead of
 // silently accepting it, so an origin's declared responsibility and what it can
 // actually write to the registry never drift apart.
@@ -65,7 +65,7 @@ export interface IngestOrigin {
   readonly entrySchema?: StandardSchemaV1
 }
 
-/** Contributes `tool` and `mcp-server` entries. */
+/** Contributes `mcp-server` entries. */
 export interface ToolProvider extends IngestOrigin {
   list(): Promise<readonly RegistryEntry[]> | readonly RegistryEntry[]
 }

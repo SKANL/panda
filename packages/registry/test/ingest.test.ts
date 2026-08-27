@@ -6,6 +6,7 @@ import {
   PANDA_ERROR_CODES,
   PANDA_SOURCE_EXTENSION_KEY,
   PandaError,
+  REGISTRY_ENTRY_TYPES,
   defineStandardSchema,
 } from '@panda/contracts'
 import type {
@@ -105,13 +106,21 @@ async function expectStoreUntouched(harness: Harness): Promise<void> {
   await expect(readdir(join(harness.homeDir, '.panda'))).rejects.toMatchObject({ code: 'ENOENT' })
 }
 
+/**
+ * The vocabulary the ToolProvider port accepts, spelled the way the rejection
+ * spells it. Derived from the contract, so a port that silently regained a word
+ * changes this expectation too and the row below stops being a tautology only
+ * because the CONTRACT is the source -- not because the sentence was retyped.
+ */
+const TOOL_PORT_TYPES = REGISTRY_ENTRY_TYPES.filter((type) => type === 'mcp-server')
+
 describe('ingestProviders', () => {
   it('registers both ports into the GLOBAL store and round-trips every entry field', async () => {
     const harness = await makeHarness()
     const outcome = await ingestProviders(harness.store, {
       toolProviders: [
         toolProvider('catalog', [
-          { type: 'tool', id: 'ripgrep', command: 'rg' },
+          { type: 'mcp-server', id: 'ripgrep', command: 'rg' },
           { type: 'mcp-server', id: 'files', command: 'mcp-fs', args: ['--root', '/srv', '--ro'] },
         ]),
       ],
@@ -119,14 +128,14 @@ describe('ingestProviders', () => {
     })
 
     expect(outcome).toEqual({
-      registered: ['tool:ripgrep', 'mcp-server:files', 'skill:commit-lint'],
+      registered: ['mcp-server:ripgrep', 'mcp-server:files', 'skill:commit-lint'],
       unchanged: [],
       warnings: [],
     })
     expect(await readdir(join(harness.homeDir, '.panda'))).toEqual(['registry.json'])
 
-    expect(await harness.store.get('tool', 'ripgrep')).toEqual({
-      type: 'tool',
+    expect(await harness.store.get('mcp-server', 'ripgrep')).toEqual({
+      type: 'mcp-server',
       id: 'ripgrep',
       command: 'rg',
       extensions: { [PANDA_SOURCE_EXTENSION_KEY]: { sourceId: 'catalog' } },
@@ -149,13 +158,13 @@ describe('ingestProviders', () => {
     expect(Object.keys(skill ?? {}).sort()).toEqual(['entryPath', 'extensions', 'id', 'type'])
   })
 
-  it('rejects a schema-invalid tool definition coded, naming origin and entry, writing NOTHING', async () => {
+  it('rejects a schema-invalid tool-port definition coded, naming origin and entry, writing NOTHING', async () => {
     const harness = await makeHarness()
     await expectRejection(
       ingestProviders(harness.store, {
         toolProviders: [
-          toolProvider('healthy', [{ type: 'tool', id: 'fine', command: 'ok' }]),
-          toolProvider('broken', [{ type: 'tool', id: 'bad-tool', model: 'sonnet' }]),
+          toolProvider('healthy', [{ type: 'mcp-server', id: 'fine', command: 'ok' }]),
+          toolProvider('broken', [{ type: 'mcp-server', id: 'bad-tool', model: 'sonnet' }]),
         ],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
@@ -171,7 +180,7 @@ describe('ingestProviders', () => {
     const harness = await makeHarness()
     await expectRejection(
       ingestProviders(harness.store, {
-        toolProviders: [toolProvider('catalog', [{ type: 'tool', id: '__proto__', command: 'evil' }])],
+        toolProviders: [toolProvider('catalog', [{ type: 'mcp-server', id: '__proto__', command: 'evil' }])],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
       "origin 'catalog'",
@@ -191,7 +200,7 @@ describe('ingestProviders', () => {
     await expectRejection(
       ingestProviders(harness.store, {
         // Envelope-valid (command is optional there), rejected by the origin.
-        toolProviders: [toolProvider('strict', [{ type: 'tool', id: 'no-command' }], requiresCommand)],
+        toolProviders: [toolProvider('strict', [{ type: 'mcp-server', id: 'no-command' }], requiresCommand)],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
       "origin 'strict'",
@@ -230,7 +239,7 @@ describe('ingestProviders', () => {
     }
     await expectRejection(
       ingestProviders(harness.store, {
-        toolProviders: [toolProvider('async-origin', [{ type: 'tool', id: 'x', command: 'x' }], asyncSchema)],
+        toolProviders: [toolProvider('async-origin', [{ type: 'mcp-server', id: 'x', command: 'x' }], asyncSchema)],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
       'async gate said no',
@@ -250,7 +259,7 @@ describe('ingestProviders', () => {
     }
     await expectRejection(
       ingestProviders(harness.store, {
-        toolProviders: [toolProvider('thrower', [{ type: 'tool', id: 'x', command: 'x' }], throwing)],
+        toolProviders: [toolProvider('thrower', [{ type: 'mcp-server', id: 'x', command: 'x' }], throwing)],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
       'origin schema threw',
@@ -261,7 +270,7 @@ describe('ingestProviders', () => {
     await expectRejection(
       ingestProviders(harness.store, {
         toolProviders: [
-          toolProvider('mute', [{ type: 'tool', id: 'x', command: 'x' }], defineStandardSchema(() => ({ issues: [] }))),
+          toolProvider('mute', [{ type: 'mcp-server', id: 'x', command: 'x' }], defineStandardSchema(() => ({ issues: [] }))),
         ],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
@@ -271,7 +280,7 @@ describe('ingestProviders', () => {
     await expectRejection(
       ingestProviders(harness.store, {
         toolProviders: [
-          toolProvider('legacy', [{ type: 'tool', id: 'x', command: 'x' }], {
+          toolProvider('legacy', [{ type: 'mcp-server', id: 'x', command: 'x' }], {
             '~standard': { version: 2, validate: () => ({ value: undefined }) },
           } as unknown as StandardSchemaV1),
         ],
@@ -282,20 +291,37 @@ describe('ingestProviders', () => {
     await expectStoreUntouched(harness)
   })
 
+  it('rejects a RETIRED entry type before any write, naming the remaining ones', async () => {
+    // Story M4.E, matrix row 5. `tool` is refused by the envelope itself rather
+    // than by the port's allowlist, so the message names the vocabulary panda
+    // still has — and phase 1 raises it, so the store is never touched.
+    const harness = await makeHarness()
+    await expectRejection(
+      ingestProviders(harness.store, {
+        toolProviders: [toolProvider('catalog', [{ type: 'tool', id: 'rg', command: 'rg' }])],
+      }),
+      PANDA_ERROR_CODES.registryProviderRejected,
+      "origin 'catalog'",
+      "'rg'",
+      "'type' must be one of: skill, mcp-server, profile",
+    )
+    await expectStoreUntouched(harness)
+  })
+
   it('rejects an entry type the port may not contribute, in either direction', async () => {
     const harness = await makeHarness()
     await expectRejection(
       ingestProviders(harness.store, {
         skillSources: [
           skillSource('mislabeled', [
-            { entry: { type: 'tool', id: 'sneaky', command: 'x' }, contentHash: 'h1' },
+            { entry: { type: 'mcp-server', id: 'sneaky', command: 'x' }, contentHash: 'h1' },
           ]),
         ],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
       "origin 'mislabeled'",
       "'sneaky'",
-      "type 'tool' is not contributable",
+      "type 'mcp-server' is not contributable",
     )
 
     await expectRejection(
@@ -305,7 +331,10 @@ describe('ingestProviders', () => {
       PANDA_ERROR_CODES.registryProviderRejected,
       "origin 'wrong-port'",
       "'a-skill'",
-      "type 'skill' is not contributable",
+      // The WHOLE sentence, expected list included. Asserting only the first
+      // half left the interpolated vocabulary unmeasured, so a port silently
+      // regaining a word would still have read as correct to a plugin author.
+      `type 'skill' is not contributable through this port (expected ${TOOL_PORT_TYPES.join(' or ')})`,
     )
     await expectStoreUntouched(harness)
   })
@@ -315,7 +344,7 @@ describe('ingestProviders', () => {
     const forged = { [PANDA_SOURCE_EXTENSION_KEY]: { sourceId: 'someone-else', contentHash: 'h9' } }
     await expectRejection(
       ingestProviders(harness.store, {
-        toolProviders: [toolProvider('forger', [{ type: 'tool', id: 'rg', command: 'rg', extensions: forged }])],
+        toolProviders: [toolProvider('forger', [{ type: 'mcp-server', id: 'rg', command: 'rg', extensions: forged }])],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
       "origin 'forger'",
@@ -412,12 +441,12 @@ describe('ingestProviders', () => {
     await expectRejection(
       ingestProviders(harness.store, {
         toolProviders: [
-          toolProvider('vendor-a', [{ type: 'tool', id: 'ripgrep', command: 'rg' }]),
-          toolProvider('vendor-b', [{ type: 'tool', id: 'ripgrep', command: 'rg-fork' }]),
+          toolProvider('vendor-a', [{ type: 'mcp-server', id: 'ripgrep', command: 'rg' }]),
+          toolProvider('vendor-b', [{ type: 'mcp-server', id: 'ripgrep', command: 'rg-fork' }]),
         ],
       }),
       PANDA_ERROR_CODES.registryOriginConflict,
-      "'tool:ripgrep'",
+      "'mcp-server:ripgrep'",
       "'vendor-a'",
       "'vendor-b'",
     )
@@ -461,18 +490,18 @@ describe('ingestProviders', () => {
 
   it('refuses to clobber a hand-registered entry that no origin owns', async () => {
     const harness = await makeHarness()
-    await harness.store.register({ type: 'tool', id: 'ripgrep', command: 'my-own-rg' }, 'global')
+    await harness.store.register({ type: 'mcp-server', id: 'ripgrep', command: 'my-own-rg' }, 'global')
 
     await expectRejection(
       ingestProviders(harness.store, {
-        toolProviders: [toolProvider('catalog', [{ type: 'tool', id: 'ripgrep', command: 'rg' }])],
+        toolProviders: [toolProvider('catalog', [{ type: 'mcp-server', id: 'ripgrep', command: 'rg' }])],
       }),
       PANDA_ERROR_CODES.registryOriginConflict,
-      "'tool:ripgrep'",
+      "'mcp-server:ripgrep'",
       'was not contributed by an origin',
       "origin 'catalog'",
     )
-    expect((await harness.store.get('tool', 'ripgrep'))?.command).toBe('my-own-rg')
+    expect((await harness.store.get('mcp-server', 'ripgrep'))?.command).toBe('my-own-rg')
   })
 
   it('compares ownership at the WRITE scope, not through the merged view', async () => {
@@ -497,7 +526,7 @@ describe('ingestProviders', () => {
     const cause = new Error('skills directory vanished')
     const error = await expectRejection(
       ingestProviders(harness.store, {
-        toolProviders: [toolProvider('healthy', [{ type: 'tool', id: 'fine', command: 'ok' }])],
+        toolProviders: [toolProvider('healthy', [{ type: 'mcp-server', id: 'fine', command: 'ok' }])],
         skillSources: [{ sourceId: 'flaky', list: () => Promise.reject(cause) }],
       }),
       PANDA_ERROR_CODES.registryProviderRejected,
@@ -544,7 +573,7 @@ describe('ingestProviders', () => {
 
   it('does not let a provider mutate an entry between validation and write', async () => {
     const harness = await makeHarness()
-    const mutable: Record<string, unknown> = { type: 'tool', id: 'ripgrep', command: 'rg' }
+    const mutable: Record<string, unknown> = { type: 'mcp-server', id: 'ripgrep', command: 'rg' }
     const saboteur: ToolProvider = {
       sourceId: 'saboteur',
       // Runs AFTER the first origin was validated and BEFORE phase 2 writes it:
@@ -558,8 +587,8 @@ describe('ingestProviders', () => {
     await ingestProviders(harness.store, {
       toolProviders: [toolProvider('victim', [mutable]), saboteur],
     })
-    expect(await harness.store.get('tool', 'ripgrep')).toEqual({
-      type: 'tool',
+    expect(await harness.store.get('mcp-server', 'ripgrep')).toEqual({
+      type: 'mcp-server',
       id: 'ripgrep',
       command: 'rg',
       extensions: { [PANDA_SOURCE_EXTENSION_KEY]: { sourceId: 'victim' } },
@@ -573,9 +602,9 @@ describe('ingestProviders', () => {
       await ingestProviders(harness.store, {
         toolProviders: [
           toolProvider('catalog', [
-            { type: 'tool', id: 'first', command: 'a' },
-            { type: 'tool', id: 'second', command: 'b' },
-            { type: 'tool', id: 'third', command: 'c' },
+            { type: 'mcp-server', id: 'first', command: 'a' },
+            { type: 'mcp-server', id: 'second', command: 'b' },
+            { type: 'mcp-server', id: 'third', command: 'c' },
           ]),
           toolProvider('quiet', []),
         ],
@@ -588,14 +617,14 @@ describe('ingestProviders', () => {
     const failure = caught as IngestWriteFailure
     // The store's own code survives the wrapping; the partial outcome is not lost.
     expect(failure.code).toBe(PANDA_ERROR_CODES.registryContention)
-    expect(failure.message).toContain("'tool:second'")
-    expect(failure.partial.registered).toEqual(['tool:first'])
+    expect(failure.message).toContain("'mcp-server:second'")
+    expect(failure.partial.registered).toEqual(['mcp-server:first'])
     expect(failure.partial.warnings).toEqual([
       { kind: 'empty-source', sourceId: 'quiet', detail: "origin 'quiet' contributed no entries" },
     ])
     // Documented behavior: what landed stays; there is no rollback.
-    expect(await harness.store.get('tool', 'first')).toBeDefined()
-    expect(await harness.store.get('tool', 'third')).toBeUndefined()
+    expect(await harness.store.get('mcp-server', 'first')).toBeDefined()
+    expect(await harness.store.get('mcp-server', 'third')).toBeUndefined()
   })
 
   it('treats an empty option set as a no-op', async () => {

@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { DIAGNOSIS_FINDING_KINDS, FINDING_EXITS } from '@panda/environment'
 import { runPanda } from '../src'
 import type { ExecutorAdapter } from '@panda/contracts'
 
@@ -46,6 +47,7 @@ const NOT_A_COMMAND = new Map<string, string>([
   ['panda could not tie <value> back to one projection target and one registry entry, so it will not act on it', 'a remediation refusal'],
   ['panda wrote \'<value>\' to \'<value>\' and it is gone; panda will not re-add it', 'the config target\'s removed-by-user detail'],
   ['panda could not determine whether it is free (<value>)', 'the occupancy check\'s unclassifiable answer'],
+  ['panda could not determine whether these exist, so this is not evidence that nothing is installed: <value>', 'the undetermined-evidence sentence doctor prints; it WRAPPED across two source lines and was therefore invisible here until the unclosed-line guard forced it onto one'],
   ['panda would not materialise \'<value>\' under \'<value>\' and holds no record of ever having done so, so there is nothing there for panda to claim', 'an adopt refusal on a skills root'],
   ['panda wrote \'<value>\' under \'<value>\' and it is gone; panda will not re-add it', 'the skills target\'s removed-by-user detail'],
   ['panda gains authority to overwrite AND to REMOVE exactly these path(s) on a later run: <value>', 'what adopt says before it claims'],
@@ -96,6 +98,11 @@ const BACKSLASH = String.fromCharCode(92)
 // `panda` followed by a space or the closing tick, so `panda-missing-x` is not
 // one; and never across a newline, because a command lives on one line.
 const PRINTED = new RegExp(TICK + 'panda(?=' + TICK + '| )[^' + TICK + BACKSLASH + 'n]*' + TICK, 'g')
+// The same opening, with NO closing tick before end of line. A legal multi-line
+// template literal is invisible to `PRINTED` (which cannot cross a newline), so
+// it slipped past the whole suite. Unrecognised is LOUD: this makes the wrap
+// itself the failure rather than the string it hides.
+const UNCLOSED = new RegExp(TICK + 'panda(?=' + TICK + '| )[^' + TICK + ']*$')
 const INTERPOLATION = new RegExp(BACKSLASH + '$' + BACKSLASH + '{[^}]*}', 'g')
 const TRAILING_ESCAPE = new RegExp(BACKSLASH + BACKSLASH + '$')
 
@@ -159,6 +166,13 @@ async function dispatch(tokens: readonly string[]): Promise<{ code: number; err:
   return { code, err: err.join(String.fromCharCode(10)) }
 }
 
+/** Every shipped line that opens a printed command and does not close it. */
+function unclosedIn(file: string): string[] {
+  return readFileSync(file, 'utf8')
+    .split(String.fromCharCode(10))
+    .flatMap((line, index) => (UNCLOSED.test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : []))
+}
+
 describe('nothing panda prints is a command panda does not have', () => {
   it('scans every package, `bin/` included, and finds the commands to check', () => {
     const files = everyShippedFile()
@@ -169,6 +183,35 @@ describe('nothing panda prints is a command panda does not have', () => {
     expect(texts).toContain('panda remove <type> <id>')
     // From `bin/panda.ts`, which the previous shape never opened.
     expect(texts).toContain('panda run ... | head')
+  })
+
+  it('refuses a printed command wrapped across two source lines, which the scanner cannot see', () => {
+    const wrapped = everyShippedFile().flatMap(unclosedIn)
+    expect(
+      wrapped,
+      'a printed `panda ...` command must live on ONE line or the invariant never sees it',
+    ).toEqual([])
+  })
+
+  // THE SECOND SLOT, and it was blind. `FINDING_EXITS[kind].command` is what
+  // `panda doctor` prints as "To leave this state: ...", and it is an ordinary
+  // single-quoted string -- so the backtick scanner above never saw it. A
+  // planted `command: 'panda evict-retired --all'` left this file 8/8 green
+  // while doctor told users to run a verb the binary does not have. Derived from
+  // the record rather than scanned, so quoting cannot hide one again.
+  it('dispatches every command `panda doctor` names as an exit, whatever its quoting', async () => {
+    let checked = 0
+    for (const kind of DIAGNOSIS_FINDING_KINDS) {
+      const exit = FINDING_EXITS[kind]
+      if (exit.by !== 'command') continue
+      checked += 1
+      const tokens = printedTokens(exit.command)
+      expect(tokens[0], kind).toBe('panda')
+      const path = verbPathOf(tokens)
+      expect((await dispatch([...path, '--help'])).code, `${kind} names 'panda ${path.join(' ')}'`).toBe(0)
+      expect((await dispatch(tokens.slice(1))).err, kind).not.toContain('unrecognized option')
+    }
+    expect(checked, 'no `by: command` exit was checked, so this proves nothing').toBeGreaterThan(0)
   })
 
   it('leaves no listed string that no longer appears, because a list that may rot will', () => {

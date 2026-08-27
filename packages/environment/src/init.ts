@@ -1,7 +1,12 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError, projectionTargetLocation } from '@panda/contracts'
+import {
+  PANDA_ERROR_CODES,
+  PandaError,
+  isRetiredEntryType,
+  projectionTargetLocation,
+} from '@panda/contracts'
 import type {
   DriftEntry,
   PandaErrorCode,
@@ -9,6 +14,7 @@ import type {
   ProjectionTarget,
   ProjectionWarning,
   RegistryEntry,
+  RegistryScope,
 } from '@panda/contracts'
 import { createMemoryLogSink } from '@panda/kernel'
 import type { LogSink } from '@panda/kernel'
@@ -468,6 +474,33 @@ export interface ScopeReport {
    * panda can honestly say projecting would do.
    */
   readonly registryError?: TargetFailure
+  /**
+   * Entries whose type panda has RETIRED — readable, listed and removable, and
+   * never handed to a target. Reported by `panda doctor` because a word panda no
+   * longer has is a state a user has to be told about AND given an exit from;
+   * `panda init` neither projects nor removes them, because removing an entry is
+   * a decision and a decision is a user's.
+   */
+  readonly retired: readonly RetiredEntry[]
+}
+
+/**
+ * One retired entry AND the document that actually holds it.
+ *
+ * The scope is carried rather than inferred, and that is the whole point of this
+ * type. `RegistryEntry` has no scope field and `store.list()` is the MERGED
+ * view, so a caller holding only the entry has to guess — and the only guess
+ * available is the scope being diagnosed. `panda project doctor` reads the
+ * GLOBAL registry too, so that guess attributed a global entry to the (possibly
+ * empty) project document and told the user to run `panda project remove`, which
+ * exits 1 for an entry that is not there. A finding that names a file must name
+ * the file the entry is actually in.
+ */
+export interface RetiredEntry {
+  readonly entry: RegistryEntry
+  readonly scope: Exclude<RegistryScope, 'agent'>
+  /** The document holding it — NOT necessarily the one being diagnosed. */
+  readonly registryPath: string
 }
 
 /**
@@ -687,9 +720,24 @@ export async function runScope(
   const store = storeFor(scope, homeDir, projectDir)
   const registryPath = store.storePath(scope === 'machine' ? 'global' : 'project')
   let entries: RegistryEntry[] = []
+  const retired: RetiredEntry[] = []
   let registryError: TargetFailure | undefined
   try {
     entries = await store.list()
+    // Read PER SCOPE as well, rather than filtered out of the merged view above:
+    // the merge keeps one row per `type:id` and DROPS the scope that produced
+    // it, which is exactly the fact every message about a retired entry needs.
+    // Same scopes, in the same order, that `panda list` walks under each
+    // grammar — so `panda project doctor` reports a global entry against the
+    // global document, with the global verb.
+    const retiredScopes: readonly Exclude<RegistryScope, 'agent'>[] =
+      scope === 'machine' ? ['global'] : ['global', 'project']
+    for (const candidateScope of retiredScopes) {
+      for (const entry of await store.list(candidateScope)) {
+        if (!isRetiredEntryType(entry.type)) continue
+        retired.push({ entry, scope: candidateScope, registryPath: store.storePath(candidateScope) })
+      }
+    }
   } catch (error) {
     // Panda's OWN two state files, classified the same way. A corrupt ledger is
     // already a reported finding; a corrupt registry throwing out of the command
@@ -721,6 +769,7 @@ export async function runScope(
       legacy: scope === 'machine' && mode === 'inspect' ? await legacyFor(detected, homeDir) : [],
       warnings: [],
       registryError,
+      retired: [],
     }
   }
 
@@ -734,8 +783,16 @@ export async function runScope(
     mode,
   })
 
+  // Built from the entries the engine was actually GIVEN: a retired entry is
+  // never handed to a target, so it can never be the explanation for an id a
+  // target skipped — and an id spelled the same in both vocabularies would
+  // otherwise be explained by the entry nobody projected, naming a type panda no
+  // longer declares. `test/init.test.ts` forces exactly that collision.
   const byId = new Map<string, RegistryEntry[]>()
-  for (const entry of entries) byId.set(entry.id, [...(byId.get(entry.id) ?? []), entry])
+  for (const entry of entries) {
+    if (isRetiredEntryType(entry.type)) continue
+    byId.set(entry.id, [...(byId.get(entry.id) ?? []), entry])
+  }
   const results = new Map(run.results.map((result) => [result.targetId, result]))
   const failures = new Map(run.failures.map((failure) => [failure.targetId, failure]))
 
@@ -794,6 +851,7 @@ export async function runScope(
     skipped,
     legacy: scope === 'machine' && mode === 'inspect' ? await legacyFor(detected, homeDir) : [],
     warnings: run.warnings,
+    retired,
   }
 }
 

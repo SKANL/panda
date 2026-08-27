@@ -57,7 +57,6 @@ surface did not.
 
 ```sh
 pnpm panda add skill commit-lint --entry-path ./skills/commit-lint/SKILL.md
-pnpm panda add tool rg --command rg
 pnpm panda add mcp-server fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem
 pnpm panda list
 pnpm panda remove skill commit-lint
@@ -70,9 +69,17 @@ the agent scope is an in-memory map that dies with the process, so a flag for it
 would accept the flag, exit 0 and persist nothing.
 
 Which field flags a type accepts is the registry CONTRACT's answer, not this
-command's: `panda add tool t --entry-path ./x` is refused with
-`PANDA_REGISTRY_INVALID_ENTRY`, because a `tool` carries a `command`. The CLI
-holds no per-type table, so it cannot drift from the one the contract already has.
+command's: `panda add mcp-server t --entry-path ./x` is refused with
+`PANDA_REGISTRY_INVALID_ENTRY`, because an `mcp-server` carries a `command` and
+`args`. The CLI holds no per-type table, so it cannot drift from the one the
+contract already has.
+
+Story M4.E RETIRED the `tool` type: no executor has a non-MCP location for an
+identity plus an executable command, and an `mcp-server` entry already carries
+exactly what a `tool` entry carried. `panda add tool …` is a usage error, but a
+registry written by an older build is still read, still listed, and still
+emptied through the product — `panda remove` accepts a retired type, and
+`panda doctor` prints the exact spelling for each entry it finds.
 
 `add` registers and projects nothing; it names the command that does. Coupling
 the two would make registration fail for projection reasons.

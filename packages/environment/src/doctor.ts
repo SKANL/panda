@@ -1,7 +1,7 @@
 import { access, constants, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
-import { PANDA_ERROR_CODES } from '@panda/contracts'
+import { PANDA_ERROR_CODES, REGISTRY_ENTRY_TYPES } from '@panda/contracts'
 import type {
   DriftEntry,
   DriftKind,
@@ -11,7 +11,14 @@ import type {
 } from '@panda/contracts'
 import type { ExecutorDetection } from './executors.ts'
 import { noExecutorsDetected, runScope, scopeDirectory } from './init.ts'
-import type { LegacyBlock, ScopeTarget, SkippedExecutor, TargetFailure, UnprojectableEntry } from './init.ts'
+import type {
+  LegacyBlock,
+  RetiredEntry,
+  ScopeTarget,
+  SkippedExecutor,
+  TargetFailure,
+  UnprojectableEntry,
+} from './init.ts'
 
 // `panda doctor`: what `panda init` / `panda project init` WOULD do, and every
 // problem panda can see, with nothing written.
@@ -52,6 +59,16 @@ export type DiagnosisFindingKind =
   | 'no-executor'
   /** Panda's own registry document exists and cannot be read. */
   | 'registry-unreadable'
+  /**
+   * A stored entry whose TYPE panda has retired (story M4.E).
+   *
+   * Not `unprojectable`: that one is about an entry panda still declares which
+   * no target happens to express, and it is reported per target because a target
+   * is what refused it. This one is about the REGISTRY holding a word panda no
+   * longer has — no target ever saw it, so no target can report it, and the file
+   * it is about is panda's own registry document.
+   */
+  | 'retired-type'
   /** Panda's own ownership ledger cannot be read, or has lost records. */
   | 'ledger-damaged'
   /** A projection warning with no more specific reading than its own code. */
@@ -133,6 +150,7 @@ const RESOLUTION: Record<DiagnosisFindingKind, string> = {
   'not-initialised': "`panda init` (or `panda project init`) creates panda's state here; doctor creates nothing",
   'no-executor': 'panda projects into configurations that already exist and creates none, so `panda init` would write nothing here and exits 2',
   'registry-unreadable': 'panda never replaces a registry document it cannot read; `panda init` fails on it and projects nothing, so no entry is deleted from any vendor file',
+  'retired-type': 'panda reads and lists the entry but hands it to no target, so projecting again neither writes nor removes anything for it; panda never deletes a registry entry by itself, because removing one is a decision and a decision is yours',
   'ledger-damaged': 'panda leaves the ledger exactly as it is and claims nothing it cannot read; until it is readable again panda reports its own entries as foreign and touches none of them',
   'projection-warning': 'panda surfaced this from the projection run and resolves none of it by itself; `panda init` runs through the same condition',
   'out-of-date': 'projecting makes this location match the registry — for a skills root that can mean REMOVING a tree panda wrote, not only writing one. Panda checked the location is writable, which is weaker than a guarantee: an ACL, a mount option or another process holding it can still refuse the write, and on Windows that check sees only the read-only attribute',
@@ -227,6 +245,17 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
     by: 'outside-panda',
     detail: 'panda cannot grant itself permission; the location has to become writable',
   },
+  // A COMMAND, and it has to be: retiring a word from the registry vocabulary
+  // while the entries written under it stay unreadable-or-unremovable is the
+  // dead end M4.C exists to abolish, reached this time by upgrading. `panda
+  // remove` therefore accepts a retired type even though `panda add` refuses
+  // one, and the finding's own detail names the exact spelling for this entry.
+  'retired-type': {
+    by: 'command',
+    command: 'panda remove <type> <id>',
+    detail:
+      'the entry is not damaged and the document is not corrupt — panda simply no longer declares that word. `panda remove` still accepts a retired type even though `panda add` refuses one, which is how an entry written by an older build leaves without hand-editing the document',
+  },
   // Reclassified OUT of `outside-panda` by story M4.D, which is the SAFE
   // direction: the M4.C ledger flagged reclassification INTO `outside-panda` as
   // the move that weakens the totality proof, because it lets a hard state be
@@ -263,14 +292,20 @@ export function findingKindsFor(remediation: RemediationKind): DiagnosisFindingK
  * the command the product prints and the command the capability accepts are one
  * string, and a remediation renamed upstream renames itself here.
  */
-function exitSentence(kind: DiagnosisFindingKind): string {
+function exitSentence(kind: DiagnosisFindingKind, command?: string): string {
   const exit = FINDING_EXITS[kind]
   if (exit.by === 'remediation') {
     return `To LEAVE this state, name it: ${exit.remediations
       .map((remediation) => `\`panda remediate ${remediation}\``)
       .join(' or ')}. ${exit.detail}`
   }
-  if (exit.by === 'command') return `To leave this state: \`${exit.command}\`. ${exit.detail}`
+  // `command` is the SPELLING for this one finding, where the caller holds the
+  // concrete values. `FINDING_EXITS` can only declare the shape of the exit --
+  // `panda remove <type> <id>` -- and printing a placeholder at a finding that
+  // already knows the type and the id makes the user translate a command panda
+  // could have written out. `unprojectable` still prints the template, because
+  // its rows carry an entry id and no type; `retired-type` carries both.
+  if (exit.by === 'command') return `To leave this state: \`${command ?? exit.command}\`. ${exit.detail}`
   return `Panda cannot leave this state itself. ${exit.detail}`
 }
 
@@ -286,6 +321,13 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   'not-initialised': 'problem',
   'no-executor': 'problem',
   'registry-unreadable': 'problem',
+  // A PROBLEM rather than info, and the exit code is again the reason. The test
+  // is whether a user can get the light back to green: `unprojectable` is info
+  // because nothing makes a `profile` entry projectable and deleting an entry
+  // the user deliberately registered is not a fix. Here one command clears it
+  // for good, and the entry is one no current build can create — leaving it
+  // silent would hide the single visible consequence of an upgrade.
+  'retired-type': 'problem',
   'ledger-damaged': 'problem',
   'projection-warning': 'problem',
   'out-of-date': 'problem',
@@ -385,6 +427,8 @@ function finding(
   kind: DiagnosisFindingKind,
   detail: string,
   about: Omit<DiagnosisFinding, 'kind' | 'severity' | 'detail' | 'resolution'> = {},
+  /** The concrete spelling of a `by: 'command'` exit; see {@link exitSentence}. */
+  command?: string,
 ): DiagnosisFinding {
   // Two halves, always: what PROJECTING again would do (which for five kinds is
   // "nothing, forever"), and how to LEAVE the state. Shipping only the first is
@@ -394,7 +438,7 @@ function finding(
     severity: SEVERITY[kind],
     ...about,
     detail,
-    resolution: `${RESOLUTION[kind]} — ${exitSentence(kind)}`,
+    resolution: `${RESOLUTION[kind]} — ${exitSentence(kind, command)}`,
   }
 }
 
@@ -473,6 +517,7 @@ async function writableLocation(path: string): Promise<boolean | undefined> {
 async function findingsFor(
   diagnosis: Omit<Diagnosis, 'findings'>,
   registryError: TargetFailure | undefined,
+  retired: readonly RetiredEntry[],
 ): Promise<DiagnosisFinding[]> {
   const findings: DiagnosisFinding[] = []
   if (registryError !== undefined) {
@@ -490,6 +535,30 @@ async function findingsFor(
       finding('not-initialised', `panda has no registry document at '${diagnosis.registryPath}'`, {
         filePath: diagnosis.registryPath,
       }),
+    )
+  }
+  for (const row of retired) {
+    // Both halves come from the ROW, never from the scope being diagnosed: the
+    // verb is the grammar that reaches the document the entry is actually in,
+    // and `filePath` is that document. `panda project doctor` reads the global
+    // registry too, so deriving either from `diagnosis.scope` printed
+    // `panda project remove <id>` for a global entry -- a command that exits 1,
+    // against a project document that does not hold it. The two spellings are
+    // separate literals so the printed-command invariant sees a real verb in
+    // each, and the concrete command goes to the EXIT sentence rather than into
+    // this detail, so the rendered line states the fact once and the command once.
+    const { entry } = row
+    const removeCommand =
+      row.scope === 'global'
+        ? `panda remove ${entry.type} ${entry.id}`
+        : `panda project remove ${entry.type} ${entry.id}`
+    findings.push(
+      finding(
+        'retired-type',
+        `'${entry.id}' is a '${entry.type}' entry in the ${row.scope} registry, and '${entry.type}' is a type panda no longer declares (it has ${REGISTRY_ENTRY_TYPES.join(', ')}); no target will ever take it`,
+        { filePath: row.registryPath, entryId: entry.id },
+        removeCommand,
+      ),
     )
   }
   if (noExecutorsDetected(diagnosis)) {
@@ -627,5 +696,5 @@ export async function diagnose(options: DiagnoseOptions = {}): Promise<Diagnosis
     skipped: report.skipped,
     warnings: report.warnings,
   }
-  return { ...body, findings: await findingsFor(body, report.registryError) }
+  return { ...body, findings: await findingsFor(body, report.registryError, report.retired) }
 }

@@ -18,7 +18,6 @@ async function makeHome(): Promise<string> {
 }
 
 const ENTRIES: RegistryEntriesByKind = {
-  tool: [],
   skill: [],
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },

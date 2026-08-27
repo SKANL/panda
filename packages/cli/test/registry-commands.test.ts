@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { REGISTRY_ENTRY_TYPES, REMOVABLE_ENTRY_TYPES } from '@panda/environment'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 
@@ -57,7 +58,7 @@ describe('panda add', () => {
     const homeDir = await tempDir()
     const projectDir = await tempDir()
     const io = capture()
-    const code = await runPanda(['project', 'add', 'tool', 'fmt', '--command', 'prettier', projectDir], {
+    const code = await runPanda(['project', 'add', 'mcp-server', 'fmt', '--command', 'prettier', projectDir], {
       ...io,
       homeDir,
     })
@@ -65,10 +66,10 @@ describe('panda add', () => {
     expect(JSON.parse(io.out.join('\n'))).toMatchObject({
       scope: 'project',
       registryPath: join(projectDir, '.panda', 'registry.json'),
-      entry: { type: 'tool', id: 'fmt', command: 'prettier' },
+      entry: { type: 'mcp-server', id: 'fmt', command: 'prettier' },
     })
     expect(io.err.join('\n')).toContain('`panda project init`')
-    expect(await storedEntries(projectDir)).toEqual([{ type: 'tool', id: 'fmt', command: 'prettier' }])
+    expect(await storedEntries(projectDir)).toEqual([{ type: 'mcp-server', id: 'fmt', command: 'prettier' }])
     // The machine scope was not touched: the grammar chose the scope, not a flag.
     await expect(storedEntries(homeDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -100,7 +101,7 @@ describe('panda add', () => {
   it('lets the CONTRACT refuse a field that does not belong on the type, and holds no table of its own', async () => {
     const homeDir = await tempDir()
     const io = capture()
-    const code = await runPanda(['add', 'tool', 't', '--entry-path', './x'], { ...io, homeDir })
+    const code = await runPanda(['add', 'mcp-server', 't', '--entry-path', './x'], { ...io, homeDir })
     expect(code).toBe(2)
     // The CODE is asserted, not the sentence: the sentence is the contract's to
     // write, and pinning it here would be the binding claiming the rule.
@@ -124,7 +125,7 @@ describe('panda add', () => {
       const code = await runPanda(argv, { ...io, homeDir })
       expect(code, argv.join(' ')).toBe(2)
       const stderr = io.err.join('\n')
-      for (const type of ['tool', 'skill', 'mcp-server', 'profile']) {
+      for (const type of ['skill', 'mcp-server', 'profile']) {
         expect(stderr, argv.join(' ')).toContain(type)
       }
     }
@@ -203,11 +204,11 @@ describe('the guards that keep two scopes two documents, and an id nameable', ()
     // invented `project` scope, and `panda project remove` reported a
     // project-scope removal while EMPTYING the global registry, exit 0.
     const homeDir = await tempDir()
-    expect(await runPanda(['add', 'tool', 'g1', '--command', 'rg'], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['add', 'mcp-server', 'g1', '--command', 'rg'], { ...capture(), homeDir })).toBe(0)
     for (const argv of [
       ['project', 'list', homeDir],
-      ['project', 'add', 'tool', 'g2', '--command', 'rg', homeDir],
-      ['project', 'remove', 'tool', 'g1', homeDir],
+      ['project', 'add', 'mcp-server', 'g2', '--command', 'rg', homeDir],
+      ['project', 'remove', 'mcp-server', 'g1', homeDir],
     ]) {
       const io = capture()
       expect(await runPanda(argv, { ...io, homeDir }), argv.join(' ')).toBe(2)
@@ -215,7 +216,7 @@ describe('the guards that keep two scopes two documents, and an id nameable', ()
     }
     // The global document is exactly as it was: nothing was doubled, nothing
     // was emptied.
-    expect(await storedEntries(homeDir)).toEqual([{ type: 'tool', id: 'g1', command: 'rg' }])
+    expect(await storedEntries(homeDir)).toEqual([{ type: 'mcp-server', id: 'g1', command: 'rg' }])
   })
 
   it('binds a project directory and never creates one', async () => {
@@ -225,7 +226,7 @@ describe('the guards that keep two scopes two documents, and an id nameable', ()
     const homeDir = await tempDir()
     const missing = join(await tempDir(), 'no', 'such', 'tree')
     const io = capture()
-    const code = await runPanda(['project', 'add', 'tool', 't', '--command', 'rg', missing], { ...io, homeDir })
+    const code = await runPanda(['project', 'add', 'mcp-server', 't', '--command', 'rg', missing], { ...io, homeDir })
     expect(code).toBe(2)
     expect(io.err.join(String.fromCharCode(10))).toContain('PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE')
     await expect(stat(missing)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -297,16 +298,16 @@ describe('what panda remove reports', () => {
     // alone.
     const homeDir = await tempDir()
     const projectDir = await tempDir()
-    expect(await runPanda(['add', 'tool', 'shared', '--command', 'rg'], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['add', 'mcp-server', 'shared', '--command', 'rg'], { ...capture(), homeDir })).toBe(0)
     expect(
-      await runPanda(['project', 'add', 'tool', 'shared', '--command', 'fmt', projectDir], {
+      await runPanda(['project', 'add', 'mcp-server', 'shared', '--command', 'fmt', projectDir], {
         ...capture(),
         homeDir,
       }),
     ).toBe(0)
-    expect(await runPanda(['project', 'remove', 'tool', 'shared', projectDir], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['project', 'remove', 'mcp-server', 'shared', projectDir], { ...capture(), homeDir })).toBe(0)
     expect(await storedEntries(projectDir)).toEqual([])
-    expect(await storedEntries(homeDir)).toEqual([{ type: 'tool', id: 'shared', command: 'rg' }])
+    expect(await storedEntries(homeDir)).toEqual([{ type: 'mcp-server', id: 'shared', command: 'rg' }])
   })
 })
 
@@ -463,9 +464,9 @@ describe('panda list', () => {
   it('shows every entry with its type, its id and the scope it came from', async () => {
     const homeDir = await tempDir()
     const projectDir = await tempDir()
-    expect(await runPanda(['add', 'tool', 'rg', '--command', 'rg'], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['add', 'mcp-server', 'rg', '--command', 'rg'], { ...capture(), homeDir })).toBe(0)
     expect(
-      await runPanda(['project', 'add', 'tool', 'fmt', '--command', 'prettier', projectDir], {
+      await runPanda(['project', 'add', 'mcp-server', 'fmt', '--command', 'prettier', projectDir], {
         ...capture(),
         homeDir,
       }),
@@ -474,8 +475,8 @@ describe('panda list', () => {
     const code = await runPanda(['project', 'list', projectDir], { ...io, homeDir })
     expect(code).toBe(0)
     expect((JSON.parse(io.out.join('\n')) as { entries: unknown[] }).entries).toEqual([
-      { scope: 'global', type: 'tool', id: 'rg', command: 'rg' },
-      { scope: 'project', type: 'tool', id: 'fmt', command: 'prettier' },
+      { scope: 'global', type: 'mcp-server', id: 'rg', command: 'rg' },
+      { scope: 'project', type: 'mcp-server', id: 'fmt', command: 'prettier' },
     ])
     const stderr = io.err.join('\n')
     expect(stderr).toContain('global')
@@ -517,5 +518,113 @@ describe('the new verbs are in the usage block', () => {
       expect(await runPanda(argv, io), argv.join(' ')).toBe(0)
       expect(io.out.join('\n'), argv.join(' ')).toContain('usage: panda run')
     }
+  })
+})
+
+// Story M4.E, end to end through the binary: `tool` left the vocabulary, and the
+// entries an older build already wrote have to stay reachable AND removable.
+describe('a retired entry type through the binary', () => {
+  /**
+   * A registry an older build could have written: the `tool` row is exactly what
+   * the shipped binary produced for `panda add tool rg --command rg`, beside a
+   * still-declared entry, so removing the retired one has something to leave.
+   */
+  async function withRetired(root: string): Promise<void> {
+    await mkdir(join(root, '.panda'), { recursive: true })
+    await writeFile(
+      join(root, '.panda', 'registry.json'),
+      JSON.stringify(
+        { version: 1, entries: [{ type: 'tool', id: 'rg', command: 'rg' }, { type: 'skill', id: 'demo', entryPath: './d.md' }] },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+  }
+
+  it('refuses `panda add tool`, names the remaining types, and persists nothing', async () => {
+    const homeDir = await tempDir()
+    const io = capture()
+    expect(await runPanda(['add', 'tool', 'rg', '--command', 'rg'], { ...io, homeDir })).toBe(2)
+    const stderr = io.err.join('\n')
+    for (const type of ['skill', 'mcp-server', 'profile']) expect(stderr).toContain(type)
+    // And it points at the one command that DOES take the word, so a user
+    // upgrading is not told the entry they already have is unreachable.
+    expect(stderr).toContain('`panda remove tool <id>`')
+    await expect(storedEntries(homeDir)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('drops it from the synopsis of `add` and keeps it in the synopsis of `remove`', async () => {
+    const io = capture()
+    expect(await runPanda(['--help'], { ...io, homeDir: await tempDir() })).toBe(0)
+    const help = io.out.join('\n')
+    // DERIVED — and the comment above these lines used to say so while they were
+    // LITERALS, which is how replacing the interpolation in `run.ts` with its
+    // currently-correct spelling left the whole package green: the stale-help
+    // defect Spec Change Log 1 exists to abolish, restored and undetected.
+    // Reordering `REGISTRY_ENTRY_TYPES` now fails here unless the synopsis
+    // follows it.
+    expect(help).toContain(`panda add <${REGISTRY_ENTRY_TYPES.join('|')}> <id>`)
+    expect(help).toContain(`panda project add <${REGISTRY_ENTRY_TYPES.join('|')}> <id>`)
+    expect(help).toContain(`panda remove <${REMOVABLE_ENTRY_TYPES.join('|')}> <id>`)
+    expect(help).toContain(`panda project remove <${REMOVABLE_ENTRY_TYPES.join('|')}> <id>`)
+    // And the two lists are not one list: `add` must not offer a word the binary
+    // refuses, while `remove` must still take it.
+    expect(help).not.toContain(`panda add <${REMOVABLE_ENTRY_TYPES.join('|')}>`)
+  })
+
+  it('removes a retired entry through the PROJECT grammar too, which doctor also prints', async () => {
+    // T3's other spelling. `panda project doctor` prints
+    // `panda project remove <type> <id>` for a project-scope entry and nothing
+    // dispatched it — the half of the invariant that proves a command DELIVERS
+    // was measured for the machine grammar alone.
+    const homeDir = await tempDir()
+    const projectDir = await tempDir()
+    await withRetired(projectDir)
+
+    const io = capture()
+    expect(await runPanda(['project', 'remove', 'tool', 'rg', projectDir], { ...io, homeDir })).toBe(0)
+    expect(await storedEntries(projectDir)).toEqual([{ type: 'skill', id: 'demo', entryPath: './d.md' }])
+  })
+
+  it('refuses `panda project add tool` in the PROJECT grammar, naming commands that work there', async () => {
+    // The machine sentence, reused verbatim at project scope, asserted the entry
+    // is listed by `panda list` (which does not read a project registry) and
+    // named `panda remove tool <id>` (which exits 1 for a project entry): a
+    // refusal handing out two commands that do not do what it says.
+    const homeDir = await tempDir()
+    const projectDir = await tempDir()
+    const io = capture()
+    const code = await runPanda(['project', 'add', 'tool', 'rg', '--command', 'rg', projectDir], { ...io, homeDir })
+    expect(code).toBe(2)
+    const stderr = io.err.join('\n')
+    expect(stderr).toContain('`panda project list`')
+    expect(stderr).toContain('`panda project remove tool <id>`')
+  })
+
+  it('lists it, and removes it with the spelling `panda doctor` prints', async () => {
+    const homeDir = await tempDir()
+    await withRetired(homeDir)
+
+    const listed = capture()
+    expect(await runPanda(['list'], { ...listed, homeDir })).toBe(0)
+    expect(listed.err.join('\n')).toContain('global · tool · rg')
+
+    // The T3 half: the command doctor prints is RUN, verbatim, and the entry is
+    // gone afterwards. That a command dispatches does not prove it delivers.
+    const removed = capture()
+    expect(await runPanda(['remove', 'tool', 'rg'], { ...removed, homeDir })).toBe(0)
+    expect(await storedEntries(homeDir)).toEqual([{ type: 'skill', id: 'demo', entryPath: './d.md' }])
+
+    const after = capture()
+    expect(await runPanda(['list'], { ...after, homeDir })).toBe(0)
+    expect(after.err.join('\n')).not.toContain('tool')
+  })
+
+  it('says so and exits non-zero when the retired entry is already gone', async () => {
+    const homeDir = await tempDir()
+    const io = capture()
+    expect(await runPanda(['remove', 'tool', 'rg'], { ...io, homeDir })).toBe(1)
+    expect(io.err.join('\n')).toContain("no tool entry 'rg' is registered")
   })
 })

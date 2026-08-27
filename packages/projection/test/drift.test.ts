@@ -18,7 +18,6 @@ const tempRoots: string[] = []
 afterAll(() => Promise.all(tempRoots.map((dir) => rm(dir, { recursive: true, force: true }))))
 
 const ENTRIES: RegistryEntriesByKind = {
-  tool: [],
   skill: [],
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
@@ -26,7 +25,7 @@ const ENTRIES: RegistryEntriesByKind = {
   profile: [],
 }
 
-const EMPTY_REGISTRY: RegistryEntriesByKind = { tool: [], skill: [], 'mcp-server': [], profile: [] }
+const EMPTY_REGISTRY: RegistryEntriesByKind = { skill: [], 'mcp-server': [], profile: [] }
 
 const CLAUDE_NATIVE = `{
   "numStartups": 42,

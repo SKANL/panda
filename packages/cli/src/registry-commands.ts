@@ -1,6 +1,13 @@
 import { homedir } from 'node:os'
-import { REGISTRY_ENTRY_TYPES, deliveryFor, scopeDirectory, storeFor } from '@panda/environment'
-import type { EntryDelivery, RegistryEntry, RegistryEntryType, RegistryScope } from '@panda/environment'
+import {
+  REGISTRY_ENTRY_TYPES,
+  REMOVABLE_ENTRY_TYPES,
+  deliveryFor,
+  isRetiredEntryType,
+  scopeDirectory,
+  storeFor,
+} from '@panda/environment'
+import type { EntryDelivery, RegistryEntry, RegistryScope, StoredEntryType } from '@panda/environment'
 
 // `panda add` / `panda remove` / `panda list` — the surface Story 2.1 built a
 // store for and never gave a verb, which is why two of `panda doctor`'s own
@@ -138,16 +145,48 @@ function knownTypes(): string {
 }
 
 /**
+ * The vocabulary each verb accepts, and the asymmetry is the point: `remove`
+ * takes a RETIRED type as well, because an entry written by an older build has
+ * to have an exit through the product, and `add` does not, because nothing may
+ * create one again. Both lists come from `@panda/contracts` — there is still no
+ * table of entry types in this file.
+ */
+function acceptedTypes(verb: RegistryVerb): readonly StoredEntryType[] {
+  return verb === 'remove' ? REMOVABLE_ENTRY_TYPES : REGISTRY_ENTRY_TYPES
+}
+
+/**
  * The entry type, as an argv question. A missing or misspelled type is a usage
  * error about the command line — the user has not named an entry yet — while
  * everything about the entry ITSELF is the contract's to answer.
  */
-function readType(verb: RegistryVerb, token: string | undefined): RegistryEntryType | { usageError: string } {
+function readType(
+  verb: RegistryVerb,
+  token: string | undefined,
+  scope: 'machine' | 'project',
+): StoredEntryType | { usageError: string } {
+  const accepted = acceptedTypes(verb)
   if (token === undefined) return { usageError: `panda ${verb} needs an entry type: ${knownTypes()}` }
-  if (!(REGISTRY_ENTRY_TYPES as readonly string[]).includes(token)) {
-    return { usageError: `unknown entry type '${token}'; panda has ${knownTypes()}` }
+  const found = accepted.find((candidate) => candidate === token)
+  if (found === undefined) {
+    // A retired word reaching `add` gets the sentence that is USEFUL rather than
+    // the generic one: the user is either upgrading from a build that had it, or
+    // reading documentation that did, and the entry they already have is
+    // removable by exactly the spelling that was just refused here.
+    //
+    // Under the GRAMMAR the user actually typed. The machine sentence reused at
+    // project scope asserted the entry is listed by `panda list`, which does not
+    // read a project registry, and named `panda remove`, which exits 1 for a
+    // project-scope entry -- a refusal that hands out a command that fails.
+    return {
+      usageError: isRetiredEntryType(token)
+        ? scope === 'machine'
+          ? `'${token}' is a RETIRED entry type; panda has ${knownTypes()}. An existing '${token}' entry is still listed by \`panda list\` and removed by \`panda remove ${token} <id>\``
+          : `'${token}' is a RETIRED entry type; panda has ${knownTypes()}. An existing '${token}' entry is still listed by \`panda project list\` and removed by \`panda project remove ${token} <id>\``
+        : `unknown entry type '${token}'; panda has ${knownTypes()}`,
+    }
   }
-  return token as RegistryEntryType
+  return found
 }
 
 /** Panda's own two grammars, as the pair of facts every message below needs. */
@@ -215,8 +254,8 @@ export async function runRegistryCommand(
     return 2
   }
   // `add` and `remove` name an entry, `list` names none; the project grammar
-  // then takes one optional directory after that, exactly like `panda project
-  // init [directory]` and `panda project remediate <verb> [directory]`.
+  // then takes one optional directory after that, exactly like
+  // `panda project init [directory]` and `panda project remediate <verb> [directory]`.
   const named = verb === 'list' ? 0 : 2
   const maxPositionals = named + (scope === 'project' ? 1 : 0)
   if (parsed.positionals.length > maxPositionals) {
@@ -232,7 +271,7 @@ export async function runRegistryCommand(
     }
     return await runList(parsed.positionals[0], scope, context)
   }
-  const type = readType(verb, parsed.positionals[0])
+  const type = readType(verb, parsed.positionals[0], scope)
   if (typeof type !== 'string') {
     err(type.usageError)
     err(context.defaultUsage)
@@ -265,8 +304,8 @@ export async function runRegistryCommand(
  * machine where the failure has nothing to do with the entry just registered.
  *
  * The next step it reports is DERIVED, by `deliveryFor`, from the same planner
- * `panda init` runs. It used to be a sentence written here — "`panda project
- * init` puts it into every detected executor" — and for a project-scope skill
+ * `panda init` runs. It used to be a sentence written here —
+ * "`panda project init` puts it into every detected executor" — and for a skill
  * that sentence was false: nothing at that scope takes one, machine-scope
  * projection cannot see a project-scope entry, and the entry was inert forever
  * behind a command that exits 0. This binding therefore holds NO idea of which
@@ -360,7 +399,7 @@ function deliveryLines(entry: RegistryEntry, delivery: EntryDelivery): string[] 
  * did not happen — and hide a stale entry in this scope forever.
  */
 async function performRemove(
-  type: RegistryEntryType,
+  type: StoredEntryType,
   id: string,
   bound: Bound,
   out: (line: string) => void,

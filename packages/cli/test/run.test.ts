@@ -624,13 +624,13 @@ describe('panda doctor', () => {
   })
 
   it('exits 0 on a finding that is informational, because no command clears it', async () => {
-    // A registered `tool` is unprojectable by every executor, permanently. It is
-    // reported in full and does not fail the run, or the exit code is a light
+    // A registered `profile` is unprojectable by every executor, permanently. It
+    // is reported in full and does not fail the run, or the exit code is a light
     // that never goes out.
     const homeDir = await tempCwd()
     await writeFile(join(homeDir, '.claude.json'), '{}\n')
     const store = new RegistryStore({ homeDir })
-    await store.register({ type: 'tool', id: 'ripgrep', command: 'rg' }, 'global')
+    await store.register({ type: 'profile', id: 'frontend' }, 'global')
     await store.dispose()
     expect(await runPanda(['init'], { ...capture(), homeDir })).toBe(0)
 
@@ -640,6 +640,33 @@ describe('panda doctor', () => {
     expect(code).toBe(0)
     // Printed anyway, with its severity, so a reader can see why 0 is right.
     expect(io.err.join('\n')).toContain('info: unprojectable')
+  })
+
+  it('exits 1 on a RETIRED entry, because one command clears it', async () => {
+    // The counterpart of the `info` row above, and the pair is the whole point:
+    // `unprojectable` is info because nothing can clear it, `retired-type` is a
+    // problem because `panda remove` can. Nothing in the CLI covered the retired
+    // kind at all, so flipping its severity — exit 1 to exit 0 on a registry
+    // panda can no longer fully express — went unnoticed by every suite.
+    const homeDir = await tempCwd()
+    await writeFile(join(homeDir, '.claude.json'), '{}\n')
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(homeDir, '.panda', 'registry.json'),
+      JSON.stringify({ version: 1, entries: [{ type: 'tool', id: 'rg', command: 'rg' }] }),
+      'utf8',
+    )
+
+    const io = capture()
+    const code = await runPanda(['doctor'], { ...io, homeDir })
+
+    expect(code).toBe(1)
+    const stderr = io.err.join('\n')
+    expect(stderr).toContain('problem: retired-type')
+    // The exit it prints is the one that works, and the CLI runs it right here.
+    expect(stderr).toContain('`panda remove tool rg`')
+    expect(await runPanda(['remove', 'tool', 'rg'], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['doctor'], { ...capture(), homeDir })).toBe(0)
   })
 
   it('exits 2 — not 1 — when it could not look at all', async () => {

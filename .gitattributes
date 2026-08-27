@@ -1,2 +1,7 @@
 # Byte-exact test fixtures must survive checkout on any platform untouched.
 packages/projection/test/goldens/** -text
+
+# Vendor schema captures are parsed by literal byte patterns (a fenced ```json
+# block matched with /```json\n/), so a CRLF checkout fails four conformance
+# tests. Same rule, same reason, different directory.
+packages/projection/test/vendor-schemas/** -text

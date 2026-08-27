@@ -12,7 +12,7 @@ import {
   validateRegistryEntry,
   validateRegistryScope,
 } from '@panda/contracts'
-import type { RegistryEntry, RegistryEntryType, RegistryScope } from '@panda/contracts'
+import type { RegistryEntry, RegistryScope, StoredEntryType } from '@panda/contracts'
 import { acquireLock } from './lock.ts'
 import type { LockOptions, StaleLockBreak } from './lock.ts'
 
@@ -190,7 +190,7 @@ export class RegistryStore {
     return this.#storePath(scope)
   }
 
-  async remove(type: RegistryEntryType, id: string, scope: RegistryScope): Promise<void> {
+  async remove(type: StoredEntryType, id: string, scope: RegistryScope): Promise<void> {
     const key = `${type}:${id}`
     await this.#mutate(scope, async () => {
       if (scope === 'agent') {
@@ -213,7 +213,7 @@ export class RegistryStore {
    *    shadowing from another scope hide a stale target-scope entry forever.
    */
   async get(
-    type: RegistryEntryType,
+    type: StoredEntryType,
     id: string,
     scope?: RegistryScope,
   ): Promise<RegistryEntry | undefined> {
@@ -335,7 +335,14 @@ export class RegistryStore {
 
     const entries = parsed['entries'] as unknown[]
     entries.forEach((candidate, index) => {
-      const issues = registryEntryIssues(candidate)
+      // `admitRetired`, and ONLY here: a document written by an older build may
+      // hold a word panda has since retired, and one such row used to make the
+      // WHOLE store unreadable — which blocks `panda list`, `panda remove` and
+      // `panda init`, i.e. the very commands that would take it out. Retiring a
+      // word must not be reachable as a dead end by upgrading (M4.C). Every
+      // other rule of the envelope still applies, so a genuinely malformed entry
+      // still fails the store here exactly as before.
+      const issues = registryEntryIssues(candidate, true)
       if (issues.length > 0) {
         throw unavailable(
           'validate',

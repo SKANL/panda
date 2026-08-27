@@ -85,6 +85,7 @@ development_status:
   m4c-every-state-panda-reports-has-a-way-out: done  # implements 2.11 + the 2.2-era drift-resolution gap
   2-11-remediate-blocks-written-by-a-previous-build: superseded  # folded into m4c, which covers correction-01 C6 and the four terminal states
   m4d-nothing-panda-prints-is-a-command-panda-does-not-have: done            # closes FR-11's surface; story 2.1 built the store, never a verb
+  m4e-the-registry-declares-only-what-panda-can-deliver: done           # removes tool; profile deferred with its evidence banked
   epic-2-retrospective: optional
 
   epic-3: backlog

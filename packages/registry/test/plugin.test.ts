@@ -40,8 +40,8 @@ describe('registry as a real kernel plugin', () => {
 
     const resolution = kernel.getService<RegistryStore>('registry')
     if (resolution.kind !== 'provided') throw new Error('registry service should be provided')
-    await resolution.value.register({ type: 'tool', id: 'via-kernel' }, 'project')
-    expect(await resolution.value.get('tool', 'via-kernel')).toEqual({ type: 'tool', id: 'via-kernel' })
+    await resolution.value.register({ type: 'mcp-server', id: 'via-kernel' }, 'project')
+    expect(await resolution.value.get('mcp-server', 'via-kernel')).toEqual({ type: 'mcp-server', id: 'via-kernel' })
 
     // Disposal is honored: stop() runs the disposer and drops the service.
     await kernel.stop()
@@ -137,7 +137,7 @@ describe('registry as a real kernel plugin', () => {
       'utf8',
     )
 
-    await resolution.value.register({ type: 'tool', id: 'breaker' }, 'global')
+    await resolution.value.register({ type: 'mcp-server', id: 'breaker' }, 'global')
     expect(events).toHaveLength(1)
     expect(events[0]!.evidence).toContain(String(deadChild))
     expect(events[0]!.holder?.pid).toBe(deadChild)

@@ -30,13 +30,13 @@ export interface TargetClauseCase {
 
 /** The same registry state every case projects; mirrors the committed goldens. */
 export const SUITE_ENTRIES: RegistryEntriesByKind = {
-  tool: [{ type: 'tool', id: 'ripgrep', command: 'rg' }],
   skill: [{ type: 'skill', id: 'commit-lint', entryPath: '~/.panda/skills/commit-lint.ts' }],
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
     { type: 'mcp-server', id: 'ast-grep', command: 'ast-grep', args: ['mcp'] },
   ],
-  profile: [],
+  // One entry no target expresses, so every case still covers the skipped path.
+  profile: [{ type: 'profile', id: 'inert' }],
 }
 
 /** Deletes every owned span, which is what "foreign bytes survived" means. */

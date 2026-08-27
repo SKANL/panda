@@ -8,10 +8,15 @@ import {
   REGISTRY_ENTRY_TYPES,
   REGISTRY_PATH_FIELDS,
   REGISTRY_SCOPES,
+  REMOVABLE_ENTRY_TYPES,
+  RETIRED_ENTRY_TYPES,
+  RETIRED_PATH_FIELDS,
   UNPROJECTABLE_ENTRY_IDS,
   expandRegistryEntryPaths,
   isRegistryScopeValue,
+  isRetiredEntryType,
   normalizeRegistryEntryPaths,
+  pathFieldsFor,
   registryEntryIssues,
   validateRegistryEntry,
   validateRegistryScope,
@@ -23,11 +28,6 @@ describe('canonical registry entry envelopes', () => {
     for (const type of REGISTRY_ENTRY_TYPES) {
       expect(validateRegistryEntry({ type, id: 'demo' })).toEqual({ type, id: 'demo' })
     }
-    expect(validateRegistryEntry({ type: 'tool', id: 'demo', command: 'demo --run' })).toEqual({
-      type: 'tool',
-      id: 'demo',
-      command: 'demo --run',
-    })
     expect(
       validateRegistryEntry({ type: 'mcp-server', id: 'demo', command: 'npx', args: ['-y', 'demo'] }),
     ).toEqual({ type: 'mcp-server', id: 'demo', command: 'npx', args: ['-y', 'demo'] })
@@ -36,10 +36,10 @@ describe('canonical registry entry envelopes', () => {
   it('rejects non-objects and missing required fields naming each one', () => {
     expect(registryEntryIssues(null)).toEqual([{ message: 'registry entry must be an object' }])
     expect(registryEntryIssues({})).toEqual([
-      { message: "'type' must be one of: tool, skill, mcp-server, profile" },
+      { message: "'type' must be one of: skill, mcp-server, profile" },
       { message: "'id' must be a non-empty string" },
     ])
-    expect(registryEntryIssues({ type: 'tool', id: '' })).toEqual([
+    expect(registryEntryIssues({ type: 'mcp-server', id: '' })).toEqual([
       { message: "'id' must be a non-empty string" },
     ])
     expect(registryEntryIssues({ type: 'skill', id: 'x', entryPath: 42 })).toEqual([
@@ -55,7 +55,7 @@ describe('canonical registry entry envelopes', () => {
     // the only table saying which field suits which type is the one that already
     // existed. A caller — `panda add`, an ingest provider — holding a second
     // copy of it would drift from this one, which is the whole reason it is
-    // here: a `tool` carrying an `entryPath` used to persist and then be
+    // here: an `mcp-server` carrying an `entryPath` used to persist and then be
     // silently ignored by every projection target.
     //
     // Derived over the whole matrix rather than spot-checked, so a type whose
@@ -82,15 +82,15 @@ describe('canonical registry entry envelopes', () => {
     // routes through it: an unprojectable id that reaches the store makes
     // EVERY projection target fail permanently.
     for (const id of UNPROJECTABLE_ENTRY_IDS) {
-      expect(registryEntryIssues({ type: 'tool', id })).toEqual([
+      expect(registryEntryIssues({ type: 'mcp-server', id })).toEqual([
         { message: `'id' must not be '${id}': it can never be used as a projected key` },
       ])
     }
-    expect(registryEntryIssues({ type: 'tool', id: 'constructor-ish' })).toEqual([])
+    expect(registryEntryIssues({ type: 'mcp-server', id: 'constructor-ish' })).toEqual([])
   })
 
   it('rejects unknown root keys naming the extensions rule', () => {
-    const issues = registryEntryIssues({ type: 'tool', id: 'demo', model: 'sonnet' })
+    const issues = registryEntryIssues({ type: 'mcp-server', id: 'demo', model: 'sonnet' })
     expect(issues).toEqual([
       {
         message:
@@ -98,7 +98,7 @@ describe('canonical registry entry envelopes', () => {
       },
     ])
     try {
-      validateRegistryEntry({ type: 'tool', id: 'demo', model: 'sonnet' })
+      validateRegistryEntry({ type: 'mcp-server', id: 'demo', model: 'sonnet' })
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(PandaError)
@@ -108,7 +108,7 @@ describe('canonical registry entry envelopes', () => {
   })
 
   it('rejects a malformed extensions namespace', () => {
-    expect(registryEntryIssues({ type: 'tool', id: 'demo', extensions: ['nope'] })).toEqual([
+    expect(registryEntryIssues({ type: 'mcp-server', id: 'demo', extensions: ['nope'] })).toEqual([
       { message: "'extensions' must be an object when present" },
     ])
   })
@@ -148,7 +148,6 @@ describe('write-time path normalization (declared path fields only)', () => {
   const home = homedir()
 
   it('declares the per-type path-field allowlist', () => {
-    expect(REGISTRY_PATH_FIELDS['tool']).toEqual(['command'])
     expect(REGISTRY_PATH_FIELDS['skill']).toEqual(['entryPath'])
     expect(REGISTRY_PATH_FIELDS['mcp-server']).toEqual(['command', 'args'])
     expect(REGISTRY_PATH_FIELDS['profile']).toEqual([])
@@ -156,7 +155,7 @@ describe('write-time path normalization (declared path fields only)', () => {
 
   it('normalizes absolute-under-home values in designated fields and expands them back losslessly', () => {
     const underHome = join(home, 'bin', 'demo.exe')
-    const entry: RegistryEntry = { type: 'tool', id: '~demo', command: underHome }
+    const entry: RegistryEntry = { type: 'mcp-server', id: '~demo', command: underHome }
 
     const normalized = normalizeRegistryEntryPaths(entry, home)
     expect(normalized.id).toBe('~demo')
@@ -193,7 +192,7 @@ describe('write-time path normalization (declared path fields only)', () => {
   })
 
   it('expands a bare ~ marker back to the exact home directory', () => {
-    const entry: RegistryEntry = { type: 'tool', id: 'demo', command: home }
+    const entry: RegistryEntry = { type: 'mcp-server', id: 'demo', command: home }
     expect(expandRegistryEntryPaths(normalizeRegistryEntryPaths(entry, home), home)).toEqual(entry)
   })
 
@@ -205,16 +204,84 @@ describe('write-time path normalization (declared path fields only)', () => {
     if (process.platform !== 'win32') {
       // posix comparison stays case-sensitive: swapped casing is just an opaque path.
       const opaque = join(swapped, 'bin', 'demo.exe')
-      expect(normalizeRegistryEntryPaths({ type: 'tool', id: 'x', command: opaque } satisfies RegistryEntry, home).command).toBe(opaque)
+      expect(normalizeRegistryEntryPaths({ type: 'mcp-server', id: 'x', command: opaque } satisfies RegistryEntry, home).command).toBe(opaque)
       return
     }
     const underSwapped = join(swapped, 'bin', 'demo.exe')
     const normalized = normalizeRegistryEntryPaths(
-      { type: 'tool', id: 'x', command: underSwapped } satisfies RegistryEntry,
+      { type: 'mcp-server', id: 'x', command: underSwapped } satisfies RegistryEntry,
       home,
     )
     expect(normalized.command!.startsWith('~/')).toBe(true)
     // Expanding restores the REAL home casing; only the match folded case.
     expect(expandRegistryEntryPaths(normalized, home).command).toBe(join(home, 'bin', 'demo.exe'))
+  })
+})
+
+// Story M4.E. `tool` was removed from the vocabulary because no executor has a
+// non-MCP location for it — and removing a word must not turn a registry that
+// already holds one into an unreadable store. The read path therefore RECOGNISES
+// the retired word; the frozen Ask-First clause of that story says recognising
+// it may not become a relaxation of validation, which is what the second half of
+// this block asserts one rule at a time.
+describe('a retired entry type stays readable without weakening the envelope', () => {
+  const stored = { type: 'tool', id: 'rg', command: 'rg' }
+
+  it('is no longer part of the vocabulary panda declares', () => {
+    expect(REGISTRY_ENTRY_TYPES).not.toContain('tool')
+    expect(RETIRED_ENTRY_TYPES).toEqual(['tool'])
+    expect(isRetiredEntryType('tool')).toBe(true)
+    expect(isRetiredEntryType('mcp-server')).toBe(false)
+    // The two lists together are what `panda remove` accepts, and the ORDER puts
+    // the declared words first so a usage message reads sensibly.
+    expect(REMOVABLE_ENTRY_TYPES).toEqual([...REGISTRY_ENTRY_TYPES, ...RETIRED_ENTRY_TYPES])
+  })
+
+  it('is refused by every WRITE path, so nothing can create one again', () => {
+    expect(registryEntryIssues(stored)).toEqual([
+      { message: "'type' must be one of: skill, mcp-server, profile" },
+    ])
+    try {
+      validateRegistryEntry(stored)
+      expect.unreachable()
+    } catch (error) {
+      expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.registryInvalidEntry)
+    }
+  })
+
+  it('is accepted by the READ path, with the fields it carried while it was live', () => {
+    expect(registryEntryIssues(stored, true)).toEqual([])
+    expect(RETIRED_PATH_FIELDS['tool']).toEqual(['command'])
+    expect(pathFieldsFor('tool')).toEqual(['command'])
+    // The one that would throw rather than misreport: a retired entry indexed
+    // against the DECLARED record yields `undefined`, and iterating it dies.
+    expect(pathFieldsFor('mcp-server')).toEqual(REGISTRY_PATH_FIELDS['mcp-server'])
+  })
+
+  it('still round-trips its declared path field through home normalization', () => {
+    const home = homedir()
+    const entry = { type: 'tool', id: 'localfmt', command: join(home, 'bin', 'fmt.exe') } as RegistryEntry
+    const normalized = normalizeRegistryEntryPaths(entry, home)
+    expect(normalized.command).toBe(`~/${join('bin', 'fmt.exe')}`)
+    expect(expandRegistryEntryPaths(normalized, home)).toEqual(entry)
+  })
+
+  it('admits the retired WORD and nothing else — every other rule still rejects', () => {
+    // Each row is one rule of the envelope, asserted UNDER `admitRetired`. If
+    // recognising `tool` had been implemented as leniency, these would pass.
+    const cases: [string, unknown, string][] = [
+      ['a field belonging to another type', { type: 'tool', id: 'rg', entryPath: './x' }, "'entryPath' does not belong on a 'tool' entry"],
+      ['a genuinely unknown type', { type: 'gadget', id: 'rg' }, "'type' must be one of"],
+      ['a missing id', { type: 'tool' }, "'id' must be a non-empty string"],
+      ['an unprojectable id', { type: 'tool', id: '__proto__' }, 'it can never be used as a projected key'],
+      ['a mistyped field', { type: 'tool', id: 'rg', command: 42 }, "'command' must be a non-empty string when present"],
+      ['an unknown root key', { type: 'tool', id: 'rg', model: 'sonnet' }, "'model' is not allowed at the entry root"],
+      ['a non-object', 'tool', 'registry entry must be an object'],
+    ]
+    for (const [label, value, expected] of cases) {
+      const issues = registryEntryIssues(value, true)
+      expect(issues.length, label).toBeGreaterThan(0)
+      expect(issues.map((issue) => issue.message).join('; '), label).toContain(expected)
+    }
   })
 })

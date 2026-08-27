@@ -1,4 +1,10 @@
-import { PandaError, PANDA_ERROR_CODES, UNPROJECTABLE_ENTRY_IDS, isRecord } from '@panda/contracts'
+import {
+  PandaError,
+  PANDA_ERROR_CODES,
+  REGISTRY_ENTRY_TYPES,
+  UNPROJECTABLE_ENTRY_IDS,
+  isRecord,
+} from '@panda/contracts'
 import type {
   DriftEntry,
   ProjectionClaim,
@@ -853,7 +859,11 @@ function collectMcpEntries(entries: RegistryEntriesByKind): {
   readonly skippedEntryIds: readonly string[]
 } {
   const skipped: string[] = []
-  for (const kind of ['tool', 'skill', 'profile'] as const) {
+  // Every DECLARED kind this format has no native location for — derived, so a
+  // word added to or removed from `REGISTRY_ENTRY_TYPES` cannot leave a stale
+  // literal here. (A RETIRED kind never arrives: `groupByKind` has no bucket for
+  // one, so it is dropped before any target is asked about it.)
+  for (const kind of REGISTRY_ENTRY_TYPES.filter((candidate) => candidate !== 'mcp-server')) {
     for (const entry of entries[kind]) skipped.push(entry.id)
   }
   const mcp: ProjectionMcpEntry[] = []

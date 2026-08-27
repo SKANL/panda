@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { RegistryStore } from '@panda/registry'
 import { afterAll, describe, expect, it } from 'vitest'
+import { REGISTRY_ENTRY_TYPES } from '@panda/contracts'
 import { DIAGNOSIS_FINDING_KINDS, diagnose, hasProblem } from '../src/doctor.ts'
 import type { Diagnosis, DiagnosisFinding, DiagnosisFindingKind } from '../src/doctor.ts'
 import { initMachine, initProject } from '../src/init.ts'
@@ -141,7 +142,7 @@ describe('panda doctor writes nothing', () => {
     const claudeJson = await withClaude(homeDir)
     await mkdir(join(homeDir, '.codex'), { recursive: true })
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
-    await register(homeDir, { type: 'tool', id: 'ripgrep', command: 'rg' })
+    await register(homeDir, { type: 'profile', id: 'frontend' })
     await initMachine({ homeDir })
     await writeFile(claudeJson, (await readFile(claudeJson, 'utf8')).replace('"ctx-server"', '"edited"'), 'utf8')
     await unreadableCodexConfig(homeDir)
@@ -269,7 +270,7 @@ describe('panda doctor reports what projecting would do', () => {
     const { homeDir } = await fixture()
     await withClaude(homeDir)
     await mkdir(join(homeDir, '.codex'), { recursive: true })
-    await register(homeDir, { type: 'tool', id: 'ripgrep', command: 'rg' })
+    await register(homeDir, { type: 'profile', id: 'frontend' })
 
     const diagnosis = await diagnose({ homeDir })
 
@@ -280,8 +281,8 @@ describe('panda doctor reports what projecting would do', () => {
         severity: 'info',
         executorId: 'claude-code',
         filePath: join(homeDir, '.claude.json'),
-        entryId: 'ripgrep',
-        detail: "'claude-code' has no native representation for a tool entry (correction-01 C5)",
+        entryId: 'frontend',
+        detail: "'claude-code' has no native representation for a profile entry (correction-01 C5)",
         resolution: expect.stringContaining('no target can express this entry'),
       },
       {
@@ -289,8 +290,8 @@ describe('panda doctor reports what projecting would do', () => {
         severity: 'info',
         executorId: 'codex',
         filePath: join(homeDir, '.codex', 'config.toml'),
-        entryId: 'ripgrep',
-        detail: "'codex' has no native representation for a tool entry (correction-01 C5)",
+        entryId: 'frontend',
+        detail: "'codex' has no native representation for a profile entry (correction-01 C5)",
         resolution: expect.stringContaining('no target can express this entry'),
       },
     ])
@@ -370,12 +371,12 @@ describe('the exit code is a promise a script can keep', () => {
   })
 
   it('never fails on an unprojectable entry alone, because no command can get back to 0', async () => {
-    // A `tool` entry is an ordinary thing to register and is unprojectable by
+    // A `profile` entry is an ordinary thing to register and is unprojectable by
     // every executor permanently. Reported in full (correction-01 C5), and NOT
     // counted as a problem — an exit 1 nothing can clear is a stuck light.
     const { homeDir } = await fixture()
     await withClaude(homeDir)
-    await register(homeDir, { type: 'tool', id: 'ripgrep', command: 'rg' })
+    await register(homeDir, { type: 'profile', id: 'frontend' })
     await initMachine({ homeDir })
 
     const diagnosis = await diagnose({ homeDir })
@@ -527,6 +528,109 @@ describe('panda doctor never promises a write panda cannot perform', () => {
   })
 })
 
+describe('a registry holding a RETIRED entry type is diagnosed, not refused', () => {
+  // Story M4.E. Before this, one such entry made the whole store unreadable, so
+  // `panda doctor` reported `registry-unreadable` with "Panda cannot leave this
+  // state itself" — a dead end reachable by upgrading. The bytes here are the
+  // ones the shipped binary wrote for `panda add tool rg --command rg`.
+  async function withRetiredEntry(homeDir: string, id = 'rg'): Promise<string> {
+    const path = join(homeDir, '.panda', 'registry.json')
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(
+      path,
+      JSON.stringify({ version: 1, entries: [{ type: 'tool', id, command: 'rg' }] }, null, 2),
+      'utf8',
+    )
+    return path
+  }
+
+  it('reports the entry and names the EXACT command that clears it', async () => {
+    const { root, homeDir } = await fixture()
+    await withClaude(homeDir)
+    const registryPath = await withRetiredEntry(homeDir)
+    const before = await snapshot(root)
+
+    const diagnosis = await diagnose({ homeDir })
+
+    expect(kinds(diagnosis)).not.toContain('registry-unreadable')
+    const found = only(diagnosis, 'retired-type')
+    expect(found).toMatchObject({ severity: 'problem', filePath: registryPath, entryId: 'rg' })
+    // The EXIT carries the concrete spelling, not the `<type> <id>` template:
+    // a resolution that prints a placeholder next to a detail that already knows
+    // the type and the id makes the user translate a command panda could have
+    // written out. `@panda/cli` dispatches this exact string for real.
+    expect(found.resolution).toContain('To leave this state: `panda remove tool rg`')
+    expect(found.resolution).not.toContain('<type>')
+    expect(found.resolution).not.toContain('<id>')
+    // Derived, so a word added to or removed from the contract fails this row
+    // rather than leaving doctor quoting a stale vocabulary.
+    expect(found.detail).toContain(REGISTRY_ENTRY_TYPES.join(', '))
+    expect(found.detail).toContain('global registry')
+    // A problem, because one command clears it — unlike `unprojectable`.
+    expect(hasProblem(diagnosis)).toBe(true)
+    // Still read-only, on the one path that most tempts a rewrite.
+    expect(await snapshot(root)).toEqual(before)
+  })
+
+  it('names the PROJECT spelling for a project-scope registry', async () => {
+    const { homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    await mkdir(join(projectDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(projectDir, '.panda', 'registry.json'),
+      JSON.stringify({ version: 1, entries: [{ type: 'tool', id: 'rg', command: 'rg' }] }),
+      'utf8',
+    )
+
+    const diagnosis = await diagnose({ homeDir, projectDir, scope: 'project' })
+
+    const found = only(diagnosis, 'retired-type')
+    expect(found.resolution).toContain('To leave this state: `panda project remove tool rg`')
+    expect(found.filePath).toBe(join(projectDir, '.panda', 'registry.json'))
+    expect(found.detail).toContain('project registry')
+  })
+
+  it('attributes a GLOBAL entry to the global document even when a PROJECT is diagnosed', async () => {
+    // `panda project doctor` reads the global registry too, and the scope being
+    // DIAGNOSED is not the scope the entry lives in. Deriving either the verb or
+    // the file from it produced a permanent exit 1: the finding named the (empty)
+    // project document and printed `panda project remove tool globaltool`, which
+    // removes nothing and exits 1, forever.
+    const { homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    await withRetiredEntry(homeDir, 'globaltool')
+    await mkdir(join(projectDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(projectDir, '.panda', 'registry.json'),
+      JSON.stringify({ version: 1, entries: [] }),
+      'utf8',
+    )
+
+    const found = only(await diagnose({ homeDir, projectDir, scope: 'project' }), 'retired-type')
+
+    expect(found.filePath).toBe(join(homeDir, '.panda', 'registry.json'))
+    expect(found.resolution).toContain('To leave this state: `panda remove tool globaltool`')
+    expect(found.resolution).not.toContain('panda project remove')
+  })
+
+  it('lets `panda init` project the REST of the registry instead of failing on it', async () => {
+    const { homeDir } = await fixture()
+    const claudeJson = await withClaude(homeDir)
+    await withRetiredEntry(homeDir)
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
+
+    const result = await initMachine({ homeDir })
+
+    expect(result.targets[0]?.written).toBe(true)
+    expect(JSON.parse(await readFile(claudeJson, 'utf8'))).toEqual({
+      mcpServers: { ctx: { type: 'stdio', command: 'ctx-server', args: [] } },
+    })
+    // Never handed to a target, so no target reports it as unprojectable — and
+    // panda does not delete it either: removing an entry is the user's decision.
+    expect(result.targets[0]?.unprojectable).toEqual([])
+  })
+})
+
 describe('panda-s own two state files are diagnosed the same way', () => {
   it('reports an unreadable registry as a finding, not as an exception with no JSON', async () => {
     const { root, homeDir } = await fixture()
@@ -555,7 +659,16 @@ describe('panda-s own two state files are diagnosed the same way', () => {
 describe('every finding names what it is about', () => {
   /** The partition every finding is judged against; it must cover every kind. */
   const SCOPE_LEVEL: DiagnosisFindingKind[] = ['no-executor', 'projection-warning']
-  const PANDA_STATE: DiagnosisFindingKind[] = ['not-initialised', 'registry-unreadable', 'ledger-damaged']
+  // `retired-type` is panda-state: it is about the REGISTRY DOCUMENT holding a
+  // word panda no longer has, so it names that file and no executor — no target
+  // ever saw the entry. It carries an `entryId` as well, which the rule below
+  // permits and which the row above asserts.
+  const PANDA_STATE: DiagnosisFindingKind[] = [
+    'not-initialised',
+    'registry-unreadable',
+    'ledger-damaged',
+    'retired-type',
+  ]
   const TARGET_SCOPED: DiagnosisFindingKind[] = ['target-failed', 'out-of-date', 'not-writable', 'legacy-block']
   const ENTRY_SCOPED: DiagnosisFindingKind[] = ['edited', 'removed-by-user', 'foreign-collision', 'unprojectable']
 
@@ -573,7 +686,7 @@ describe('every finding names what it is about', () => {
     await mkdir(join(homeDir, '.codex'), { recursive: true })
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
     await register(homeDir, { type: 'mcp-server', id: 'gone', command: 'gone-server', args: [] })
-    await register(homeDir, { type: 'tool', id: 'ripgrep', command: 'rg' })
+    await register(homeDir, { type: 'profile', id: 'frontend' })
     await initMachine({ homeDir })
     // Two different drifts in one file, plus a target that cannot be read at all.
     const projected = JSON.parse(await readFile(claudeJson, 'utf8')) as {
@@ -606,7 +719,8 @@ describe('every finding names what it is about', () => {
     // `registry-unreadable` are deliberately NOT here — the first has no second
     // warning source to force yet (that is the point of the kind), and the
     // second has its own row above; both are still judged by the loop if they
-    // ever appear.
+    // ever appear. `retired-type` likewise has its own row, because producing
+    // one takes a registry document no current build can write.
     expect(new Set(findings.map((found) => found.kind))).toEqual(
       new Set([
         'edited',

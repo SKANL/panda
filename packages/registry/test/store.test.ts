@@ -23,17 +23,17 @@ function makeStore(dirs: { homeDir: string; projectDir?: string }): RegistryStor
 describe('RegistryStore', () => {
   it('registers a valid entry at global scope and reads it back after reload', async () => {
     const dirs = await makeDirs()
-    await makeStore(dirs).register({ type: 'tool', id: 'demo-tool' }, 'global')
+    await makeStore(dirs).register({ type: 'mcp-server', id: 'demo-tool' }, 'global')
 
     // A fresh instance over the same directories is the reload path.
-    expect(await makeStore(dirs).get('tool', 'demo-tool')).toEqual({ type: 'tool', id: 'demo-tool' })
+    expect(await makeStore(dirs).get('mcp-server', 'demo-tool')).toEqual({ type: 'mcp-server', id: 'demo-tool' })
   })
 
   it('returns NOTHING from register/remove: storage-time transformation is invisible', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
-    expect(await store.register({ type: 'tool', id: 'demo-tool' }, 'global')).toBeUndefined()
-    expect(await store.remove('tool', 'demo-tool', 'global')).toBeUndefined()
+    expect(await store.register({ type: 'mcp-server', id: 'demo-tool' }, 'global')).toBeUndefined()
+    expect(await store.remove('mcp-server', 'demo-tool', 'global')).toBeUndefined()
   })
 
   it('persists atomically: the store document is complete and no temp files survive', async () => {
@@ -53,7 +53,7 @@ describe('RegistryStore', () => {
   it('rejects an invalid envelope BEFORE any write with a coded error naming the field', async () => {
     const dirs = await makeDirs()
     try {
-      await makeStore(dirs).register({ type: 'tool' }, 'global')
+      await makeStore(dirs).register({ type: 'mcp-server' }, 'global')
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(PandaError)
@@ -66,7 +66,7 @@ describe('RegistryStore', () => {
   it('rejects provider payloads outside the extensions namespace, naming the rule', async () => {
     const dirs = await makeDirs()
     try {
-      await makeStore(dirs).register({ type: 'tool', id: 'demo', model: 'sonnet' }, 'global')
+      await makeStore(dirs).register({ type: 'mcp-server', id: 'demo', model: 'sonnet' }, 'global')
       expect.unreachable()
     } catch (error) {
       expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.registryInvalidEntry)
@@ -122,20 +122,20 @@ describe('RegistryStore', () => {
   it('reads with scope precedence agent > project > global, expanding ALL scopes uniformly', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
-    const entry = { type: 'tool', id: 'layered' }
+    const entry = { type: 'mcp-server', id: 'layered' }
     await store.register({ ...entry, extensions: { source: 'global' } }, 'global')
     await store.register({ ...entry, extensions: { source: 'project' } }, 'project')
 
-    expect(await store.get('tool', 'layered')).toEqual({
-      type: 'tool',
+    expect(await store.get('mcp-server', 'layered')).toEqual({
+      type: 'mcp-server',
       id: 'layered',
       extensions: { source: 'project' },
     })
 
     const homePath = join(dirs.homeDir, 'bin', 'agent-tool.exe')
     await store.register({ ...entry, extensions: { source: 'agent' }, command: homePath }, 'agent')
-    expect(await store.get('tool', 'layered')).toEqual({
-      type: 'tool',
+    expect(await store.get('mcp-server', 'layered')).toEqual({
+      type: 'mcp-server',
       id: 'layered',
       command: homePath,
       extensions: { source: 'agent' },
@@ -172,10 +172,10 @@ describe('RegistryStore', () => {
   it('lists ONE scope on request, because the merged view drops the scope that produced a row', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
-    const entry = { type: 'tool', id: 'layered' }
+    const entry = { type: 'mcp-server', id: 'layered' }
     await store.register({ ...entry, extensions: { source: 'global' } }, 'global')
     await store.register({ ...entry, extensions: { source: 'project' } }, 'project')
-    await store.register({ type: 'tool', id: 'only-global' }, 'global')
+    await store.register({ type: 'mcp-server', id: 'only-global' }, 'global')
     await store.register({ ...entry, extensions: { source: 'agent' } }, 'agent')
 
     // The merged view keeps one row per `type:id` — which is right for a
@@ -199,25 +199,25 @@ describe('RegistryStore', () => {
   it('removes entries per scope; removing an override lets get fall back to the wider scope', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
-    const entry = { type: 'tool', id: 'overridden' }
+    const entry = { type: 'mcp-server', id: 'overridden' }
     await store.register({ ...entry, extensions: { source: 'global' } }, 'global')
     await store.register({ ...entry, extensions: { source: 'project' } }, 'project')
-    expect(((await store.get('tool', 'overridden'))?.extensions as { source: string }).source).toBe('project')
+    expect(((await store.get('mcp-server', 'overridden'))?.extensions as { source: string }).source).toBe('project')
 
-    await store.remove('tool', 'overridden', 'project')
-    expect(((await store.get('tool', 'overridden'))?.extensions as { source: string }).source).toBe('global')
+    await store.remove('mcp-server', 'overridden', 'project')
+    expect(((await store.get('mcp-server', 'overridden'))?.extensions as { source: string }).source).toBe('global')
 
-    await store.remove('tool', 'overridden', 'global')
-    expect(await store.get('tool', 'overridden')).toBeUndefined()
+    await store.remove('mcp-server', 'overridden', 'global')
+    expect(await store.get('mcp-server', 'overridden')).toBeUndefined()
   })
 
   it('serializes mutations to the SAME scope so neither write is lost', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
     await Promise.all([
-      store.register({ type: 'tool', id: 'one' }, 'global'),
-      store.register({ type: 'tool', id: 'two' }, 'global'),
-      store.register({ type: 'tool', id: 'three' }, 'global'),
+      store.register({ type: 'mcp-server', id: 'one' }, 'global'),
+      store.register({ type: 'mcp-server', id: 'two' }, 'global'),
+      store.register({ type: 'mcp-server', id: 'three' }, 'global'),
     ])
     const ids = (await makeStore(dirs).list()).map((entry) => entry.id).sort()
     expect(ids).toEqual(['one', 'three', 'two'])
@@ -227,11 +227,11 @@ describe('RegistryStore', () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
     await Promise.all([
-      store.register({ type: 'tool', id: 'global-one' }, 'global'),
-      store.register({ type: 'tool', id: 'project-one' }, 'project'),
+      store.register({ type: 'mcp-server', id: 'global-one' }, 'global'),
+      store.register({ type: 'mcp-server', id: 'project-one' }, 'project'),
     ])
-    expect(await makeStore(dirs).get('tool', 'global-one')).toBeDefined()
-    expect(await makeStore(dirs).get('tool', 'project-one')).toBeDefined()
+    expect(await makeStore(dirs).get('mcp-server', 'global-one')).toBeDefined()
+    expect(await makeStore(dirs).get('mcp-server', 'project-one')).toBeDefined()
 
     expect(await readdir(join(dirs.homeDir, '.panda'))).toEqual(['registry.json'])
     expect(await readdir(join(dirs.projectDir, '.panda'))).toEqual(['registry.json'])
@@ -240,15 +240,15 @@ describe('RegistryStore', () => {
   it('dispose during an in-flight mutation waits for it: lock released late, write kept', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
-    const mutation = store.register({ type: 'tool', id: 'in-flight' }, 'global')
+    const mutation = store.register({ type: 'mcp-server', id: 'in-flight' }, 'global')
     // No awaiting: dispose() must serialize against the mutation above.
     await store.dispose()
 
     await mutation
-    expect(await makeStore(dirs).get('tool', 'in-flight')).toBeDefined()
+    expect(await makeStore(dirs).get('mcp-server', 'in-flight')).toBeDefined()
     await expect(readdir(join(dirs.homeDir, '.panda'))).resolves.toEqual(['registry.json'])
 
-    await expect(store.register({ type: 'tool', id: 'after-dispose' }, 'global')).rejects.toMatchObject({
+    await expect(store.register({ type: 'mcp-server', id: 'after-dispose' }, 'global')).rejects.toMatchObject({
       code: PANDA_ERROR_CODES.registryInactive,
     })
     await expect(store.list()).rejects.toMatchObject({ code: PANDA_ERROR_CODES.registryInactive })
@@ -258,7 +258,7 @@ describe('RegistryStore', () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)
     await store.dispose()
-    await expect(store.register({ type: 'tool', id: 'x' }, 'global')).rejects.toMatchObject({
+    await expect(store.register({ type: 'mcp-server', id: 'x' }, 'global')).rejects.toMatchObject({
       code: PANDA_ERROR_CODES.registryInactive,
     })
   })
@@ -267,7 +267,7 @@ describe('RegistryStore', () => {
     const dirs = await makeDirs()
     const store = new RegistryStore({ homeDir: dirs.homeDir })
     try {
-      await store.register({ type: 'tool', id: 'x' }, 'project')
+      await store.register({ type: 'mcp-server', id: 'x' }, 'project')
       expect.unreachable()
     } catch (error) {
       expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.registryStoreUnavailable)
@@ -282,7 +282,7 @@ describe('RegistryStore', () => {
     await writeFile(join(pandaDir, 'registry.json'), JSON.stringify({ version: 999, entries: [] }), 'utf8')
 
     try {
-      await makeStore(dirs).get('tool', 'anything')
+      await makeStore(dirs).get('mcp-server', 'anything')
       expect.unreachable()
     } catch (error) {
       expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.registryStoreUnavailable)
@@ -297,11 +297,11 @@ describe('RegistryStore', () => {
     await mkdir(pandaDir)
     const corrupt = {
       version: 1,
-      entries: [{ type: 'tool', id: 'good' }, { type: 'tool', id: 42 }],
+      entries: [{ type: 'mcp-server', id: 'good' }, { type: 'mcp-server', id: 42 }],
     }
     await writeFile(join(pandaDir, 'registry.json'), JSON.stringify(corrupt), 'utf8')
 
-    await expect(makeStore(dirs).get('tool', 'good')).rejects.toMatchObject({
+    await expect(makeStore(dirs).get('mcp-server', 'good')).rejects.toMatchObject({
       code: PANDA_ERROR_CODES.registryStoreUnavailable,
     })
     await expect(makeStore(dirs).list()).rejects.toMatchObject({
@@ -369,5 +369,133 @@ describe('RegistryStore.ensure', () => {
     await expect(
       (makeStore(dirs) as unknown as { ensure(scope: string): Promise<string> }).ensure('agent'),
     ).rejects.toBeInstanceOf(PandaError)
+  })
+})
+
+// Story M4.E. `tool` left the registry vocabulary, and removing a word must not
+// turn a registry that already holds one into an unreadable store — ONE entry
+// violating the envelope fails the WHOLE document, which blocks `panda list`,
+// `panda remove` and `panda init`: the very commands that would take it out.
+//
+// The bytes below are not hand-written. They are the exact document the SHIPPED
+// binary produced for `panda add tool rg --command rg`, `panda add tool localfmt
+// --command <under home>`, `panda add mcp-server ctx ...` and `panda add skill
+// demo ...`, with the `~/` marker exactly as that build normalized it.
+const RETIRED_FIXTURE = [
+  '{',
+  '  "version": 1,',
+  '  "entries": [',
+  '    {',
+  '      "type": "tool",',
+  '      "id": "rg",',
+  '      "command": "rg"',
+  '    },',
+  '    {',
+  '      "type": "tool",',
+  '      "id": "localfmt",',
+  '      "command": "~/bin\\\\fmt.exe"',
+  '    },',
+  '    {',
+  '      "type": "mcp-server",',
+  '      "id": "ctx",',
+  '      "command": "npx",',
+  '      "args": [',
+  '        "-y",',
+  '        "@ctx/server"',
+  '      ]',
+  '    },',
+  '    {',
+  '      "type": "skill",',
+  '      "id": "demo",',
+  '      "entryPath": "./skills/demo"',
+  '    }',
+  '  ]',
+  '}',
+].join('\n')
+
+async function withRetiredFixture(): Promise<{ homeDir: string; projectDir: string; path: string }> {
+  const dirs = await makeDirs()
+  const path = join(dirs.homeDir, '.panda', 'registry.json')
+  await mkdir(join(dirs.homeDir, '.panda'), { recursive: true })
+  await writeFile(path, RETIRED_FIXTURE, 'utf8')
+  return { ...dirs, path }
+}
+
+describe('a registry written before a type was retired stays readable', () => {
+  it('lists every entry, retired ones included, with their paths expanded', async () => {
+    const dirs = await withRetiredFixture()
+    expect(await makeStore(dirs).list('global')).toEqual([
+      { type: 'tool', id: 'rg', command: 'rg' },
+      // Expanded through the RETIRED type's own path-field allowlist. Reading
+      // the declared record instead yields `undefined` and throws on iteration.
+      { type: 'tool', id: 'localfmt', command: join(dirs.homeDir, 'bin\\fmt.exe') },
+      { type: 'mcp-server', id: 'ctx', command: 'npx', args: ['-y', '@ctx/server'] },
+      { type: 'skill', id: 'demo', entryPath: './skills/demo' },
+    ])
+    // The backslash is REAL, and this row exists because it silently was not:
+    // the fixture and the expectation both wrote ONE backslash, which JSON and
+    // JS both read as \f -- a form feed -- so the two sides collapsed to the
+    // same wrong bytes and the assertion passed while measuring nothing.
+    const BACKSLASH = String.fromCharCode(92)
+    expect(RETIRED_FIXTURE).toContain(BACKSLASH + BACKSLASH)
+    expect((await makeStore(dirs).get('tool', 'localfmt', 'global'))?.command).toContain(BACKSLASH)
+  })
+
+  it('serves and REMOVES a retired entry, so the exit is inside the product', async () => {
+    const dirs = await withRetiredFixture()
+    const store = makeStore(dirs)
+    expect(await store.get('tool', 'rg', 'global')).toEqual({ type: 'tool', id: 'rg', command: 'rg' })
+
+    await store.remove('tool', 'rg', 'global')
+    await store.remove('tool', 'localfmt', 'global')
+
+    expect(await makeStore(dirs).list('global')).toEqual([
+      { type: 'mcp-server', id: 'ctx', command: 'npx', args: ['-y', '@ctx/server'] },
+      { type: 'skill', id: 'demo', entryPath: './skills/demo' },
+    ])
+  })
+
+  it('removes ONE type:id and leaves an entry sharing that id under another type', async () => {
+    // The registry's identity is `type:id`, and after this story that collision
+    // is the SANCTIONED post-migration state: the spec's whole argument for
+    // retiring `tool` is that an `mcp-server` carries what a `tool` carried, so
+    // `tool:rg` beside `mcp-server:rg` is exactly what a user re-registering the
+    // live entry produces -- while `panda remove tool rg` is the command doctor
+    // prints. A `remove` that filtered on the id alone would take the live entry
+    // with it and empty the registry, and every other row in this suite stayed
+    // green under precisely that mutation.
+    const dirs = await withRetiredFixture()
+    const store = makeStore(dirs)
+    await store.register({ type: 'mcp-server', id: 'rg', command: 'rg-server' }, 'global')
+
+    await store.remove('tool', 'rg', 'global')
+
+    expect(await makeStore(dirs).get('mcp-server', 'rg', 'global')).toEqual({
+      type: 'mcp-server',
+      id: 'rg',
+      command: 'rg-server',
+    })
+    expect(await makeStore(dirs).get('tool', 'rg', 'global')).toBeUndefined()
+  })
+
+  it('refuses to REGISTER one, so the document cannot gain another', async () => {
+    const dirs = await withRetiredFixture()
+    await expect(makeStore(dirs).register({ type: 'tool', id: 'new', command: 'x' }, 'global')).rejects.toMatchObject(
+      { code: PANDA_ERROR_CODES.registryInvalidEntry },
+    )
+  })
+
+  it('still fails the WHOLE store on an entry that is genuinely malformed', async () => {
+    // The line the Ask-First clause of M4.E draws: recognising a retired word is
+    // not leniency. A retired type carrying a field it never had is as broken as
+    // any other corrupt row, and must not be readable because `tool` is.
+    const dirs = await makeDirs()
+    const path = join(dirs.homeDir, '.panda', 'registry.json')
+    await mkdir(join(dirs.homeDir, '.panda'), { recursive: true })
+    await writeFile(path, JSON.stringify({ version: 1, entries: [{ type: 'tool', id: 'x', entryPath: './y' }] }), 'utf8')
+
+    await expect(makeStore(dirs).list('global')).rejects.toMatchObject({
+      code: PANDA_ERROR_CODES.registryStoreUnavailable,
+    })
   })
 })

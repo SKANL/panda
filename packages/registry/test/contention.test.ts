@@ -65,7 +65,7 @@ describe('cross-process contention', () => {
 
       const store = new RegistryStore({ homeDir: rootDir, lockTimeoutMs: 400 })
       try {
-        await store.register({ type: 'tool', id: 'loser' }, 'global')
+        await store.register({ type: 'mcp-server', id: 'loser' }, 'global')
         expect.unreachable()
       } catch (error) {
         expect(error).toBeInstanceOf(PandaError)
@@ -108,8 +108,8 @@ describe('cross-process contention', () => {
       }
 
       const store = new RegistryStore({ homeDir: rootDir, lockTimeoutMs: 2_000 })
-      await store.register({ type: 'tool', id: 'winner' }, 'global')
-      expect(await store.get('tool', 'winner')).toEqual({ type: 'tool', id: 'winner' })
+      await store.register({ type: 'mcp-server', id: 'winner' }, 'global')
+      expect(await store.get('mcp-server', 'winner')).toEqual({ type: 'mcp-server', id: 'winner' })
     } finally {
       if (child.exitCode === null) child.kill()
       await unlink(`${storePath}.lock`).catch(() => undefined)

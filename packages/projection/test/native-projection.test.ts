@@ -1,5 +1,6 @@
 import { parse as parseJsonc } from 'jsonc-parser'
 import { describe, expect, it } from 'vitest'
+import { REGISTRY_ENTRY_TYPES } from '@panda/contracts'
 import type { ProjectionMergeOutcome, RegistryEntriesByKind } from '@panda/contracts'
 import { createClaudeMcpTarget } from '../src/targets/claude-mcp.ts'
 import { createCodexConfigTarget } from '../src/targets/codex-config.ts'
@@ -13,7 +14,6 @@ import { withoutOwnedSpans } from './clause-suite.ts'
 // (never settings.json), and OpenCode's `command` IS the argv.
 
 const ENTRIES: RegistryEntriesByKind = {
-  tool: [{ type: 'tool', id: 'ripgrep', command: 'rg' }],
   skill: [{ type: 'skill', id: 'commit-lint', entryPath: '~/.panda/skills/commit-lint.ts' }],
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
@@ -94,7 +94,29 @@ describe('Claude Code — mcpServers in ~/.claude.json', () => {
 
   it('reports the kinds it does not project instead of approximating them', async () => {
     const outcome = await target.merge({ entries: ENTRIES, records: [], nativeText: CLAUDE_NATIVE })
-    expect(outcome.skippedEntryIds).toEqual(['commit-lint', 'frontend', 'ripgrep'])
+    expect(outcome.skippedEntryIds).toEqual(['commit-lint', 'frontend'])
+  })
+
+  it('reports EVERY declared kind this format has no location for, derived from the contract', async () => {
+    // The loop in `formats.ts` says "derived, so a word added to or removed from
+    // `REGISTRY_ENTRY_TYPES` cannot leave a stale literal here" — and replacing
+    // it with today's literal left every suite green. This builds one entry per
+    // DECLARED kind from the contract itself, so a source list that stops
+    // following the contract fails here instead of silently skipping a word.
+    const entries = Object.fromEntries(
+      REGISTRY_ENTRY_TYPES.map((kind) => [
+        kind,
+        // The one kind this format DOES render needs a command, or it is skipped
+        // for lacking one and the row stops measuring the vocabulary.
+        [kind === 'mcp-server' ? { type: kind, id: `id-${kind}`, command: 'x', args: [] } : { type: kind, id: `id-${kind}` }],
+      ]),
+    ) as unknown as RegistryEntriesByKind
+    const outcome = await target.merge({ entries, records: [], nativeText: CLAUDE_NATIVE })
+    expect([...(outcome.skippedEntryIds ?? [])].sort()).toEqual(
+      REGISTRY_ENTRY_TYPES.filter((kind) => kind !== 'mcp-server')
+        .map((kind) => `id-${kind}`)
+        .sort(),
+    )
   })
 
   it('is byte-identical on a second projection and writes no new records', async () => {
@@ -250,7 +272,7 @@ describe('a native file that is absent or holds only whitespace', () => {
     const target = createClaudeMcpTarget({ filePath: '/home/u/.claude.json' })
     for (const nativeText of ['', '   \n\t ']) {
       const outcome = await target.merge({
-        entries: { tool: [], skill: [], 'mcp-server': [], profile: [] },
+        entries: { skill: [], 'mcp-server': [], profile: [] },
         records: [],
         nativeText,
       })

@@ -1,5 +1,7 @@
 import {
+  REGISTRY_ENTRY_TYPES,
   REMEDIATION_KINDS,
+  REMOVABLE_ENTRY_TYPES,
   diagnose,
   hasProblem,
   initMachine,
@@ -47,12 +49,20 @@ export interface RunCommandOptions
   readonly stderr?: (line: string) => void
 }
 
+// The synopsis' type lists are DERIVED, never typed out. They were four literal
+// `<tool|skill|mcp-server|profile>` spellings, and retiring `tool` left every one
+// of them advertising a word the binary refuses — the exact CLI-side table M4.D
+// forbade, hiding in help text. `panda remove` also takes a retired type, which
+// is why its list is the removable vocabulary and `add`'s is the declared one.
+const ADD_TYPES = `<${REGISTRY_ENTRY_TYPES.join('|')}>`
+const REMOVE_TYPES = `<${REMOVABLE_ENTRY_TYPES.join('|')}>`
+
 export const USAGE = [
   'usage: panda run [--executor <id>] "<prompt>"',
-  '       panda add <tool|skill|mcp-server|profile> <id> [--command <c>] [--entry-path <p>] [--arg <a>]...',
-  '       panda project add <tool|skill|mcp-server|profile> <id> [directory] [--command <c>] [--entry-path <p>] [--arg <a>]...',
-  '       panda remove <tool|skill|mcp-server|profile> <id>',
-  '       panda project remove <tool|skill|mcp-server|profile> <id> [directory]',
+  `       panda add ${ADD_TYPES} <id> [--command <c>] [--entry-path <p>] [--arg <a>]...`,
+  `       panda project add ${ADD_TYPES} <id> [directory] [--command <c>] [--entry-path <p>] [--arg <a>]...`,
+  `       panda remove ${REMOVE_TYPES} <id>`,
+  `       panda project remove ${REMOVE_TYPES} <id> [directory]`,
   '       panda list',
   '       panda project list [directory]',
   '       panda init',
@@ -72,14 +82,15 @@ export const USAGE = [
   '                   cannot be used still fails, because running a different agent than the one',
   '                   configured is the failure this selection exists to remove.',
   'add           Puts ONE entry in the registry and projects nothing; it names the command that does.',
-  '  --command <c>    The executable a tool or an mcp-server runs.',
+  '  --command <c>    The executable an mcp-server runs.',
   '  --entry-path <p> A skill entry file, or the directory holding one.',
   '  --arg <a>        One argument for an mcp-server, repeatable, order preserved.',
   '  --              Ends the options, so an id that begins with a dash can still be named.',
   '                   Which of these a type accepts is the registry contract\'s answer, not this',
   '                   binding\'s: a field that does not belong on the type is refused coded.',
   'remove        Takes ONE entry out of the registry by type and id. An entry that was not there',
-  '              is said out loud and exits non-zero.',
+  '              is said out loud and exits non-zero. It also takes a type panda has RETIRED, so an',
+  '              entry written by an older build has an exit through the product rather than by hand.',
   'list          Every registered entry with its type, id and the scope it came from. An empty',
   '              registry is a result, not a failure, and exits 0.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
@@ -641,9 +652,10 @@ function undeterminedEvidence(detected: readonly ExecutorDetection[]): string | 
     .flatMap((detection) => detection.evidence)
     .filter((item) => item.exists === undefined)
   if (undetermined.length === 0) return undefined
-  return `panda could not determine whether these exist, so this is not evidence that nothing is installed: ${undetermined
-    .map((item) => `${item.path} (${item.error ?? 'unknown error'})`)
-    .join(', ')}`
+  const paths = undetermined.map((item) => `${item.path} (${item.error ?? 'unknown error'})`).join(', ')
+  // One line, deliberately: a printed string that WRAPS is invisible to the
+  // printed-command invariant, which cannot scan across a newline.
+  return `panda could not determine whether these exist, so this is not evidence that nothing is installed: ${paths}`
 }
 
 /**

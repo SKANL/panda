@@ -43,7 +43,12 @@ import type { RegistryStore } from './store.ts'
 // scopes, and a knob here would silently split one origin's catalog in two.
 const INGEST_SCOPE = 'global'
 
-const TOOL_PROVIDER_TYPES: readonly RegistryEntryType[] = ['tool', 'mcp-server']
+// `tool` was retired by story M4.E: no executor has a non-MCP location for an
+// identity plus an executable command, and an `mcp-server` entry already carries
+// exactly what a `tool` entry carried. A provider contributing one is refused by
+// `validateRegistryEntry` before this list is consulted at all, so the rejection
+// names the declared vocabulary and no write happens.
+const TOOL_PROVIDER_TYPES: readonly RegistryEntryType[] = ['mcp-server']
 const SKILL_SOURCE_TYPES: readonly RegistryEntryType[] = ['skill']
 
 export interface IngestProvidersOptions {
@@ -193,7 +198,11 @@ async function validateContribution(
   } catch (error) {
     throw rejected(origin.sourceId, describeId(snapshot), detailOf(error), error)
   }
-  if (!allowedTypes.includes(entry.type)) {
+  // `some`, not `includes`: `entry.type` is the STORED vocabulary, which is
+  // wider than the declared one a port allows. A retired type never gets here —
+  // `validateRegistryEntry` above already refused it — and this comparison stays
+  // honest about the two vocabularies instead of casting one into the other.
+  if (!allowedTypes.some((allowed) => allowed === entry.type)) {
     throw rejected(
       origin.sourceId,
       entry.id,

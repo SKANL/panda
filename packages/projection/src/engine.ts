@@ -1,5 +1,11 @@
 import { readFile, stat } from 'node:fs/promises'
-import { PandaError, PANDA_ERROR_CODES, projectionTargetLocation } from '@panda/contracts'
+import {
+  PandaError,
+  PANDA_ERROR_CODES,
+  REGISTRY_ENTRY_TYPES,
+  isRegistryEntryType,
+  projectionTargetLocation,
+} from '@panda/contracts'
 import type {
   ProjectionConfigTarget,
   ProjectionFailure,
@@ -9,6 +15,7 @@ import type {
   ProjectionWarning,
   RegistryEntriesByKind,
   RegistryEntry,
+  RegistryEntryType,
 } from '@panda/contracts'
 import { atomicWriteText } from './atomic-write.ts'
 import { resolveOwnedPath, sameOwnedPath } from './ledger.ts'
@@ -33,21 +40,27 @@ import { materialiseTarget } from './materialise.ts'
 // nothing); persisting that under-claim would orphan every entry panda has
 // written anywhere, permanently.
 
-const ENTRY_KINDS = ['tool', 'skill', 'mcp-server', 'profile'] as const
-
+/**
+ * The registry as the projection engine reads it: one bucket per DECLARED entry
+ * type.
+ *
+ * Derived from `REGISTRY_ENTRY_TYPES` rather than listed — a second table here
+ * is how the engine comes to project a word the contract no longer has, or to
+ * miss one it just gained. It is also the boundary that keeps a RETIRED type out
+ * of projection: an entry whose type is not declared has no bucket, so it is
+ * dropped here and no target is ever asked to express it. The store still reads
+ * it, `panda list` still shows it and `panda remove` still takes it out.
+ */
 export function groupByKind(entries: readonly RegistryEntry[]): RegistryEntriesByKind {
-  const grouped: Record<(typeof ENTRY_KINDS)[number], RegistryEntry[]> = {
-    tool: [],
-    skill: [],
-    'mcp-server': [],
-    profile: [],
-  }
-  // Post-validation this branch is unreachable; a hand-corrupted entry object
-  // must be skipped, never crash the engine.
+  const grouped = Object.fromEntries(
+    REGISTRY_ENTRY_TYPES.map((kind) => [kind, [] as RegistryEntry[]]),
+  ) as Record<RegistryEntryType, RegistryEntry[]>
   for (const entry of entries) {
-    if ((ENTRY_KINDS as readonly string[]).includes(entry.type)) {
-      grouped[entry.type].push(entry)
-    }
+    // A type with no bucket is skipped, never crashed on, and there are two of
+    // them: a RETIRED word, dropped deliberately because no target renders it,
+    // and an unknown one, which post-validation means a hand-corrupted entry.
+    if (!isRegistryEntryType(entry.type)) continue
+    grouped[entry.type].push(entry)
   }
   return grouped
 }

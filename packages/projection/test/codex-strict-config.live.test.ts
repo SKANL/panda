@@ -34,7 +34,6 @@ const CONFIG_REJECTED = /Error loading config\.toml|unknown configuration field/
 const CONFIG_ACCEPTED = /OpenAI Codex v/i
 
 const ENTRIES: RegistryEntriesByKind = {
-  tool: [],
   skill: [],
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },

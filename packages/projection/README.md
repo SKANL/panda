@@ -103,7 +103,9 @@ from its source's frontmatter therefore appears under two different names, and
 panda's ledger, `init` and `doctor` all name the registry id.
 
 Entries no target can express are still reported rather than approximated
-(`skippedEntryIds`, plus the target's own reason in `skipped`): a `tool` has
-no native representation in any of the three, and `profile` is panda's own
-concept. Skills at PROJECT scope are reported the same way — materialising into
+(`skippedEntryIds`, plus the target's own reason in `skipped`): `profile` is
+panda's own concept and has no native representation in any of the three. A
+RETIRED type never reaches a target at all — `groupByKind` has no bucket for
+one — so it is neither projected nor reported here; `panda doctor` reports it
+against the registry document instead. Skills at PROJECT scope are reported the same way — materialising into
 a project is a decision no story has taken, so panda invents no location.

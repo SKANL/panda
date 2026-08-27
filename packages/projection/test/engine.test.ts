@@ -23,7 +23,7 @@ async function makeHome(): Promise<string> {
 }
 
 const ENTRIES = [
-  { type: 'tool', id: 'ripgrep', command: 'rg' },
+  { type: 'profile', id: 'inert' },
   { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
 ] satisfies RegistryEntry[]
 
@@ -34,17 +34,23 @@ function ledgerIn(homeDir: string): ProjectionLedger {
 describe('groupByKind', () => {
   it('groups registry entries by kind', () => {
     expect(groupByKind(ENTRIES)).toEqual({
-      tool: [{ type: 'tool', id: 'ripgrep', command: 'rg' }],
       skill: [],
       'mcp-server': [ENTRIES[1]],
-      profile: [],
+      profile: [{ type: 'profile', id: 'inert' }],
     })
+  })
+
+  it('drops a RETIRED kind, which is the boundary that keeps it out of projection', () => {
+    // Not decoration: this is the ONLY thing standing between a stored `tool`
+    // entry and a target being asked to render a word panda no longer declares.
+    // The guard said so in a comment and nothing measured it.
+    const retired = [{ type: 'tool', id: 'rg', command: 'rg' } as unknown as RegistryEntry]
+    expect(groupByKind(retired)).toEqual({ skill: [], 'mcp-server': [], profile: [] })
   })
 
   it('skips entries with unknown kinds instead of crashing', () => {
     const corrupted = [{ type: 'alien', id: 'x' } as unknown as RegistryEntry]
     expect(groupByKind([...corrupted])).toEqual({
-      tool: [],
       skill: [],
       'mcp-server': [],
       profile: [],
@@ -192,7 +198,7 @@ describe('runProjection', () => {
       targets: [createClaudeMcpTarget({ filePath: join(homeDir, '.claude.json') })],
       ledger: ledgerIn(homeDir),
     })
-    expect(run.results[0]!.skippedEntryIds).toEqual(['frontend-profile', 'ripgrep'])
+    expect(run.results[0]!.skippedEntryIds).toEqual(['frontend-profile', 'inert'])
   })
 
   it('keeps a failed target’s previous claims instead of forgetting what it wrote', async () => {
@@ -346,7 +352,6 @@ describe('unprojectable entry ids', () => {
   it('fails coded rather than using a prototype key as a native location', async () => {
     const homeDir = await makeHome()
     const poisoned: RegistryEntriesByKind = {
-      tool: [],
       skill: [],
       'mcp-server': [
         { type: 'mcp-server', id: '__proto__', command: 'evil' } as unknown as RegistryEntry,

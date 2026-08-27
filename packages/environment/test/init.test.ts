@@ -136,11 +136,11 @@ describe('projection results are specific per target', () => {
   it('reports an entry no target can express, with the reason, and writes nothing for it', async () => {
     const { homeDir } = await fixture()
     const claudeJson = await withClaude(homeDir)
-    await register(homeDir, { type: 'tool', id: 'ripgrep', command: 'rg' })
+    await register(homeDir, { type: 'profile', id: 'frontend' })
 
     const result = await initMachine({ homeDir })
     expect(result.targets[0]?.unprojectable).toEqual([
-      { entryId: 'ripgrep', reason: "'claude-code' has no native representation for a tool entry (correction-01 C5)" },
+      { entryId: 'frontend', reason: "'claude-code' has no native representation for a profile entry (correction-01 C5)" },
     ])
     expect(result.targets[0]?.written).toBe(false)
     expect(JSON.parse(await readFile(claudeJson, 'utf8'))).toEqual({})
@@ -358,19 +358,46 @@ describe('the scopes panda is pointed at are a trust boundary', () => {
 })
 
 describe('the facts a caller acts on are not fabricated', () => {
-  it('does not blame a projected mcp-server for a tool that shares its id', async () => {
+  it('never explains a skipped id with a RETIRED entry that shares it', async () => {
+    // The guard is one `continue` in `runScope`, and it stated the bug it
+    // prevents in its own comment while nothing measured it. Without it, `byId`
+    // holds the retired row too, and the reason a target gives for skipping
+    // `inert` becomes "'claude-code' has no native representation for a tool
+    // entry" -- panda naming a type it no longer declares, as the explanation
+    // for an entry no target was ever handed.
+    const { homeDir } = await fixture()
+    await withClaude(homeDir)
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(homeDir, '.panda', 'registry.json'),
+      JSON.stringify({ version: 1, entries: [{ type: 'tool', id: 'inert', command: 'rg' }] }),
+      'utf8',
+    )
+    await register(homeDir, { type: 'profile', id: 'inert' })
+
+    const result = await initMachine({ homeDir })
+
+    expect(result.targets[0]?.unprojectable).toEqual([
+      {
+        entryId: 'inert',
+        reason: "'claude-code' has no native representation for a profile entry (correction-01 C5)",
+      },
+    ])
+  })
+
+  it('does not blame a projected mcp-server for a profile that shares its id', async () => {
     const { homeDir } = await fixture()
     const claudeJson = await withClaude(homeDir)
-    // Registry identity is `type:id`, so these are two entries. Only the tool is
-    // unprojectable; the mcp-server is written in this very run.
-    await register(homeDir, { type: 'tool', id: 'ctx', command: 'ctx-cli' })
+    // Registry identity is `type:id`, so these are two entries. Only the profile
+    // is unprojectable; the mcp-server is written in this very run.
+    await register(homeDir, { type: 'profile', id: 'ctx' })
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server' })
 
     const result = await initMachine({ homeDir })
     expect(result.targets[0]?.unprojectable).toEqual([
       {
         entryId: 'ctx',
-        reason: "'claude-code' has no native representation for a tool entry (correction-01 C5)",
+        reason: "'claude-code' has no native representation for a profile entry (correction-01 C5)",
       },
     ])
     expect(result.targets[0]?.written).toBe(true)

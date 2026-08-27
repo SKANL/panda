@@ -56,7 +56,14 @@ export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDet
 // deferred-work.md rather than fixed by widening the surface on speculation.
 export { RegistryStore } from '@panda/registry'
 export type { RegistryStoreOptions } from '@panda/registry'
-export { DRIFT_KINDS, REGISTRY_ENTRY_TYPES, REMEDIATION_KINDS } from '@panda/contracts'
+export {
+  DRIFT_KINDS,
+  REGISTRY_ENTRY_TYPES,
+  REMEDIATION_KINDS,
+  REMOVABLE_ENTRY_TYPES,
+  RETIRED_ENTRY_TYPES,
+  isRetiredEntryType,
+} from '@panda/contracts'
 export type {
   DriftEntry,
   DriftKind,
@@ -69,6 +76,8 @@ export type {
   RemediationKind,
   RemediationOutcome,
   RemediationRefusal,
+  RetiredEntryType,
+  StoredEntryType,
 } from '@panda/contracts'
 export { createMemoryLogSink } from '@panda/kernel'
 export type { LogRecord, LogSink, MemoryLogSink } from '@panda/kernel'
