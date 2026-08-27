@@ -1139,38 +1139,13 @@ describe('discard does not match its own marker inside a TOML string', () => {
 })
 
 // --- HIGH-5: the race is real and is refused --------------------------------
-
-describe('discard refuses to overwrite a change that landed while it was reading', () => {
-  it('loses no competing write', async () => {
-    // The window is real: after the read, the atomic writer performs six more
-    // filesystem round-trips. The competing write is chained off a read of the
-    // same file so it is issued INSIDE that window rather than before it; the
-    // attempt is repeated because the scheduler decides the exact interleaving,
-    // and the loop is what makes the assertion deterministic rather than the
-    // interleaving.
-    let refused = 0
-    for (let attempt = 0; attempt < 25 && refused === 0; attempt += 1) {
-      const at = await fixture()
-      const path = join(at.homeDir, `race-${attempt}.json`)
-      await writeFile(path, LEGACY_JSON, 'utf8')
-      const running = runRemediation({
-        remediation: 'discard',
-        legacy: { targetId: 't', filePath: path, fileFormat: 'jsonc', rootPath: at.homeDir },
-        mode: 'apply',
-      })
-      await readFile(path, 'utf8')
-      await writeFile(path, '{\n  "theme": "someone else was here"\n}\n', 'utf8')
-      const outcome = await running
-      if (outcome.refusal !== undefined) {
-        refused += 1
-        expect(outcome.refusal.message).toContain('modified while panda was reading it')
-        // And the competing write survived, which is the whole point.
-        expect(await readFile(path, 'utf8')).toContain('someone else was here')
-      }
-    }
-    expect(refused, 'the race was never won in 25 attempts').toBeGreaterThan(0)
-  })
-})
+//
+// In `test/remediate-race.test.ts`, which is a separate file because it wraps
+// `node:fs/promises` to FORCE the competing write into the protected window
+// instead of betting on the scheduler. The version that lived here looped up to
+// 25 times hoping to win a one-microtask race; it won on Windows/Node 24 and
+// stopped winning on Linux/Node 26, which is what a test that must win a race
+// always eventually does.
 
 // --- M1: containment against the REAL path ----------------------------------
 

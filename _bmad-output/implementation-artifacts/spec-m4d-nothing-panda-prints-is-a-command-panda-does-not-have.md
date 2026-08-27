@@ -298,10 +298,10 @@ Per-package test counts, before this story and after:
 | `@panda/workspace-local` | 23 passed (3 files) | 23 passed (3 files) |
 | `@panda/adapter-cli` | 148 passed, 6 skipped (12 files) | 148 passed, 6 skipped (12 files) |
 | `@panda/session` | 89 passed (6 files) | 89 passed (6 files) |
-| `@panda/projection` | 243 passed, 3 skipped (15 files) | **245 passed**, 3 skipped (15 files) |
+| `@panda/projection` | 243 passed, 3 skipped (15 files) | **246 passed**, 3 skipped (16 files) |
 | `@panda/environment` | 91 passed (7 files) | **94 passed** (7 files) |
 | `@panda/cli` | 61 passed (3 files) | **97 passed (5 files)** |
-| **Total** | 890 passed, 9 skipped | **936 passed, 9 skipped** |
+| **Total** | 890 passed, 9 skipped | **937 passed, 9 skipped** |
 
 New: 28 rows in `packages/cli/test/registry-commands.test.ts` (the I/O matrix, the four T5 rows and the review round's) and
 8 in `packages/cli/test/printed-commands.test.ts` (T3, rebuilt), +1 in
@@ -635,6 +635,85 @@ any of them again silently. The corpus is now 59 distinct strings across nine
 packages including `bin/`, of which 24 are listed as prose and 2 as
 counter-examples panda prints on purpose — and the counter-examples are asserted
 to still be REFUSED, so an entry that quietly became valid fails too.
+
+### CI red on Node 26: a test that had to WIN A RACE to pass
+
+`84c62e2` went red on the Node 26 job only, on
+`packages/projection/test/remediate.test.ts > discard refuses to overwrite a
+change that landed while it was reading > loses no competing write`, with *the
+race was never won in 25 attempts*.
+
+The root cause was established by execution before anything was changed, and it
+is not the canary and not M4.D's only projection source change: `0144745`
+re-run on the same canary is green on both jobs; `84c62e2` is red on Node 26
+twice; the test passes 12/12 isolated on Node 24 and 5/5 on Node 26 locally; and
+a probe making `occupiedByContent` throw unconditionally fails eight remediate
+tests WITHOUT this one among them. What M4.D actually did was add two tests to
+`materialise.test.ts`, which moved parallel scheduling on Linux — and the test
+then lost a race it had to win.
+
+**The defect was the test's construction, and its own comment named the false
+premise:** *"the loop is what makes the assertion deterministic rather than the
+interleaving"*. A loop makes winning likelier, never certain.
+
+It was never even a fair bet, which is the part worth writing down. Between the
+snapshot and the guard, `discardLegacy` performs **no await at all** — the scan,
+the removal span, the JSONC re-parse and the change record are every one of them
+synchronous. So the window a competing write had to hit is a single microtask
+boundary, while issuing that write costs two filesystem round-trips. Windows on
+Node 24 happened to win it; Linux on Node 26 stopped.
+
+**The design: force the precondition, do not wager on it.** The guarantee is
+unchanged and is split exactly the way it decomposes:
+
+1. **The guard's DECISION** — `packages/projection/test/engine.test.ts`'s
+   `hasFileChangedSince` rows. Already deterministic, unchanged: mtime change,
+   size change, and the absent-snapshot case.
+2. **The apply path is WIRED to it, before the write** —
+   `packages/projection/test/remediate-race.test.ts`, new and separate. The
+   competing write is fired **by the remediation's own snapshot `stat`**, through
+   a wrapper around `node:fs/promises` scoped to that file: the first `stat` of
+   the target path IS `statSnapshot`, so the hook runs after that call resolves
+   and before anything else can. There is no window to miss, on any platform.
+
+What it deliberately does not do:
+  - **no production seam.** `runRemediation` is called exactly as the CLI calls
+    it, same request shape, no injected clock, filesystem or callback. A seam
+    that let a test skip the guard would be worse than the flake.
+  - **the guard is not mocked**, nor is its `stat`, nor its verdict. The wrapper
+    decides only WHEN the competing write happens; everything the guard then
+    reads is the real file on the real disk.
+  - **the assertion is not lowered.** The refusal, its message and the SURVIVAL
+    of the competing bytes are all required, every run. A second row asserts the
+    ordinary discard still applies, so a guard that refused unconditionally
+    cannot satisfy the first.
+
+**Falsification, run rather than described.** The guard was deleted from
+`discardLegacy` — the four lines between the change record and
+`atomicWriteText` — and the test was run:
+
+```
+ FAIL  test/remediate-race.test.ts > discard refuses to overwrite a change that landed while it was reading > loses no competing write
+AssertionError: the competing write was clobbered: expected '{\n  "theme": "vercel"\n}\n' to be '{\n  "theme": "someone else was here"…' // Object.is equality
+
+- Expected
++ Received
+
+  {
+-   "theme": "someone else was here"
++   "theme": "vercel"
+  }
+```
+
+The failing assertion names the DATA LOSS rather than a missing refusal, which
+is why the survival check is asserted first. The same deletion fails identically
+on Node 26.8.1. The guard was restored (`git diff` clean) and the file re-run
+green.
+
+**Determinism, measured rather than assumed:** 10 consecutive runs on Node 24 and
+10 on Node 26.8.1, 2 passed every time — 20/20. Every package's suite was then
+run under Node 26.8.1 as well as the default Node 24, and all nine are green on
+both.
 
 ### The matrix, row by row
 
