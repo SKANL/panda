@@ -77,6 +77,18 @@ export const PANDA_ERROR_CODES = {
   // argv or a consumer's `process.env.HOME ?? ''`, and a raw ENOENT/EEXIST
   // names neither the path nor what panda wanted from it.
   environmentScopeUnavailable: 'PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE',
+  // A value offered as a MethodPlugin does not satisfy the published contract.
+  // Separate from `kernelManifestInvalid`: that one answers for the kernel's
+  // `PluginManifest`, which AD-1 keeps in a package that may never import this
+  // one, and a methodology author who conflated the two would go looking for the
+  // wrong validator.
+  methodInvalidPlugin: 'PANDA_METHOD_INVALID_PLUGIN',
+  // A method's `onActivate` or `onDeactivate` threw. ONE code, not one per hook:
+  // unlike a kernel log record — whose closed shape has nowhere to carry which
+  // cap fired, which is why the budget codes are split — a thrown PandaError
+  // carries its `cause` and a message naming both the method and the hook, so a
+  // consumer can already tell mount from unmount without a second constant.
+  methodHookFailed: 'PANDA_METHOD_HOOK_FAILED',
 } as const
 
 export type PandaErrorCode = (typeof PANDA_ERROR_CODES)[keyof typeof PANDA_ERROR_CODES]

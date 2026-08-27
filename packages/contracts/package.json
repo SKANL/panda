@@ -31,6 +31,7 @@
     "vitest": "catalog:"
   },
   "files": [
-    "dist"
+    "dist",
+    "METHOD-PLUGIN.md"
   ]
 }

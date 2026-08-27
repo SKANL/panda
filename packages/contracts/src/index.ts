@@ -48,6 +48,22 @@ export {
   type StoredEntryType,
 } from './registry.ts'
 export {
+  METHOD_PLUGIN_ROOT_KEYS,
+  METHOD_PLUGIN_SCHEMA,
+  SEMVER_PATTERN,
+  activateMethod,
+  isSemver,
+  methodPluginIssues,
+  validateMethodPlugin,
+  type MethodActivateHook,
+  type MethodActivation,
+  type MethodArtifact,
+  type MethodCommand,
+  type MethodDeactivateHook,
+  type MethodPhase,
+  type MethodPlugin,
+} from './method.ts'
+export {
   PANDA_SOURCE_EXTENSION_KEY,
   type IngestOrigin,
   type IngestOutcome,

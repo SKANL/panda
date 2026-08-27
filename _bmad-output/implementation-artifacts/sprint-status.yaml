@@ -87,6 +87,7 @@ development_status:
   m4d-nothing-panda-prints-is-a-command-panda-does-not-have: done            # closes FR-11's surface; story 2.1 built the store, never a verb
   m4e-the-registry-declares-only-what-panda-can-deliver: done           # removes tool; profile deferred with its evidence banked
   m4f-profile-is-a-selection-not-an-entry: done           # PRD glossary settles it: a Profile is a selection OVER entries; Bundles carry Profiles (Epic 5)
+  m5a-the-methodplugin-contract-is-published-or-it-is-not: done           # implements 5.3/FR-23/RD-3; 5.4 hot swap stays out
   epic-2-retrospective: optional
 
   epic-3: backlog

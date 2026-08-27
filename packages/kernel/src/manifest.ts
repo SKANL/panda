@@ -26,8 +26,10 @@ export interface StandardSchemaV1Like<Output = unknown> {
 
 export interface PluginManifest {
   readonly id: string
-  // Intentionally loose for now: any non-empty trimmed string. Semver enforcement arrives with the
-  // MethodPlugin contract in a later story.
+  // Semver, enforced: `major.minor.patch` with optional `-prerelease` and `+build`, leading zeros
+  // rejected, no `v` prefix, no ranges. Surrounding whitespace is trimmed before the check, so
+  // '\t1.0.0 ' stores '1.0.0'. NFR-8 versions every Contract together under one semver major, and a
+  // manifest whose version cannot be ordered against another cannot participate in that policy.
   readonly version: string
   readonly provides: readonly string[]
   readonly consumes: readonly ServiceConsumption[]
@@ -47,6 +49,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
+
+// The recommended semver.org pattern, verbatim. Written out rather than approximated because the
+// approximations differ exactly where it matters: `1.2` (too few parts), `v1.0.0` (prefix) and
+// `01.0.0` (leading zero) are the strings a hand-rolled `\d+\.\d+\.\d+` lets through.
+//
+// DUPLICATED, deliberately: `@panda/contracts` enforces the same rule on a MethodPlugin's `version`
+// and carries its own copy, because AD-1 forbids this package a runtime dependency on anything —
+// `@panda/contracts` included. `packages/contracts/test/method.test.ts` asserts the two agree on
+// every string, so the copies cannot drift silently.
+const SEMVER_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
 
 function isServiceMode(value: unknown): value is ServiceConsumption['mode'] {
   return value === 'hard' || value === 'soft'
@@ -82,6 +95,9 @@ export function validateManifest(input: unknown): PluginManifest {
 
   const id = requireField(input, 'id', isNonEmptyString, 'a non-empty trimmed string').trim()
   const version = requireField(input, 'version', isNonEmptyString, 'a non-empty trimmed string').trim()
+  if (!SEMVER_PATTERN.test(version)) {
+    fail('version', `must be a semver version (major.minor.patch, optional -prerelease and +build); got '${version}'`)
+  }
 
   const rawProvides = requireField(input, 'provides', (value): value is string[] => Array.isArray(value), 'an array of service names')
   for (const service of rawProvides) {

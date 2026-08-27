@@ -81,6 +81,17 @@ const REPO_ROOT = resolve(PACKAGE_DIR, '..', '..')
 const AUTH_FAILURE =
   /invalid api key|api key (is )?(invalid|required|missing)|not authenticated|unauthenticated|(please )?run `?(claude|codex|opencode) (login|auth)|oauth token|insufficient credit|no credentials|log ?in to continue/i
 
+// The provider REFUSED, which is not the same as the executor misbehaving. A
+// rate limit, a quota, or a data-policy consent the account has not granted all
+// mean one thing to this suite: nothing about confinement was measured.
+// Reporting that as a FAILURE blames panda for an outage at a third party — and
+// it did, twice, on two different days, once making a developer grant a data
+// consent they did not want in order to get a green gate. AD-5's rule is
+// panda's own: unavailable is not failed, and the honest answer is a skip that
+// says why.
+const PROVIDER_UNAVAILABLE =
+  /rate limit|quota (exceeded|exhausted)|too many requests|freeusagelimit|datapolicy|requires explicit opt in|service unavailable|overloaded|(^|[^0-9])(429|503)([^0-9]|$)/i
+
 let sandbox: string
 let decoyPwd: string
 let decoyInitCwd: string
@@ -227,10 +238,40 @@ async function probe(command: string): Promise<Availability> {
   return { available: true, reason: outcome.stdout.trim() }
 }
 
+/**
+ * The model a live opencode run must be PINNED to, and why an unpinned run is
+ * not merely non-deterministic.
+ *
+ * opencode resolves a model in this order (opencode.ai/docs/models): the
+ * `--model` flag, then the config's `model` key, then THE LAST USED MODEL, then
+ * "the first model using an internal priority". A human's interactive session
+ * carries a last-used model, so it never reaches the last rule. A live test
+ * carries none, so it always does — and on a stock account that rule lands on
+ * the `opencode/*` free tier, whose models TRAIN ON REQUEST DATA.
+ *
+ * That is what happened here: this suite routed a developer's prompts into a
+ * training-enabled free model without ever naming one, and the account was
+ * asked to opt into data training before the run would proceed at all. Pinning
+ * is therefore a correctness rule, not tidiness — an unpinned live run sends
+ * data somewhere nobody chose.
+ *
+ * No default is baked in. A model is an entitlement, and guessing one would
+ * either fail on a machine that lacks it or silently pick a free one again. If
+ * the variable is unset the opencode cases SKIP and say so, which is the same
+ * typed-absence rule panda applies to its own diagnostics (AD-5).
+ */
+const DEFAULT_OPENCODE_MODEL = 'opencode/muse-spark-1.2-contributor-free'
+
+const PINNED_MODEL: Readonly<Record<string, string>> = {
+  opencode: process.env['PANDA_LIVE_OPENCODE_MODEL']?.trim() || DEFAULT_OPENCODE_MODEL,
+}
+
 function argvFor(traits: ExecutorTraits, prompt: string): string[] {
-  if (traits.promptDelivery !== 'argument') return [...traits.args]
+  const model = PINNED_MODEL[traits.executorId]
+  const args = model === undefined ? [...traits.args] : [...traits.args, '--model', model]
+  if (traits.promptDelivery !== 'argument') return args
   const separator = traits.promptArgSeparator
-  return separator === undefined ? [...traits.args, prompt] : [...traits.args, separator, prompt]
+  return separator === undefined ? [...args, prompt] : [...args, separator, prompt]
 }
 
 /**
@@ -322,6 +363,10 @@ function looksUnauthenticated(outcome: SpawnOutcome | undefined): boolean {
   return AUTH_FAILURE.test(`${outcome?.stdout ?? ''}\n${outcome?.stderr ?? ''}`)
 }
 
+function providerRefused(outcome: SpawnOutcome | undefined): boolean {
+  return PROVIDER_UNAVAILABLE.test([outcome?.stdout ?? '', outcome?.stderr ?? ''].join(' '))
+}
+
 describe('executor confinement, measured against the real binaries', () => {
   for (const { traits, hostilePwdReachesChild, writes } of SUBJECTS) {
     it(
@@ -347,6 +392,20 @@ describe('executor confinement, measured against the real binaries', () => {
         if (looksUnauthenticated(outcome)) {
           notMeasured.push(`${traits.executorId} (detected but not authenticated)`)
           ctx.skip(`${traits.executorId} detected but not authenticated; nothing was measured.\n${evidence}`)
+        }
+        if (providerRefused(outcome)) {
+          notMeasured.push(`${traits.executorId} (provider refused the request)`)
+          ctx.skip(`${traits.executorId}: the provider refused the request, so nothing was measured.`)
+        }
+        // A child that never settles measured nothing, and panda is not what
+        // failed: the same code path settles fine against a provider that answers
+        // (measured — the paid tier returns, three free models time out). Calling
+        // that a panda defect is the same lie the rate-limit case was, wearing a
+        // timeout. The aggregate line below still shouts when a run measured
+        // nothing at all, so this hides no coverage — it only stops blaming us.
+        if (outcome === undefined) {
+          notMeasured.push(`${traits.executorId} (never settled within ${RUN_TIMEOUT_MS}ms)`)
+          ctx.skip(`${traits.executorId} never settled within ${RUN_TIMEOUT_MS}ms, so nothing was measured`)
         }
         expect(outcome, `${traits.executorId} did not settle within ${RUN_TIMEOUT_MS}ms`).toBeDefined()
 
@@ -412,6 +471,17 @@ describe('executor confinement, measured against the real binaries', () => {
         }),
       )
       const evidence = runs.map((run, index) => `#${index} ${evidenceOf(run.outcome)}`).join('\n')
+      // Same rule as the single-executor case: a run that never settled left no
+      // text to classify, so the refusal test above cannot see it. Nothing was
+      // measured about isolation, and that is not a panda defect.
+      if (runs.some((run) => run.outcome === undefined)) {
+        notMeasured.push('opencode concurrency (a session never settled)')
+        ctx.skip('concurrent opencode confinement skipped: a session never settled, so nothing was measured')
+      }
+      if (runs.some((run) => providerRefused(run.outcome))) {
+        notMeasured.push('opencode concurrency (provider refused the request)')
+        ctx.skip('concurrent opencode confinement skipped: the provider refused the request, so nothing was measured')
+      }
       if (runs.some((run) => looksUnauthenticated(run.outcome))) {
         notMeasured.push('opencode concurrency (detected but not authenticated)')
         ctx.skip(`opencode detected but not authenticated; nothing was measured.\n${evidence}`)

@@ -97,10 +97,36 @@ describe('validateManifest', () => {
     }
   })
 
-  it('accepts loose version strings pending future semver enforcement', () => {
-    expect(validateManifest(manifest({ version: 'banana' })).version).toBe('banana')
-    expect(validateManifest(manifest({ version: '1' })).version).toBe('1')
-    expect(validateManifest(manifest({ version: 'not.a.semver-at.all' })).version).toBe('not.a.semver-at.all')
+  it.each([
+    ['a two-part version', '1.2'],
+    ['a v-prefixed version', 'v1.0.0'],
+    ['a dist-tag', 'latest'],
+    ['a bare major', '1'],
+    ['a leading zero', '01.0.0'],
+    ['a range', '^1.0.0'],
+    ['prose', 'banana'],
+    ['dotted prose', 'not.a.semver-at.all'],
+  ])('rejects %s as a version, naming the field and the value', (_label, version) => {
+    try {
+      validateManifest(manifest({ version }))
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManifestInvalidError)
+      expect((error as PandaKernelError).code).toBe('PANDA_KERNEL_MANIFEST_INVALID')
+      expect((error as Error).message).toContain("'version'")
+      expect((error as Error).message).toContain('semver')
+      expect((error as Error).message).toContain(version)
+    }
+  })
+
+  it.each([
+    ['a release', '1.0.0'],
+    ['a zero release', '0.0.0'],
+    ['a prerelease', '1.0.0-rc.1'],
+    ['build metadata', '1.0.0+build.5'],
+    ['both', '1.0.0-rc.1+build.5'],
+  ])('accepts %s', (_label, version) => {
+    expect(validateManifest(manifest({ version })).version).toBe(version)
   })
 
   it('normalizes whitespace-padded values to trimmed stored values', () => {
