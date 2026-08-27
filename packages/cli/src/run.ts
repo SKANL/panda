@@ -15,6 +15,7 @@ import {
   type RemediationReport,
 } from '@panda/environment'
 import { readExecutorConfigLayers, runSession, type SessionOptions } from '@panda/session'
+import { isRegistryVerb, runRegistryCommand, type RegistryVerb } from './registry-commands.ts'
 
 // Exit codes (documented in the package README):
 //   0 — run completed with an ok envelope / init completed with no failed target
@@ -22,6 +23,10 @@ import { readExecutorConfigLayers, runSession, type SessionOptions } from '@pand
 //   2 — usage error, invalid request, or environment failure (including
 //       "no executor was detected", which is the environment lacking anything
 //       for panda to configure)
+//
+// For `remove` the 1 is TYPED ABSENCE (AD-5): the entry named was not registered
+// at that scope, so the command did nothing and says so. A silent 0 there would
+// tell a script the entry is gone when the id was simply misspelled.
 //
 // For `doctor` the same three carry a narrower sentence: 0 is a clean
 // environment, 1 is at least one finding that is a PROBLEM, 2 is doctor being
@@ -44,6 +49,12 @@ export interface RunCommandOptions
 
 export const USAGE = [
   'usage: panda run [--executor <id>] "<prompt>"',
+  '       panda add <tool|skill|mcp-server|profile> <id> [--command <c>] [--entry-path <p>] [--arg <a>]...',
+  '       panda project add <tool|skill|mcp-server|profile> <id> [directory] [--command <c>] [--entry-path <p>] [--arg <a>]...',
+  '       panda remove <tool|skill|mcp-server|profile> <id>',
+  '       panda project remove <tool|skill|mcp-server|profile> <id> [directory]',
+  '       panda list',
+  '       panda project list [directory]',
   '       panda init',
   '       panda project init [directory]',
   '       panda doctor',
@@ -60,6 +71,17 @@ export const USAGE = [
   '                   It overrides a configuration panda can READ; a document that exists and',
   '                   cannot be used still fails, because running a different agent than the one',
   '                   configured is the failure this selection exists to remove.',
+  'add           Puts ONE entry in the registry and projects nothing; it names the command that does.',
+  '  --command <c>    The executable a tool or an mcp-server runs.',
+  '  --entry-path <p> A skill entry file, or the directory holding one.',
+  '  --arg <a>        One argument for an mcp-server, repeatable, order preserved.',
+  '  --              Ends the options, so an id that begins with a dash can still be named.',
+  '                   Which of these a type accepts is the registry contract\'s answer, not this',
+  '                   binding\'s: a field that does not belong on the type is refused coded.',
+  'remove        Takes ONE entry out of the registry by type and id. An entry that was not there',
+  '              is said out loud and exits non-zero.',
+  'list          Every registered entry with its type, id and the scope it came from. An empty',
+  '              registry is a result, not a failure, and exits 0.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
@@ -118,6 +140,12 @@ function isHelp(token: string | undefined): boolean {
   return token === '--help' || token === '-h'
 }
 
+/** Index of the `--` option terminator, or the length when there is none. */
+function terminatorAt(tokens: readonly string[]): number {
+  const at = tokens.indexOf('--')
+  return at === -1 ? tokens.length : at
+}
+
 export async function runPanda(argv: readonly string[], options: RunCommandOptions = {}): Promise<number> {
   const out = options.stdout ?? ((line: string) => console.log(line))
   const err = options.stderr ?? ((line: string) => console.error(line))
@@ -125,6 +153,9 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
   if (argv[0] === '--help' || argv[0] === '-h') {
     out(USAGE)
     return 0
+  }
+  if (isRegistryVerb(argv[0])) {
+    return await runRegistry(argv[0], argv.slice(1), 'machine', out, err, options)
   }
   if (argv[0] === 'init') {
     return await runInit(argv.slice(1), out, err, 0, options.homeDir, (homeDir) => initMachine({ homeDir }))
@@ -159,6 +190,9 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
           projectDir: directory ?? options.cwd,
         }),
       )
+    }
+    if (isRegistryVerb(argv[1])) {
+      return await runRegistry(argv[1], argv.slice(2), 'project', out, err, options)
     }
     if (argv[1] !== 'init') {
       err(DEFAULT_USAGE)
@@ -551,6 +585,46 @@ async function runRemediate(
     }
     if (report.mode !== 'apply') err('nothing was written; re-run with --apply to perform it')
     return 0
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/**
+ * The registry verbs, bound the same way every other command is: help, then the
+ * capability, then an exit code — with the thrown-error case mapped by the same
+ * `describe()` the rest of the binding uses, so `PANDA_REGISTRY_CONTENTION` and
+ * `PANDA_REGISTRY_INVALID_ENTRY` reach the user carrying their codes.
+ *
+ * `--help` ANYWHERE, like `panda run` and `panda remediate`: every other `--`
+ * token these verbs do not know is already a usage error, so it cannot be
+ * anything else — and `panda add skill x --entry-path ./s.md --help` printing
+ * usage while `--help --entry-path ./s.md` refuses would be two answers to one
+ * question.
+ */
+async function runRegistry(
+  verb: RegistryVerb,
+  tokens: readonly string[],
+  scope: 'machine' | 'project',
+  out: (line: string) => void,
+  err: (line: string) => void,
+  options: RunCommandOptions,
+): Promise<number> {
+  // Help ANYWHERE, but only BEFORE the `--` terminator: past it every token is
+  // an id, and an entry may legitimately be called `--help`.
+  if (tokens.slice(0, terminatorAt(tokens)).some((token) => isHelp(token))) {
+    out(USAGE)
+    return 0
+  }
+  try {
+    return await runRegistryCommand(verb, tokens, scope, {
+      out,
+      err,
+      defaultUsage: DEFAULT_USAGE,
+      homeDir: options.homeDir,
+      cwd: options.cwd,
+    })
   } catch (error) {
     err(describe(error))
     return 2

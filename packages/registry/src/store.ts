@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import {
   PANDA_ERROR_CODES,
   PandaError,
@@ -62,6 +62,12 @@ function entryKey(entry: Pick<RegistryEntry, 'type' | 'id'>): string {
   return `${entry.type}:${entry.id}`
 }
 
+/** Same directory, spelled either way. Case-insensitive on win32, like paths are. */
+function sameDirectory(left: string, right: string): boolean {
+  const [a, b] = [resolvePath(left), resolvePath(right)]
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+}
+
 function unavailable(operation: string, path: string, cause?: unknown): PandaError {
   const detail = cause === undefined ? '' : `: ${cause instanceof Error ? cause.message : String(cause)}`
   return new PandaError(
@@ -86,6 +92,23 @@ export class RegistryStore {
   constructor(options: RegistryStoreOptions = {}) {
     this.#homeDir = options.homeDir ?? homedir()
     this.#projectDir = options.projectDir
+    // The one collision that makes two scopes ONE document. `#storePath` puts
+    // the global store at `<home>/.panda/registry.json` and the project store at
+    // `<project>/.panda/registry.json`, so a project directory that IS the home
+    // directory aliases them: `list('global')` and `list('project')` return the
+    // same rows under two scope labels, and a project-scope REMOVE empties the
+    // global registry while reporting a project-scope removal. Cosmetic until a
+    // command could delete an entry; destruction from the moment one could.
+    //
+    // Refused in the constructor rather than at each call, so no caller — the
+    // CLI, `initProject`, `diagnose`, or a third party holding the store
+    // directly — can reach the aliased state by forgetting to check.
+    if (this.#projectDir !== undefined && sameDirectory(this.#projectDir, this.#homeDir)) {
+      throw new PandaError(
+        PANDA_ERROR_CODES.registryStoreUnavailable,
+        `registry store cannot use '${this.#projectDir}' as a project directory: it is the home directory, so the project scope would be the very same document as the global scope`,
+      )
+    }
     const { onStaleLockBreak, lockTimeoutMs, lockPollMs } = options
     this.#lockOptions = {
       timeoutMs: lockTimeoutMs,
@@ -216,15 +239,31 @@ export class RegistryStore {
     return undefined
   }
 
-  async list(): Promise<RegistryEntry[]> {
+  /**
+   * The same two modes {@link RegistryStore.get} has, for the whole store:
+   *  - WITHOUT `scope`: the merged view every projection reads, agent > project
+   *    > global.
+   *  - WITH `scope`: that ONE scope, no fallthrough. A reader that has to say
+   *    WHERE an entry lives cannot use the merged view, because the merge keeps
+   *    one row per `type:id` and drops the scope that produced it.
+   */
+  async list(scope?: RegistryScope): Promise<RegistryEntry[]> {
     this.#assertActive()
+    if (scope === 'agent') {
+      return [...this.#agentEntries.values()].map((entry) => expandRegistryEntryPaths(entry, this.#homeDir))
+    }
     const merged = new Map<string, RegistryEntry>()
-    for (const scope of ['global', 'project'] as const) {
-      if (scope === 'project' && this.#projectDir === undefined) continue
-      const file = await this.#readStore(this.#storePath(scope))
+    const scopes = scope === undefined ? (['global', 'project'] as const) : ([scope] as const)
+    for (const candidateScope of scopes) {
+      // Only the merged read skips an unconfigured project scope; an EXPLICIT
+      // project read is a configuration error and fails coded through #storePath.
+      if (scope === undefined && candidateScope === 'project' && this.#projectDir === undefined) continue
+      const file = await this.#readStore(this.#storePath(candidateScope))
       for (const entry of file.entries) merged.set(entryKey(entry), entry)
     }
-    for (const entry of this.#agentEntries.values()) merged.set(entryKey(entry), entry)
+    if (scope === undefined) {
+      for (const entry of this.#agentEntries.values()) merged.set(entryKey(entry), entry)
+    }
     return [...merged.values()].map((entry) => expandRegistryEntryPaths(entry, this.#homeDir))
   }
 

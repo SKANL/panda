@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, rm, rmdir, stat } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, rm, rmdir, stat } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 import type {
@@ -210,6 +210,36 @@ async function occupied(path: string): Promise<{ taken: boolean; detail: string 
       detail: `panda could not determine whether it is free (${code ?? 'unknown error'})`,
     }
   }
+}
+
+/**
+ * Whether an entry's own DIRECTORY holds content panda must not resolve.
+ *
+ * AN EMPTY DIRECTORY IS NOBODY'S CONTENT, and treating one as a foreign
+ * collision built a state with no exit that panda's own instructions walked the
+ * user into: delete a materialised `SKILL.md` and its directory survives; doctor
+ * reports `removed-by-user` and says `release` frees the location so the next
+ * run writes it back; `release` drops the claim; the next run then finds the
+ * EMPTY directory, calls it foreign and refuses; `adopt` has nothing to claim
+ * and refuses; `release` has no claim left and refuses. Exit 1 forever, escapable
+ * only with `rmdir` by hand. Panda was refusing to write in order to protect
+ * nothing.
+ *
+ * The protection that stays exactly as it was: a directory holding ANY entry is
+ * foreign, and so is one panda cannot list — an unreadable answer is not a proof
+ * that a location is free. A LINK is occupation whatever it points at, because
+ * writing through it lands outside the root panda owns.
+ */
+async function occupiedByContent(directory: string): Promise<{ taken: boolean; detail: string }> {
+  const state = await occupied(directory)
+  if (!state.taken) return state
+  if (await isLink(directory)) return state
+  try {
+    if ((await readdir(directory)).length > 0) return state
+  } catch {
+    return state
+  }
+  return { taken: false, detail: '' }
 }
 
 /** One spelling of a path for set membership, matching `sameOwnedPath`. */
@@ -502,7 +532,7 @@ export async function materialiseTarget(
     }))
 
     if (record === undefined) {
-      const state = await occupied(directory)
+      const state = await occupiedByContent(directory)
       if (state.taken) {
         drift.push(
           driftEntry(

@@ -282,3 +282,48 @@ this milestone unless portability displaces it.
 production caller outside `run-session.ts`. M3.C is true for an SDK host and
 vacuous for the shipped binary. A user-facing budget surface deserves its own
 frozen block; the layered configuration already has the shape for it.
+
+## Amendment 3 — the measure that reorders M5 (2026-08-26)
+
+M4.C's review round closed the four terminal states. Verifying one of them
+end-to-end through the CLI is what produced this amendment, because the fixture
+could not be built.
+
+**Measured, by execution, not by reading:** the shipped binary accepts `run`,
+`init`, `project init`, `doctor`, `project doctor`, `remediate`,
+`project remediate` and `--help`. Grep across all of `packages/cli/src/` finds no
+`RegistryStore` and no `.register(`. **No panda command writes to the registry.**
+
+So M4.A through M4.C built projection, materialisation, diagnosis and remediation
+over a store that, from the binary, is permanently empty. The machinery is real —
+its four stories are individually sound and their tests exercise it through the
+library. What none of them noticed is that the library is the only door.
+
+Two consequences make this the next story rather than a backlog note:
+
+1. **FR-11 is unbuilt at the surface.** It reads *"register Tool/Skill/MCP server
+   once at global scope or override per project/agent scope"*. Story 2.1 claims
+   FR-11 and its three acceptance criteria are about envelope validation and lock
+   contention — correct, and none of them a verb. This is the same shape as the
+   ROADMAP-01 measurement failure: a criterion that is true of the code and
+   silent about whether anyone can reach it.
+
+2. **Two of `doctor`'s own exits name an operation the binary cannot perform.**
+   `removed-by-user` and `unprojectable` both route the user to "the entry has to
+   leave the registry", and both then admit *"panda ships no command for that yet,
+   only `RegistryStore.remove` in `@panda/environment`"*. M4.C reported the gap
+   rather than papering over it (correction-01 C5), which is why it is visible at
+   all — but a remediation catalogue whose exits terminate in a library call is
+   not an exit for a user of the binary.
+
+**Reordering:** M4.D takes the slot M5 held. Portability (5.1/5.2) exports a
+bundle of registry entries; exporting a store a user cannot populate would repeat
+this mistake one layer up. MethodPlugin (5.3/5.4) keeps its position after it.
+
+**What M4.D generalises, and the reason it is not merely "add three commands":**
+89 backtick-quoted `panda …` strings ship inside panda's output text. Each is a
+promise the binary must keep, and today all of them are kept by review attention.
+That is the defect class this whole milestone kept surfacing — a guarantee stated
+in prose instead of enforced by something that fails when violated. M4.D pins it:
+every command panda's output names is a command panda dispatches, checked by a
+test, over the shipped source.

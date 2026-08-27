@@ -38,9 +38,20 @@ export interface RegistryEntry {
   readonly extensions?: Readonly<Record<string, unknown>>
 }
 
-// Per-entry-type allowlist of envelope fields whose values are treated as
-// paths for NFR-6 home-directory normalization. Everything else — ids,
-// descriptions, extensions payloads — stays verbatim on disk.
+// Per-entry-type allowlist of the envelope fields that BELONG to each type —
+// and, because every one of them carries a path, the same record is what NFR-6
+// home-directory normalization is applied to at write time. Everything else —
+// ids, extensions payloads — stays verbatim on disk.
+//
+// The two readings are one record on purpose: a `tool` that carries an
+// `entryPath` would otherwise be accepted, persisted, and then silently ignored
+// by every target, and the only other way to reject it is a second per-type
+// table that drifts from this one (the frozen Ask-First clause of story M4.D).
+//
+// ponytail: the fit check below reads this record for EVERY optional root key,
+// so an envelope field added without a path meaning would be rejected for every
+// type until it is listed here. That fails closed and loudly. Upgrade path: a
+// separate `REGISTRY_TYPE_FIELDS` record the moment a non-path field exists.
 export const REGISTRY_PATH_FIELDS: Readonly<Record<RegistryEntryType, readonly string[]>> = {
   tool: ['command'],
   skill: ['entryPath'],
@@ -71,6 +82,22 @@ const KNOWN_ROOT_KEYS: ReadonlySet<string> = new Set([
   'args',
   'extensions',
 ])
+
+// The root keys whose presence depends on the entry TYPE: everything panda owns
+// at the root that is not universal state (`type`, `id`) or the reserved
+// provider namespace (`extensions`). Derived, so a widened envelope cannot leave
+// a new field unchecked here.
+const TYPED_ROOT_KEYS: readonly string[] = [...KNOWN_ROOT_KEYS].filter(
+  (key) => key !== 'type' && key !== 'id' && key !== 'extensions',
+)
+
+/** The fields a type carries, as the sentence a rejection prints. */
+function fieldsSentence(type: RegistryEntryType): string {
+  const fields = REGISTRY_PATH_FIELDS[type]
+  return fields.length === 0
+    ? `a '${type}' entry carries no field beyond 'type' and 'id'`
+    : `a '${type}' entry carries ${fields.map((field) => `'${field}'`).join(', ')}`
+}
 
 function isEntryType(value: unknown): value is RegistryEntryType {
   return typeof value === 'string' && REGISTRY_ENTRY_TYPES.includes(value as RegistryEntryType)
@@ -106,6 +133,17 @@ export function registryEntryIssues(value: unknown): StandardSchemaIssue[] {
   const extensions = value['extensions']
   if (extensions !== undefined && !isRecord(extensions)) {
     issues.push(issue("'extensions' must be an object when present"))
+  }
+  // A field that is well-formed and belongs to a DIFFERENT type. Reported here,
+  // in the contract, and never by a caller: a CLI or provider deciding which
+  // flag suits which type would be a second copy of `REGISTRY_PATH_FIELDS`.
+  const type = value['type']
+  if (isEntryType(type)) {
+    for (const key of TYPED_ROOT_KEYS) {
+      if (value[key] !== undefined && !REGISTRY_PATH_FIELDS[type].includes(key)) {
+        issues.push(issue(`'${key}' does not belong on a '${type}' entry; ${fieldsSentence(type)}`))
+      }
+    }
   }
   for (const key of Object.keys(value)) {
     if (!KNOWN_ROOT_KEYS.has(key)) {

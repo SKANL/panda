@@ -143,7 +143,15 @@ describe('every state panda reports has an exit', () => {
       // And a `command` exit may only name a command panda actually ships. The
       // first version asserted `startsWith('panda ')`, which `panda frobnicate`
       // satisfies.
-      if (exit.by === 'command') expect(['panda init'], kind).toContain(exit.command)
+      // Story M4.D added `panda remove`, and the mechanical half of this clause
+      // now lives in `packages/cli/test/printed-commands.test.ts`: it extracts
+      // every backtick-quoted `panda …` string out of this file's own shipped
+      // source and asks `runPanda` to dispatch it. This list stays because
+      // `@panda/environment` may not import the CLI (its own guard test), so
+      // from here the set is pinned rather than executed.
+      if (exit.by === 'command') {
+        expect(['panda init', 'panda remove <type> <id>'], kind).toContain(exit.command)
+      }
     }
   })
 

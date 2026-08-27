@@ -309,6 +309,51 @@ describe('panda writes only where it can prove the location is free', () => {
     expect(await readFile(join(at.root, 'alpha', 'SKILL.md'), 'utf8')).toBe('theirs\n')
   })
 
+  it('writes into an EMPTY leftover directory, because an empty directory belongs to no one', async () => {
+    // The dead end this closes, reached by following panda's own printed
+    // instructions: delete a materialised SKILL.md and the directory survives;
+    // doctor reports `removed-by-user` and says `release` frees the location so
+    // the next run writes it back; `release` drops the claim; the next run then
+    // found the EMPTY directory, called it foreign and refused; `adopt` had
+    // nothing to claim and refused; `release` had no claim left and refused.
+    // Exit 1 forever, escapable only with `rmdir` by hand. Panda was refusing to
+    // write in order to protect nothing.
+    const at = await fixture()
+    const source = await writeSource(at, 'alpha.md')
+    await project(at, [skill('alpha', source)])
+    await rm(join(at.root, 'alpha', 'SKILL.md'))
+    // The claim is gone — this is the state `release` leaves behind. A fresh
+    // ledger over the SAME root is that state exactly: the tree is there, and
+    // nothing in panda's records claims it.
+    const unclaimed: Fixture = {
+      ...at,
+      ledger: new ProjectionLedger({ filePath: join(at.homeDir, 'released-ledger.json') }),
+    }
+
+    const run = await project(unclaimed, [skill('alpha', source)])
+
+    expect(run.results[0]?.drift).toEqual([])
+    expect(run.results[0]).toMatchObject({ written: true })
+    expect(await treeOf(at.root)).toEqual({ 'alpha/': '', 'alpha/SKILL.md': SKILL_BODY })
+  })
+
+  it('still refuses an unclaimed directory that holds ANYTHING, which is the protection that matters', async () => {
+    // The other half of the same change, and the one that must not move: a
+    // directory with a file in it is content panda did not write and will not
+    // resolve.
+    const at = await fixture()
+    const source = await writeSource(at, 'alpha.md')
+    await mkdir(join(at.root, 'alpha'), { recursive: true })
+    await writeFile(join(at.root, 'alpha', 'THEIRS.txt'), 'mine\n', 'utf8')
+
+    const run = await project(at, [skill('alpha', source)])
+
+    expect(run.results[0]?.drift).toEqual([
+      expect.objectContaining({ kind: 'foreign-collision', entryId: 'alpha' }),
+    ])
+    expect(await treeOf(at.root)).toEqual({ 'alpha/': '', 'alpha/THEIRS.txt': 'mine\n' })
+  })
+
   it('reports an edited tree rather than overwriting it', async () => {
     const at = await fixture()
     const source = await writeSource(at, 'alpha.md')

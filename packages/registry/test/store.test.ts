@@ -148,6 +148,54 @@ describe('RegistryStore', () => {
     expect(rawGlobal).not.toContain('agent')
   })
 
+  it('refuses a project directory that IS the home directory, because the two scopes would be one file', async () => {
+    // `#storePath` puts global at `<home>/.panda/registry.json` and project at
+    // `<project>/.panda/registry.json`. Equal directories alias them, and every
+    // scope-aware operation then lies: `list('project')` returns the global rows
+    // under a project label, and `remove(type, id, 'project')` empties the
+    // GLOBAL document while reporting a project-scope removal. Refused in the
+    // constructor so no caller can reach the aliased state by forgetting to
+    // check — the CLI, `initProject`, `diagnose`, or a third party holding this
+    // class directly.
+    const dirs = await makeDirs()
+    expect(() => new RegistryStore({ homeDir: dirs.homeDir, projectDir: dirs.homeDir })).toThrow(
+      expect.objectContaining({ code: PANDA_ERROR_CODES.registryStoreUnavailable }),
+    )
+    // Spelled differently, still the same directory.
+    expect(
+      () => new RegistryStore({ homeDir: dirs.homeDir, projectDir: join(dirs.homeDir, '.') }),
+    ).toThrow(expect.objectContaining({ code: PANDA_ERROR_CODES.registryStoreUnavailable }))
+    // A genuinely different project directory is untouched by the guard.
+    expect(() => makeStore(dirs)).not.toThrow()
+  })
+
+  it('lists ONE scope on request, because the merged view drops the scope that produced a row', async () => {
+    const dirs = await makeDirs()
+    const store = makeStore(dirs)
+    const entry = { type: 'tool', id: 'layered' }
+    await store.register({ ...entry, extensions: { source: 'global' } }, 'global')
+    await store.register({ ...entry, extensions: { source: 'project' } }, 'project')
+    await store.register({ type: 'tool', id: 'only-global' }, 'global')
+    await store.register({ ...entry, extensions: { source: 'agent' } }, 'agent')
+
+    // The merged view keeps one row per `type:id` — which is right for a
+    // projection and useless to a reader that has to say WHERE an entry lives.
+    expect((await store.list()).map((row) => row.id).sort()).toEqual(['layered', 'only-global'])
+    expect(
+      (await store.list('global')).map((row) => [row.id, (row.extensions as { source?: string })?.source]),
+    ).toEqual([
+      ['layered', 'global'],
+      ['only-global', undefined],
+    ])
+    expect(
+      (await store.list('project')).map((row) => [row.id, (row.extensions as { source?: string })?.source]),
+    ).toEqual([['layered', 'project']])
+    // The in-memory scope answers for itself and reaches no disk document.
+    expect(
+      (await store.list('agent')).map((row) => [row.id, (row.extensions as { source?: string })?.source]),
+    ).toEqual([['layered', 'agent']])
+  })
+
   it('removes entries per scope; removing an override lets get fall back to the wider scope', async () => {
     const dirs = await makeDirs()
     const store = makeStore(dirs)

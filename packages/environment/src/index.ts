@@ -3,6 +3,16 @@ export {
   initMachine,
   initProject,
   noExecutorsDetected,
+  // The seams `panda add` / `remove` / `list` bind to. Exported rather than
+  // re-derived in the binding: `storeFor` is the ONE mapping from a scope to a
+  // store, `scopeDirectory` is the trust boundary that keeps a project verb from
+  // building a tree panda was asked to bind rather than create, and
+  // `deliveryFor` is what `add` reports its next step FROM — so the binding
+  // holds no idea of which entry type has a location at which scope.
+  deliveryFor,
+  scopeDirectory,
+  storeFor,
+  type EntryDelivery,
   type InitMachineOptions,
   type InitProjectOptions,
   type InitResult,
@@ -46,7 +56,7 @@ export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDet
 // deferred-work.md rather than fixed by widening the surface on speculation.
 export { RegistryStore } from '@panda/registry'
 export type { RegistryStoreOptions } from '@panda/registry'
-export { DRIFT_KINDS, REMEDIATION_KINDS } from '@panda/contracts'
+export { DRIFT_KINDS, REGISTRY_ENTRY_TYPES, REMEDIATION_KINDS } from '@panda/contracts'
 export type {
   DriftEntry,
   DriftKind,

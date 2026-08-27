@@ -49,6 +49,56 @@ is never a quiet fall back to the default, because running a different agent tha
 the one you configured is the failure this feature exists to remove. `--executor`
 overrides a configuration panda can READ; it does not rescue one it cannot.
 
+## Putting something in the registry
+
+Everything `panda init` projects comes out of the registry, and until story M4.D
+there was no way to put anything in it from the binary — the store shipped, the
+surface did not.
+
+```sh
+pnpm panda add skill commit-lint --entry-path ./skills/commit-lint/SKILL.md
+pnpm panda add tool rg --command rg
+pnpm panda add mcp-server fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem
+pnpm panda list
+pnpm panda remove skill commit-lint
+```
+
+The scope comes from the GRAMMAR, never from a flag: `panda <verb>` is the
+machine scope and `panda project <verb> … [directory]` is a project's, exactly
+like `init`, `doctor` and `remediate`. There is deliberately no `--scope agent` —
+the agent scope is an in-memory map that dies with the process, so a flag for it
+would accept the flag, exit 0 and persist nothing.
+
+Which field flags a type accepts is the registry CONTRACT's answer, not this
+command's: `panda add tool t --entry-path ./x` is refused with
+`PANDA_REGISTRY_INVALID_ENTRY`, because a `tool` carries a `command`. The CLI
+holds no per-type table, so it cannot drift from the one the contract already has.
+
+`add` registers and projects nothing; it names the command that does. Coupling
+the two would make registration fail for projection reasons.
+
+That next step is DERIVED from the same planner `panda init` runs, never written
+beside the command, and it can say that nothing takes the entry at all:
+
+```
+$ panda project add skill deadend --entry-path ./s.md
+registered: project - skill - deadend
+NOTHING TAKES IT HERE: no detected executor has a project-scope location for a
+skill entry, so `panda project init` would project it nowhere
+the machine scope takes it (codex): register it with `panda add` and project it
+with `panda init`
+```
+
+That is a real dead end and it used to be silent: no executor has a
+project-scope skills root panda has verified, machine-scope projection cannot
+see a project-scope entry, and `add` still pointed at `panda project init`, which
+exits 0 and delivers nothing. The registration still succeeds — the entry is
+yours and `panda list` shows it — but the command you are pointed at is the one
+that would actually deliver it, or none, and never a command that would not.
+
+`remove` on an entry that was not there says so and exits 1. An empty `list`
+exits 0 — an empty list is a result, not a failure.
+
 ## Leaving a state `panda doctor` reported
 
 `panda doctor` reports drift and refuses to resolve it, which is correct and used
@@ -92,7 +142,9 @@ exit are one string.
 
 For `doctor` the three narrow: 0 clean, 1 at least one finding that is a problem,
 2 no diagnosis could be produced. For `remediate`: 0 described or performed, 1
-panda refused, 2 usage or environment failure.
+panda refused, 2 usage or environment failure. For `remove`: 0 removed, 1 the
+entry was not registered at that scope (typed absence, never a silent 0), 2 usage
+or a coded registry failure.
 
 An executor name panda has no adapter for (`PANDA_EXECUTOR_NOT_FOUND`) and an
 unusable configuration document (`PANDA_CONFIGURATION_UNUSABLE`) are both 2, and

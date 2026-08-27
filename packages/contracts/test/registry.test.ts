@@ -50,6 +50,33 @@ describe('canonical registry entry envelopes', () => {
     ])
   })
 
+  it('rejects a well-formed field that belongs to a DIFFERENT entry type', () => {
+    // The rule lives at the envelope, derived from `REGISTRY_PATH_FIELDS`, so
+    // the only table saying which field suits which type is the one that already
+    // existed. A caller — `panda add`, an ingest provider — holding a second
+    // copy of it would drift from this one, which is the whole reason it is
+    // here: a `tool` carrying an `entryPath` used to persist and then be
+    // silently ignored by every projection target.
+    //
+    // Derived over the whole matrix rather than spot-checked, so a type whose
+    // fields change upstream is answered for here or this goes red.
+    for (const type of REGISTRY_ENTRY_TYPES) {
+      for (const field of ['command', 'entryPath', 'args'] as const) {
+        const value = field === 'args' ? ['x'] : 'x'
+        const issues = registryEntryIssues({ type, id: 'demo', [field]: value })
+        if (REGISTRY_PATH_FIELDS[type].includes(field)) {
+          expect(issues, `${type}.${field}`).toEqual([])
+          continue
+        }
+        expect(issues.map((issue) => issue.message), `${type}.${field}`).toEqual([
+          expect.stringContaining(`'${field}' does not belong on a '${type}' entry`),
+        ])
+      }
+    }
+    // The reserved namespace is unaffected: a provider payload is not a field.
+    expect(registryEntryIssues({ type: 'profile', id: 'p', extensions: { vendor: {} } })).toEqual([])
+  })
+
   it('rejects ids that can never become a projected key', () => {
     // The guard lives here, at the envelope, because every registration path
     // routes through it: an unprojectable id that reaches the store makes

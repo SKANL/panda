@@ -183,13 +183,13 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
     by: 'remediation',
     remediations: ['release'],
     detail:
-      '`release` drops the claim, which makes the location free again, so the next `panda init` writes the entry back. To keep it absent instead, the entry has to leave the registry — panda ships no command for that yet, only `RegistryStore.remove` in `@panda/environment`',
+      '`release` drops the claim, which makes the location free again, so the next `panda init` writes the entry back. To keep it absent instead, the entry has to leave the registry, which is `panda remove <type> <id>` (`panda project remove <type> <id>` for a project-scope entry)',
   },
   'foreign-collision': {
     by: 'remediation',
     remediations: ['adopt', 'release'],
     detail:
-      "`adopt` takes ownership of what occupies panda's location — including panda's OWN tree left unclaimed by a crash, and a tree that is only partly there. `release` is the exit where the collision comes from a claim panda holds and cannot use. Where the detail says the VENDOR's document is ambiguous — a location declared twice, a container panda cannot address — neither verb applies until that is fixed in the file itself, and panda's own ledger is not involved",
+      "`adopt` takes ownership of what occupies panda's location, exactly as it is now — including panda's OWN tree left unclaimed by a crash, and a tree that is only PARTLY there, which it claims as the subset that exists. It claims what is THERE and nothing else, so where the location holds nothing panda can identify there is nothing to claim and `adopt` refuses rather than writing an empty claim. `release` is the exit where the collision comes from a claim panda holds and cannot use. Where the detail says the VENDOR's document is ambiguous — a location declared twice, a container panda cannot address — neither verb applies until that is fixed in the file itself, and panda's own ledger is not involved",
   },
   'ledger-damaged': {
     by: 'remediation',
@@ -227,10 +227,16 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
     by: 'outside-panda',
     detail: 'panda cannot grant itself permission; the location has to become writable',
   },
+  // Reclassified OUT of `outside-panda` by story M4.D, which is the SAFE
+  // direction: the M4.C ledger flagged reclassification INTO `outside-panda` as
+  // the move that weakens the totality proof, because it lets a hard state be
+  // answered with a plausible sentence. This goes the other way — the sentence
+  // is replaced by a command the binary dispatches.
   unprojectable: {
-    by: 'outside-panda',
+    by: 'command',
+    command: 'panda remove <type> <id>',
     detail:
-      'nothing to leave — this is informational and never counted as a problem. No sequence of panda commands makes the entry projectable; it stops being reported when the entry leaves the registry, for which panda ships no command yet, only `RegistryStore.remove` in `@panda/environment`',
+      'this is informational and is never counted as a problem, so nothing has to be done about it. Nothing makes the entry PROJECTABLE — no target can express it — and what `panda remove <type> <id>` changes is that it stops being reported, because the entry has left the registry. Use `panda project remove <type> <id>` for an entry registered at a project scope',
   },
   'target-failed': {
     by: 'outside-panda',
@@ -284,9 +290,12 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   'projection-warning': 'problem',
   'out-of-date': 'problem',
   'not-writable': 'problem',
-  // The one INFO kind, and the exit code is the whole reason: no sequence of
-  // panda commands makes a registered `tool` projectable, so exit 1 here can
-  // never be got back to 0. Reported in full, never counted as diagnosed.
+  // The one INFO kind, and the exit code is the whole reason: nothing makes a
+  // registered `tool` projectable, so the only way exit 1 here could be got back
+  // to 0 is DELETING an entry the user deliberately registered — which is not a
+  // fix. Reported in full, never counted as diagnosed. (Story M4.D gave the kind
+  // a real exit, `panda remove`; that changes how it is LEFT, not whether having
+  // it is wrong.)
   unprojectable: 'info',
   'target-failed': 'problem',
   // A PROBLEM, and the Codex case is why: a `# BEGIN panda-managed` block puts

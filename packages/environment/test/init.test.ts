@@ -5,7 +5,7 @@ import { createMemoryLogSink } from '@panda/kernel'
 import type { LogSink } from '@panda/kernel'
 import { RegistryStore } from '@panda/registry'
 import { describe, expect, it } from 'vitest'
-import { PROJECTION_ACTION_ID, initMachine, initProject, noExecutorsDetected } from '../src/init.ts'
+import { PROJECTION_ACTION_ID, deliveryFor, initMachine, initProject, noExecutorsDetected } from '../src/init.ts'
 
 async function fixture(): Promise<{ homeDir: string; projectDir: string }> {
   const root = await mkdtemp(join(tmpdir(), 'panda-env-'))
@@ -15,6 +15,11 @@ async function fixture(): Promise<{ homeDir: string; projectDir: string }> {
   await mkdir(projectDir, { recursive: true })
   return { homeDir, projectDir }
 }
+
+/** A real skill source, in the shape all three executors require. */
+const SKILL_SOURCE = ['---', 'name: derived', 'description: x', '---', '', 'Do nothing.', ''].join(
+  String.fromCharCode(10),
+)
 
 async function register(homeDir: string, entry: Record<string, unknown>): Promise<void> {
   const store = new RegistryStore({ homeDir })
@@ -420,3 +425,61 @@ describe('the facts a caller acts on are not fabricated', () => {
     expect(JSON.parse(await readFile(claudeJson, 'utf8'))).toMatchObject({ mcpServers: { ctx: {} } })
   })
 })
+
+// `deliveryFor` is what `panda add` reports its next step FROM, and it had no
+// test in this package at all — the CLI rows exercised the happy paths through
+// the binding, and the `catch` that contains a throwing planner survived being
+// replaced by a rethrow. That mutation matters: the caller has already
+// REGISTERED the entry by the time this runs, so a throw here would turn a
+// completed write into exit 2, which is the exact outcome its comment claims to
+// prevent.
+describe('deliveryFor', () => {
+  it('names the executors the planner found for the scope that was written', async () => {
+    const homeDir = (await fixture()).homeDir
+    await mkdir(join(homeDir, '.codex'), { recursive: true })
+    await writeFile(join(homeDir, '.codex', 'config.toml'), '')
+    const entryPath = join(homeDir, 'source.md')
+    await writeFile(entryPath, SKILL_SOURCE)
+    const delivery = await deliveryFor({ type: 'skill', id: 'x', entryPath }, 'machine', homeDir, homeDir)
+    expect(delivery).toMatchObject({ scope: 'machine', command: 'panda init', executorIds: ['codex'] })
+    expect(delivery.undetermined).toBeUndefined()
+  })
+
+  it('answers the OTHER scope when nothing at this one takes the entry', async () => {
+    const homeDir = (await fixture()).homeDir
+    const projectDir = (await fixture()).projectDir
+    await mkdir(join(homeDir, '.codex'), { recursive: true })
+    await writeFile(join(homeDir, '.codex', 'config.toml'), '')
+    const entryPath = join(homeDir, 'source.md')
+    await writeFile(entryPath, SKILL_SOURCE)
+    const delivery = await deliveryFor({ type: 'skill', id: 'x', entryPath }, 'project', homeDir, projectDir)
+    expect(delivery.executorIds).toEqual([])
+    expect(delivery.elsewhere).toMatchObject({ scope: 'machine', command: 'panda init', executorIds: ['codex'] })
+  })
+
+  it('reports a planner it could not run instead of throwing out of a completed registration', async () => {
+    // A REAL throwing target, not a synthetic one: `collectMcpEntries` raises a
+    // coded PandaError for an mcp-server id that can never be a native config
+    // key, so asking a config target about one throws from inside `merge`.
+    //
+    // The binding cannot reach this id — registration rejects it first — but the
+    // containment is what matters, not this input: the entry is already
+    // PERSISTED by the time `deliveryFor` runs, so any throw from a target would
+    // turn a completed registration into exit 2. Replacing the catch with a
+    // rethrow used to survive, because nothing here called this function at all.
+    const homeDir = (await fixture()).homeDir
+    await mkdir(join(homeDir, '.codex'), { recursive: true })
+    await writeFile(join(homeDir, '.codex', 'config.toml'), '')
+    const delivery = await deliveryFor(
+      { type: 'mcp-server', id: '__proto__', command: 'npx' },
+      'machine',
+      homeDir,
+      homeDir,
+    )
+    expect(delivery.undetermined, 'a planner that cannot answer must be reported, not thrown').toContain(
+      'PANDA_REGISTRY_INVALID_ENTRY',
+    )
+    expect(delivery.executorIds).toEqual([])
+    // The grammar fact stays true and is all that is claimed.
+    expect(delivery.command).toBe('panda init')
+  })})

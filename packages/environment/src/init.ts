@@ -496,6 +496,141 @@ export function storeFor(scope: 'machine' | 'project', homeDir: string, projectD
 }
 
 /**
+ * What would actually DELIVER one entry at one scope, and — when nothing at
+ * that scope would — which scope does.
+ *
+ * DERIVED, never asserted. `panda add` used to end with a sentence written
+ * beside the command ("`panda project init` puts it into every detected
+ * executor"), and for a project-scope SKILL that sentence was false: no
+ * executor has a project-scope skills root panda has verified, machine-scope
+ * projection cannot see a project-scope entry, and the entry was inert forever
+ * while the command it named exited 0. A promise can be kept syntactically and
+ * broken in substance, which is exactly what the printed-command invariant
+ * cannot catch.
+ *
+ * So nothing here knows which entry TYPE has a location at which scope. It runs
+ * `targetsFor` — the same planner `panda init` runs — and then asks each target
+ * it planned whether it would take THIS entry, in the target's own words:
+ *
+ *   - a config target is asked to merge into an EMPTY document. That call is
+ *     pure text (`nativeText: ''` is the contract's "the file does not exist
+ *     yet"), so no vendor file is read and none is written; an entry the target
+ *     cannot express comes back in `skippedEntryIds`.
+ *   - a materialise target is asked to PLAN. It describes what it would place
+ *     and never touches the destination, and where it refuses it says why.
+ *
+ * Consequence, and it is the point: giving any `ExecutorProfile` a project-scope
+ * skills root changes what `panda add` prints with no edit to the CLI and none
+ * to this function, and removing every skills root changes it the other way.
+ */
+export interface EntryDelivery {
+  readonly scope: 'machine' | 'project'
+  /** The command that projects this scope. Always one the binary dispatches. */
+  readonly command: string
+  /** Detected executors whose target for this scope would take the entry. */
+  readonly executorIds: readonly string[]
+  /** Where a target refused, in the target's own words. */
+  readonly reasons: readonly string[]
+  /**
+   * Set ONLY when nothing at this scope takes the entry and another scope
+   * would. Naming it is the difference between a dead end and a next step.
+   */
+  readonly elsewhere?: EntryDelivery
+  /**
+   * Set when panda could not work the answer out at all. The entry is already
+   * registered by the time this runs, so a failure here reports itself and
+   * never turns a completed registration into a failed command.
+   */
+  readonly undetermined?: string
+}
+
+/** The command that projects one scope. One spelling, two callers. */
+function projectCommandFor(scope: 'machine' | 'project'): string {
+  return scope === 'machine' ? 'panda init' : 'panda project init'
+}
+
+async function takenBy(
+  entry: RegistryEntry,
+  detected: readonly ExecutorDetection[],
+  scope: 'machine' | 'project',
+  homeDir: string,
+  projectDir: string,
+): Promise<{ executorIds: string[]; reasons: string[] }> {
+  const { planned, skills } = targetsFor(scope, detected, homeDir, projectDir)
+  const byKind = groupByKind([entry])
+  const executorIds: string[] = []
+  const reasons: string[] = []
+  for (const { profile, target } of [...planned, ...skills]) {
+    if (target.kind === 'materialise') {
+      const plan = await target.plan({ entries: byKind, records: [], rootPath: target.rootPath })
+      if (plan.entries.some((row) => row.entryId === entry.id)) {
+        executorIds.push(profile.executorId)
+        continue
+      }
+      for (const skip of plan.skipped ?? []) {
+        if (skip.entryId === entry.id) reasons.push(`${profile.executorId}: ${skip.reason}`)
+      }
+      continue
+    }
+    const outcome = await target.merge({ entries: byKind, records: [], nativeText: '' })
+    if (!(outcome.skippedEntryIds ?? []).includes(entry.id)) executorIds.push(profile.executorId)
+  }
+  return { executorIds, reasons }
+}
+
+/**
+ * {@link EntryDelivery} for one scope, with the OTHER scope answered too
+ * whenever this one takes the entry nowhere.
+ *
+ * Contained: a target that throws while being asked leaves `undetermined` set
+ * rather than propagating, because the caller has already registered the entry
+ * and a message is not worth losing a completed write over.
+ */
+export async function deliveryFor(
+  entry: RegistryEntry,
+  scope: 'machine' | 'project',
+  homeDir: string,
+  projectDir: string,
+): Promise<EntryDelivery> {
+  const command = projectCommandFor(scope)
+  let detected: readonly ExecutorDetection[]
+  try {
+    detected = await detectExecutors(homeDir)
+    const here = await takenBy(entry, detected, scope, homeDir, projectDir)
+    if (here.executorIds.length > 0) {
+      return { scope, command, executorIds: here.executorIds, reasons: here.reasons }
+    }
+    const otherScope = scope === 'machine' ? 'project' : 'machine'
+    const there = await takenBy(entry, detected, otherScope, homeDir, projectDir)
+    return {
+      scope,
+      command,
+      executorIds: [],
+      reasons: here.reasons,
+      ...(there.executorIds.length === 0
+        ? {}
+        : {
+            elsewhere: {
+              scope: otherScope,
+              command: projectCommandFor(otherScope),
+              executorIds: there.executorIds,
+              reasons: there.reasons,
+            },
+          }),
+    }
+  } catch (error) {
+    const failure = toTargetFailure(error)
+    return {
+      scope,
+      command,
+      executorIds: [],
+      reasons: [],
+      undetermined: `${failure.code}: ${failure.message}`,
+    }
+  }
+}
+
+/**
  * The ONLY two writes into panda's own state that `panda init` performs: its
  * directory, and the registry store document. They live here — OUTSIDE
  * `runScope`, which `init` and `diagnose` share — so the read-only caller cannot
