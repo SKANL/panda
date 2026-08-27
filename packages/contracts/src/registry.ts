@@ -5,19 +5,11 @@ import type { StandardSchemaIssue, StandardSchemaResult, StandardSchemaV1 } from
 import { isNonEmptyString, isRecord, issue } from './validation.ts'
 
 // The vocabulary panda DECLARES: every word here reaches an executor, `skill`
-// through a materialise target and `mcp-server` through a config target.
-// `profile` is the one exception and it stays deliberately — story M4.E records
-// the evidence: it carries no fields, two of the three executors express a
-// model selection as a SINGLETON scalar, and FR-21 lists Profiles beside the
-// Registry as a separate concept. Removing it could break a requirement whose
-// meaning is still unresolved, which is not the same as removing a synonym.
-export type RegistryEntryType = 'skill' | 'mcp-server' | 'profile'
+// through a materialise target and `mcp-server` through a config target. Both,
+// and only both — exactly the two kinds the projection layer renders.
+export type RegistryEntryType = 'skill' | 'mcp-server'
 
-export const REGISTRY_ENTRY_TYPES: readonly RegistryEntryType[] = [
-  'skill',
-  'mcp-server',
-  'profile',
-]
+export const REGISTRY_ENTRY_TYPES: readonly RegistryEntryType[] = ['skill', 'mcp-server']
 
 // --- Retired vocabulary --------------------------------------------------
 //
@@ -28,6 +20,16 @@ export const REGISTRY_ENTRY_TYPES: readonly RegistryEntryType[] = [
 // `--strict-config`; opencode types `tools` as an enable-map; Claude Code's
 // command-bearing keys are role-bound singletons), so an `mcp-server` entry
 // already carries exactly what a `tool` entry carried and reaches all three.
+//
+// `profile` was retired by story M4.F, on the PRD's own glossary rather than on
+// executor evidence: a Profile is "a named, versioned bundle of Registry
+// SELECTIONS", and "Bundles carry one or more Profiles". That makes it a
+// container OVER `skill` and `mcp-server`, not a peer of them, and the symptom
+// was already in this file — its path-field list was `[]` because a container
+// has no leaf field to carry. FR-21's "Registry+Profiles+SkillSources" lists
+// three things because there are three things. Bundles are Epic 5, so designing
+// Profile here would be designing the contained before the container; it
+// returns there, designed.
 //
 // RECOGNISING a retired type is NOT relaxing validation, and the difference is
 // the whole safety property. A retired entry is validated against the SAME
@@ -40,11 +42,12 @@ export const REGISTRY_ENTRY_TYPES: readonly RegistryEntryType[] = [
 //
 // Retired types are accepted at READ time only. Nothing can create one: every
 // write goes through `validateRegistryEntry`, which never admits them.
-export type RetiredEntryType = 'tool'
+export type RetiredEntryType = 'tool' | 'profile'
 
 /** What each retired type carried while it was live. Same reading as {@link REGISTRY_PATH_FIELDS}. */
 export const RETIRED_PATH_FIELDS: Readonly<Record<RetiredEntryType, readonly string[]>> = {
   tool: ['command'],
+  profile: [],
 }
 
 export const RETIRED_ENTRY_TYPES: readonly RetiredEntryType[] = Object.keys(
@@ -108,7 +111,6 @@ export interface RegistryEntry {
 export const REGISTRY_PATH_FIELDS: Readonly<Record<RegistryEntryType, readonly string[]>> = {
   skill: ['entryPath'],
   'mcp-server': ['command', 'args'],
-  profile: [],
 }
 
 // Ids that would collide with Object.prototype members or otherwise cannot

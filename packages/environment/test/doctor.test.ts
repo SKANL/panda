@@ -142,7 +142,7 @@ describe('panda doctor writes nothing', () => {
     const claudeJson = await withClaude(homeDir)
     await mkdir(join(homeDir, '.codex'), { recursive: true })
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
-    await register(homeDir, { type: 'profile', id: 'frontend' })
+    await register(homeDir, { type: 'mcp-server', id: 'frontend' })
     await initMachine({ homeDir })
     await writeFile(claudeJson, (await readFile(claudeJson, 'utf8')).replace('"ctx-server"', '"edited"'), 'utf8')
     await unreadableCodexConfig(homeDir)
@@ -270,7 +270,7 @@ describe('panda doctor reports what projecting would do', () => {
     const { homeDir } = await fixture()
     await withClaude(homeDir)
     await mkdir(join(homeDir, '.codex'), { recursive: true })
-    await register(homeDir, { type: 'profile', id: 'frontend' })
+    await register(homeDir, { type: 'mcp-server', id: 'frontend' })
 
     const diagnosis = await diagnose({ homeDir })
 
@@ -282,7 +282,7 @@ describe('panda doctor reports what projecting would do', () => {
         executorId: 'claude-code',
         filePath: join(homeDir, '.claude.json'),
         entryId: 'frontend',
-        detail: "'claude-code' has no native representation for a profile entry (correction-01 C5)",
+        detail: "the mcp-server entry declares no command, so there is nothing to render into 'claude-code'",
         resolution: expect.stringContaining('no target can express this entry'),
       },
       {
@@ -291,7 +291,7 @@ describe('panda doctor reports what projecting would do', () => {
         executorId: 'codex',
         filePath: join(homeDir, '.codex', 'config.toml'),
         entryId: 'frontend',
-        detail: "'codex' has no native representation for a profile entry (correction-01 C5)",
+        detail: "the mcp-server entry declares no command, so there is nothing to render into 'codex'",
         resolution: expect.stringContaining('no target can express this entry'),
       },
     ])
@@ -371,12 +371,14 @@ describe('the exit code is a promise a script can keep', () => {
   })
 
   it('never fails on an unprojectable entry alone, because no command can get back to 0', async () => {
-    // A `profile` entry is an ordinary thing to register and is unprojectable by
-    // every executor permanently. Reported in full (correction-01 C5), and NOT
-    // counted as a problem — an exit 1 nothing can clear is a stuck light.
+    // A half-registered `mcp-server` is an ordinary thing to hold and no target
+    // can render it. Reported in full, and NOT counted as a problem — an exit 1
+    // that only DELETING a deliberately registered entry can clear is a stuck
+    // light. (This row used to hold a `profile`, retired by story M4.F; the
+    // severity rule is about the KIND of finding, not about which word it was.)
     const { homeDir } = await fixture()
     await withClaude(homeDir)
-    await register(homeDir, { type: 'profile', id: 'frontend' })
+    await register(homeDir, { type: 'mcp-server', id: 'frontend' })
     await initMachine({ homeDir })
 
     const diagnosis = await diagnose({ homeDir })
@@ -578,16 +580,73 @@ describe('a registry holding a RETIRED entry type is diagnosed, not refused', ()
     await mkdir(join(projectDir, '.panda'), { recursive: true })
     await writeFile(
       join(projectDir, '.panda', 'registry.json'),
-      JSON.stringify({ version: 1, entries: [{ type: 'tool', id: 'rg', command: 'rg' }] }),
+      JSON.stringify({ version: 1, entries: [{ type: 'profile', id: 'frontend' }] }),
       'utf8',
     )
 
     const diagnosis = await diagnose({ homeDir, projectDir, scope: 'project' })
 
     const found = only(diagnosis, 'retired-type')
-    expect(found.resolution).toContain('To leave this state: `panda project remove tool rg`')
+    expect(found.resolution).toContain('To leave this state: `panda project remove profile frontend`')
     expect(found.filePath).toBe(join(projectDir, '.panda', 'registry.json'))
     expect(found.detail).toContain('project registry')
+  })
+
+  // Story M4.F. `profile` was retired through M4.E's machinery with no addition
+  // to it, and TWO retired words in one document is what shows the per-entry
+  // command and per-entry `filePath` are really per-entry: one table keyed by
+  // the retired word, not a branch fitted to `tool`.
+  it('reports EVERY retired entry separately, each with its own command', async () => {
+    const { root, homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(homeDir, '.panda', 'registry.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          { type: 'tool', id: 'rg', command: 'rg' },
+          { type: 'profile', id: 'frontend' },
+          { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] },
+        ],
+      }),
+      'utf8',
+    )
+    await mkdir(join(projectDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(projectDir, '.panda', 'registry.json'),
+      JSON.stringify({ version: 1, entries: [{ type: 'profile', id: 'local' }] }),
+      'utf8',
+    )
+    const before = await snapshot(root)
+
+    // `panda project doctor` reads BOTH documents, so this one diagnosis carries
+    // three retired entries across two scopes and two words.
+    const diagnosis = await diagnose({ homeDir, projectDir, scope: 'project' })
+
+    expect(
+      diagnosis.findings
+        .filter((found) => found.kind === 'retired-type')
+        .map((found) => ({ entryId: found.entryId, filePath: found.filePath, resolution: found.resolution })),
+    ).toEqual([
+      {
+        entryId: 'rg',
+        filePath: join(homeDir, '.panda', 'registry.json'),
+        resolution: expect.stringContaining('To leave this state: `panda remove tool rg`'),
+      },
+      {
+        entryId: 'frontend',
+        filePath: join(homeDir, '.panda', 'registry.json'),
+        resolution: expect.stringContaining('To leave this state: `panda remove profile frontend`'),
+      },
+      {
+        entryId: 'local',
+        filePath: join(projectDir, '.panda', 'registry.json'),
+        resolution: expect.stringContaining('To leave this state: `panda project remove profile local`'),
+      },
+    ])
+    expect(kinds(diagnosis)).not.toContain('registry-unreadable')
+    expect(await snapshot(root)).toEqual(before)
   })
 
   it('attributes a GLOBAL entry to the global document even when a PROJECT is diagnosed', async () => {
@@ -686,7 +745,7 @@ describe('every finding names what it is about', () => {
     await mkdir(join(homeDir, '.codex'), { recursive: true })
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
     await register(homeDir, { type: 'mcp-server', id: 'gone', command: 'gone-server', args: [] })
-    await register(homeDir, { type: 'profile', id: 'frontend' })
+    await register(homeDir, { type: 'mcp-server', id: 'frontend' })
     await initMachine({ homeDir })
     // Two different drifts in one file, plus a target that cannot be read at all.
     const projected = JSON.parse(await readFile(claudeJson, 'utf8')) as {

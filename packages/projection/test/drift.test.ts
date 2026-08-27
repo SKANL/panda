@@ -22,10 +22,9 @@ const ENTRIES: RegistryEntriesByKind = {
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
   ],
-  profile: [],
 }
 
-const EMPTY_REGISTRY: RegistryEntriesByKind = { skill: [], 'mcp-server': [], profile: [] }
+const EMPTY_REGISTRY: RegistryEntriesByKind = { skill: [], 'mcp-server': [] }
 
 const CLAUDE_NATIVE = `{
   "numStartups": 42,

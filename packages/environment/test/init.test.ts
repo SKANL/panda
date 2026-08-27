@@ -134,16 +134,21 @@ describe('projection results are specific per target', () => {
   })
 
   it('reports an entry no target can express, with the reason, and writes nothing for it', async () => {
-    const { homeDir } = await fixture()
-    const claudeJson = await withClaude(homeDir)
-    await register(homeDir, { type: 'profile', id: 'frontend' })
+    // PROJECT scope, and that is the whole reason this row exists: panda has no
+    // VERIFIED project-scope skills location, so a `skill` is the entry no
+    // project target can express. It used to be a machine-scope `profile`, a
+    // word story M4.F retired — and a retired entry is dropped before any target
+    // is asked about it, so it can no longer stand for "declared, not rendered".
+    const { homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    await register(homeDir, { type: 'skill', id: 'frontend', entryPath: join(homeDir, 'frontend.md') })
 
-    const result = await initMachine({ homeDir })
+    const result = await initProject({ homeDir, projectDir })
     expect(result.targets[0]?.unprojectable).toEqual([
-      { entryId: 'frontend', reason: "'claude-code' has no native representation for a profile entry (correction-01 C5)" },
+      { entryId: 'frontend', reason: "'claude-code' has no native representation for a skill entry (correction-01 C5)" },
     ])
     expect(result.targets[0]?.written).toBe(false)
-    expect(JSON.parse(await readFile(claudeJson, 'utf8'))).toEqual({})
+    await expect(stat(join(projectDir, '.mcp.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('reports an mcp-server with no command as unprojectable rather than deleting it', async () => {
@@ -365,43 +370,52 @@ describe('the facts a caller acts on are not fabricated', () => {
     // `inert` becomes "'claude-code' has no native representation for a tool
     // entry" -- panda naming a type it no longer declares, as the explanation
     // for an entry no target was ever handed.
+    //
+    // Story M4.F puts BOTH retired words on the same id, so the guard is shown
+    // to drop a retired KIND rather than the one word it was written for.
     const { homeDir } = await fixture()
     await withClaude(homeDir)
     await mkdir(join(homeDir, '.panda'), { recursive: true })
     await writeFile(
       join(homeDir, '.panda', 'registry.json'),
-      JSON.stringify({ version: 1, entries: [{ type: 'tool', id: 'inert', command: 'rg' }] }),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          { type: 'tool', id: 'inert', command: 'rg' },
+          { type: 'profile', id: 'inert' },
+          { type: 'mcp-server', id: 'inert' },
+        ],
+      }),
       'utf8',
     )
-    await register(homeDir, { type: 'profile', id: 'inert' })
 
     const result = await initMachine({ homeDir })
 
     expect(result.targets[0]?.unprojectable).toEqual([
       {
         entryId: 'inert',
-        reason: "'claude-code' has no native representation for a profile entry (correction-01 C5)",
+        reason: "the mcp-server entry declares no command, so there is nothing to render into 'claude-code'",
       },
     ])
   })
 
-  it('does not blame a projected mcp-server for a profile that shares its id', async () => {
-    const { homeDir } = await fixture()
-    const claudeJson = await withClaude(homeDir)
-    // Registry identity is `type:id`, so these are two entries. Only the profile
-    // is unprojectable; the mcp-server is written in this very run.
-    await register(homeDir, { type: 'profile', id: 'ctx' })
+  it('does not blame a projected mcp-server for a skill that shares its id', async () => {
+    const { homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    // Registry identity is `type:id`, so these are two entries. Only the skill is
+    // unprojectable at project scope; the mcp-server is written in this very run.
+    await register(homeDir, { type: 'skill', id: 'ctx', entryPath: join(homeDir, 'ctx.md') })
     await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server' })
 
-    const result = await initMachine({ homeDir })
+    const result = await initProject({ homeDir, projectDir })
     expect(result.targets[0]?.unprojectable).toEqual([
       {
         entryId: 'ctx',
-        reason: "'claude-code' has no native representation for a profile entry (correction-01 C5)",
+        reason: "'claude-code' has no native representation for a skill entry (correction-01 C5)",
       },
     ])
     expect(result.targets[0]?.written).toBe(true)
-    expect(JSON.parse(await readFile(claudeJson, 'utf8'))).toEqual({
+    expect(JSON.parse(await readFile(join(projectDir, '.mcp.json'), 'utf8'))).toEqual({
       mcpServers: { ctx: { type: 'stdio', command: 'ctx-server', args: [] } },
     })
   })

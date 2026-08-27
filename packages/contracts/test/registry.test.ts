@@ -36,7 +36,7 @@ describe('canonical registry entry envelopes', () => {
   it('rejects non-objects and missing required fields naming each one', () => {
     expect(registryEntryIssues(null)).toEqual([{ message: 'registry entry must be an object' }])
     expect(registryEntryIssues({})).toEqual([
-      { message: "'type' must be one of: skill, mcp-server, profile" },
+      { message: "'type' must be one of: skill, mcp-server" },
       { message: "'id' must be a non-empty string" },
     ])
     expect(registryEntryIssues({ type: 'mcp-server', id: '' })).toEqual([
@@ -74,7 +74,7 @@ describe('canonical registry entry envelopes', () => {
       }
     }
     // The reserved namespace is unaffected: a provider payload is not a field.
-    expect(registryEntryIssues({ type: 'profile', id: 'p', extensions: { vendor: {} } })).toEqual([])
+    expect(registryEntryIssues({ type: 'skill', id: 'p', extensions: { vendor: {} } })).toEqual([])
   })
 
   it('rejects ids that can never become a projected key', () => {
@@ -150,7 +150,6 @@ describe('write-time path normalization (declared path fields only)', () => {
   it('declares the per-type path-field allowlist', () => {
     expect(REGISTRY_PATH_FIELDS['skill']).toEqual(['entryPath'])
     expect(REGISTRY_PATH_FIELDS['mcp-server']).toEqual(['command', 'args'])
-    expect(REGISTRY_PATH_FIELDS['profile']).toEqual([])
   })
 
   it('normalizes absolute-under-home values in designated fields and expands them back losslessly', () => {
@@ -224,13 +223,21 @@ describe('write-time path normalization (declared path fields only)', () => {
 // the retired word; the frozen Ask-First clause of that story says recognising
 // it may not become a relaxation of validation, which is what the second half of
 // this block asserts one rule at a time.
+//
+// Story M4.F retired `profile` through the SAME machinery and added no mechanism
+// to do it, which is what a second member is for: a mechanism exercised once is
+// one that happens to work. Every assertion below that names `tool` has a
+// `profile` sibling, and the fieldless case is the one `tool` could not reach.
 describe('a retired entry type stays readable without weakening the envelope', () => {
   const stored = { type: 'tool', id: 'rg', command: 'rg' }
 
   it('is no longer part of the vocabulary panda declares', () => {
+    expect(REGISTRY_ENTRY_TYPES).toEqual(['skill', 'mcp-server'])
     expect(REGISTRY_ENTRY_TYPES).not.toContain('tool')
-    expect(RETIRED_ENTRY_TYPES).toEqual(['tool'])
+    expect(REGISTRY_ENTRY_TYPES).not.toContain('profile')
+    expect(RETIRED_ENTRY_TYPES).toEqual(['tool', 'profile'])
     expect(isRetiredEntryType('tool')).toBe(true)
+    expect(isRetiredEntryType('profile')).toBe(true)
     expect(isRetiredEntryType('mcp-server')).toBe(false)
     // The two lists together are what `panda remove` accepts, and the ORDER puts
     // the declared words first so a usage message reads sensibly.
@@ -238,14 +245,16 @@ describe('a retired entry type stays readable without weakening the envelope', (
   })
 
   it('is refused by every WRITE path, so nothing can create one again', () => {
-    expect(registryEntryIssues(stored)).toEqual([
-      { message: "'type' must be one of: skill, mcp-server, profile" },
-    ])
-    try {
-      validateRegistryEntry(stored)
-      expect.unreachable()
-    } catch (error) {
-      expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.registryInvalidEntry)
+    for (const type of RETIRED_ENTRY_TYPES) {
+      expect(registryEntryIssues({ type, id: 'demo' }), type).toEqual([
+        { message: "'type' must be one of: skill, mcp-server" },
+      ])
+      try {
+        validateRegistryEntry({ type, id: 'demo' })
+        expect.unreachable()
+      } catch (error) {
+        expect((error as PandaError).code, type).toBe(PANDA_ERROR_CODES.registryInvalidEntry)
+      }
     }
   })
 
@@ -253,6 +262,12 @@ describe('a retired entry type stays readable without weakening the envelope', (
     expect(registryEntryIssues(stored, true)).toEqual([])
     expect(RETIRED_PATH_FIELDS['tool']).toEqual(['command'])
     expect(pathFieldsFor('tool')).toEqual(['command'])
+    // A retired type that carried NOTHING is the case `tool` cannot exercise: a
+    // Profile is a selection OVER entries, so it never had a leaf field, and the
+    // read path has to admit the bare envelope rather than demand one.
+    expect(registryEntryIssues({ type: 'profile', id: 'frontend' }, true)).toEqual([])
+    expect(RETIRED_PATH_FIELDS['profile']).toEqual([])
+    expect(pathFieldsFor('profile')).toEqual([])
     // The one that would throw rather than misreport: a retired entry indexed
     // against the DECLARED record yields `undefined`, and iterating it dies.
     expect(pathFieldsFor('mcp-server')).toEqual(REGISTRY_PATH_FIELDS['mcp-server'])
@@ -277,11 +292,30 @@ describe('a retired entry type stays readable without weakening the envelope', (
       ['a mistyped field', { type: 'tool', id: 'rg', command: 42 }, "'command' must be a non-empty string when present"],
       ['an unknown root key', { type: 'tool', id: 'rg', model: 'sonnet' }, "'model' is not allowed at the entry root"],
       ['a non-object', 'tool', 'registry entry must be an object'],
+      ['a field on a fieldless retired type', { type: 'profile', id: 'frontend', command: 'x' }, "'command' does not belong on a 'profile' entry; a 'profile' entry carries no field beyond 'type' and 'id'"],
+      ['a fieldless retired type with a missing id', { type: 'profile' }, "'id' must be a non-empty string"],
+      ['a fieldless retired type with an unknown root key', { type: 'profile', id: 'p', model: 'sonnet' }, "'model' is not allowed at the entry root"],
     ]
     for (const [label, value, expected] of cases) {
       const issues = registryEntryIssues(value, true)
       expect(issues.length, label).toBeGreaterThan(0)
       expect(issues.map((issue) => issue.message).join('; '), label).toContain(expected)
+    }
+  })
+
+  // The hazard M4.E's own review recorded, asserted rather than reasoned about:
+  // `KNOWN_ROOT_KEYS` is derived from the union of the live AND retired field
+  // lists, so a retired type whose field no live type still declares stays a
+  // KNOWN root key. Were it hand-written, that entry would fail the
+  // unknown-root-key rule, and one failing entry fails the WHOLE store — the
+  // M4.C dead end inside the mechanism built to abolish it. Derived over the
+  // whole table so the next retirement is covered without editing this.
+  it('keeps every field a retired type carried a KNOWN root key', () => {
+    for (const [type, fields] of Object.entries(RETIRED_PATH_FIELDS)) {
+      for (const field of fields) {
+        const value = field === 'args' ? ['x'] : 'x'
+        expect(registryEntryIssues({ type, id: 'demo', [field]: value }, true), `${type}.${field}`).toEqual([])
+      }
     }
   })
 })

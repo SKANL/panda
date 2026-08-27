@@ -18,7 +18,6 @@ const ENTRIES: RegistryEntriesByKind = {
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
   ],
-  profile: [{ type: 'profile', id: 'frontend' }],
 }
 
 const CLAUDE_NATIVE = `{
@@ -94,7 +93,7 @@ describe('Claude Code — mcpServers in ~/.claude.json', () => {
 
   it('reports the kinds it does not project instead of approximating them', async () => {
     const outcome = await target.merge({ entries: ENTRIES, records: [], nativeText: CLAUDE_NATIVE })
-    expect(outcome.skippedEntryIds).toEqual(['commit-lint', 'frontend'])
+    expect(outcome.skippedEntryIds).toEqual(['commit-lint'])
   })
 
   it('reports EVERY declared kind this format has no location for, derived from the contract', async () => {
@@ -272,7 +271,7 @@ describe('a native file that is absent or holds only whitespace', () => {
     const target = createClaudeMcpTarget({ filePath: '/home/u/.claude.json' })
     for (const nativeText of ['', '   \n\t ']) {
       const outcome = await target.merge({
-        entries: { skill: [], 'mcp-server': [], profile: [] },
+        entries: { skill: [], 'mcp-server': [] },
         records: [],
         nativeText,
       })

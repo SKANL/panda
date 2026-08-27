@@ -76,10 +76,14 @@ contract already has.
 
 Story M4.E RETIRED the `tool` type: no executor has a non-MCP location for an
 identity plus an executable command, and an `mcp-server` entry already carries
-exactly what a `tool` entry carried. `panda add tool …` is a usage error, but a
-registry written by an older build is still read, still listed, and still
-emptied through the product — `panda remove` accepts a retired type, and
-`panda doctor` prints the exact spelling for each entry it finds.
+exactly what a `tool` entry carried. Story M4.F retired `profile` through the
+same door, on the PRD's own glossary: a Profile is a named bundle of registry
+SELECTIONS carried by Bundles, so it is a container over `skill` and
+`mcp-server` rather than a peer of them, and it returns designed in Epic 5.
+`panda add tool …` and `panda add profile …` are usage errors, but a registry
+written by an older build is still read, still listed, and still emptied
+through the product — `panda remove` accepts a retired type, and `panda doctor`
+prints the exact spelling for each entry it finds.
 
 `add` registers and projects nothing; it names the command that does. Coupling
 the two would make registration fail for projection reasons.

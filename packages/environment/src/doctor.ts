@@ -323,8 +323,8 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   'registry-unreadable': 'problem',
   // A PROBLEM rather than info, and the exit code is again the reason. The test
   // is whether a user can get the light back to green: `unprojectable` is info
-  // because nothing makes a `profile` entry projectable and deleting an entry
-  // the user deliberately registered is not a fix. Here one command clears it
+  // because no target can express the entry and deleting one the user
+  // deliberately registered is not a fix. Here one command clears it
   // for good, and the entry is one no current build can create — leaving it
   // silent would hide the single visible consequence of an upgrade.
   'retired-type': 'problem',
@@ -332,12 +332,13 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   'projection-warning': 'problem',
   'out-of-date': 'problem',
   'not-writable': 'problem',
-  // The one INFO kind, and the exit code is the whole reason: nothing makes a
-  // registered `tool` projectable, so the only way exit 1 here could be got back
-  // to 0 is DELETING an entry the user deliberately registered — which is not a
-  // fix. Reported in full, never counted as diagnosed. (Story M4.D gave the kind
-  // a real exit, `panda remove`; that changes how it is LEFT, not whether having
-  // it is wrong.)
+  // The one INFO kind, and the exit code is the whole reason: no target can
+  // express the entry — a `skill` reaching a config target, a `skill` at project
+  // scope, an `mcp-server` with no command — so the only way exit 1 here could
+  // be got back to 0 is DELETING an entry the user deliberately registered,
+  // which is not a fix. Reported in full, never counted as diagnosed. (Story
+  // M4.D gave the kind a real exit, `panda remove`; that changes how it is LEFT,
+  // not whether having it is wrong.)
   unprojectable: 'info',
   'target-failed': 'problem',
   // A PROBLEM, and the Codex case is why: a `# BEGIN panda-managed` block puts

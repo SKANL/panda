@@ -294,18 +294,22 @@ describe('ingestProviders', () => {
   it('rejects a RETIRED entry type before any write, naming the remaining ones', async () => {
     // Story M4.E, matrix row 5. `tool` is refused by the envelope itself rather
     // than by the port's allowlist, so the message names the vocabulary panda
-    // still has — and phase 1 raises it, so the store is never touched.
-    const harness = await makeHarness()
-    await expectRejection(
-      ingestProviders(harness.store, {
-        toolProviders: [toolProvider('catalog', [{ type: 'tool', id: 'rg', command: 'rg' }])],
-      }),
-      PANDA_ERROR_CODES.registryProviderRejected,
-      "origin 'catalog'",
-      "'rg'",
-      "'type' must be one of: skill, mcp-server, profile",
-    )
-    await expectStoreUntouched(harness)
+    // still has — and phase 1 raises it, so the store is never touched. Story
+    // M4.F adds `profile` to the same row: a provider is refused for the KIND of
+    // word it supplied, and the ingest port grew nothing to say so.
+    for (const entry of [{ type: 'tool', id: 'rg', command: 'rg' }, { type: 'profile', id: 'rg' }]) {
+      const harness = await makeHarness()
+      await expectRejection(
+        ingestProviders(harness.store, {
+          toolProviders: [toolProvider('catalog', [entry])],
+        }),
+        PANDA_ERROR_CODES.registryProviderRejected,
+        "origin 'catalog'",
+        "'rg'",
+        "'type' must be one of: skill, mcp-server",
+      )
+      await expectStoreUntouched(harness)
+    }
   })
 
   it('rejects an entry type the port may not contribute, in either direction', async () => {

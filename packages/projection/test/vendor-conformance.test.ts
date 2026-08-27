@@ -101,7 +101,6 @@ const SAMPLE_REGISTRY: RegistryEntriesByKind = {
   'mcp-server': [
     { type: 'mcp-server', id: SAMPLE_ENTRY.id, command: SAMPLE_ENTRY.command, args: SAMPLE_ENTRY.args },
   ],
-  profile: [],
 }
 
 /** Keys a trait record emits that its vendor's own source does not declare. */

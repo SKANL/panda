@@ -22,7 +22,6 @@ const ENTRIES: RegistryEntriesByKind = {
   'mcp-server': [
     { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
   ],
-  profile: [],
 }
 
 function record(overrides: Partial<ProjectionLedgerRecord> = {}): ProjectionLedgerRecord {

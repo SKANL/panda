@@ -624,13 +624,14 @@ describe('panda doctor', () => {
   })
 
   it('exits 0 on a finding that is informational, because no command clears it', async () => {
-    // A registered `profile` is unprojectable by every executor, permanently. It
-    // is reported in full and does not fail the run, or the exit code is a light
-    // that never goes out.
+    // A half-registered `mcp-server` is expressible by no target: it is reported
+    // in full and does not fail the run, or the exit code is a light that never
+    // goes out. (This row held a `profile` until story M4.F retired that word; a
+    // retired entry is a `retired-type` finding, which is the exit-1 row below.)
     const homeDir = await tempCwd()
     await writeFile(join(homeDir, '.claude.json'), '{}\n')
     const store = new RegistryStore({ homeDir })
-    await store.register({ type: 'profile', id: 'frontend' }, 'global')
+    await store.register({ type: 'mcp-server', id: 'frontend' }, 'global')
     await store.dispose()
     expect(await runPanda(['init'], { ...capture(), homeDir })).toBe(0)
 

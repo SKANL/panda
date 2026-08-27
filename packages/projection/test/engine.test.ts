@@ -23,7 +23,11 @@ async function makeHome(): Promise<string> {
 }
 
 const ENTRIES = [
-  { type: 'profile', id: 'inert' },
+  // A kind no MCP target expresses, so the skipped path is covered everywhere
+  // this fixture is projected. It was a `profile` until story M4.F retired that
+  // word, and a RETIRED kind is dropped before any target sees it — so it could
+  // not go on standing for "declared, but not rendered here".
+  { type: 'skill', id: 'inert', entryPath: '~/.panda/skills/inert.ts' },
   { type: 'mcp-server', id: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
 ] satisfies RegistryEntry[]
 
@@ -34,9 +38,8 @@ function ledgerIn(homeDir: string): ProjectionLedger {
 describe('groupByKind', () => {
   it('groups registry entries by kind', () => {
     expect(groupByKind(ENTRIES)).toEqual({
-      skill: [],
+      skill: [ENTRIES[0]],
       'mcp-server': [ENTRIES[1]],
-      profile: [{ type: 'profile', id: 'inert' }],
     })
   })
 
@@ -44,8 +47,13 @@ describe('groupByKind', () => {
     // Not decoration: this is the ONLY thing standing between a stored `tool`
     // entry and a target being asked to render a word panda no longer declares.
     // The guard said so in a comment and nothing measured it.
-    const retired = [{ type: 'tool', id: 'rg', command: 'rg' } as unknown as RegistryEntry]
-    expect(groupByKind(retired)).toEqual({ skill: [], 'mcp-server': [], profile: [] })
+    // Both retired words, because a guard fitted to one member is a guard that
+    // happens to work: `profile` was retired by M4.F through the same door.
+    const retired = [
+      { type: 'tool', id: 'rg', command: 'rg' },
+      { type: 'profile', id: 'frontend' },
+    ] as unknown as RegistryEntry[]
+    expect(groupByKind(retired)).toEqual({ skill: [], 'mcp-server': [] })
   })
 
   it('skips entries with unknown kinds instead of crashing', () => {
@@ -53,7 +61,6 @@ describe('groupByKind', () => {
     expect(groupByKind([...corrupted])).toEqual({
       skill: [],
       'mcp-server': [],
-      profile: [],
     })
   })
 })
@@ -193,12 +200,12 @@ describe('runProjection', () => {
     const run = await runProjection({
       entries: groupByKind([
         ...ENTRIES,
-        { type: 'profile', id: 'frontend-profile' },
+        { type: 'skill', id: 'frontend-skill', entryPath: '~/.panda/skills/frontend.ts' },
       ] satisfies RegistryEntry[]),
       targets: [createClaudeMcpTarget({ filePath: join(homeDir, '.claude.json') })],
       ledger: ledgerIn(homeDir),
     })
-    expect(run.results[0]!.skippedEntryIds).toEqual(['frontend-profile', 'inert'])
+    expect(run.results[0]!.skippedEntryIds).toEqual(['frontend-skill', 'inert'])
   })
 
   it('keeps a failed target’s previous claims instead of forgetting what it wrote', async () => {
@@ -356,7 +363,6 @@ describe('unprojectable entry ids', () => {
       'mcp-server': [
         { type: 'mcp-server', id: '__proto__', command: 'evil' } as unknown as RegistryEntry,
       ],
-      profile: [],
     }
     const run = await runProjection({
       entries: poisoned,

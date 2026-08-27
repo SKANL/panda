@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REGISTRY_ENTRY_TYPES, REMOVABLE_ENTRY_TYPES } from '@panda/environment'
+import { REGISTRY_ENTRY_TYPES, REMOVABLE_ENTRY_TYPES, RETIRED_ENTRY_TYPES } from '@panda/environment'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 
@@ -90,12 +90,15 @@ describe('panda add', () => {
     })
   })
 
-  it('needs no field flag for a type that has no fields', async () => {
+  it('needs no field flag, because every field flag is optional', async () => {
+    // This row used to add a `profile`, the one declared type that carried no
+    // field at all — story M4.F retired that word, so the case it stood for is
+    // now an `mcp-server` whose optional fields were simply not given.
     const homeDir = await tempDir()
     const io = capture()
-    const code = await runPanda(['add', 'profile', 'p'], { ...io, homeDir })
+    const code = await runPanda(['add', 'mcp-server', 'p'], { ...io, homeDir })
     expect(code).toBe(0)
-    expect(await storedEntries(homeDir)).toEqual([{ type: 'profile', id: 'p' }])
+    expect(await storedEntries(homeDir)).toEqual([{ type: 'mcp-server', id: 'p' }])
   })
 
   it('lets the CONTRACT refuse a field that does not belong on the type, and holds no table of its own', async () => {
@@ -125,7 +128,9 @@ describe('panda add', () => {
       const code = await runPanda(argv, { ...io, homeDir })
       expect(code, argv.join(' ')).toBe(2)
       const stderr = io.err.join('\n')
-      for (const type of ['skill', 'mcp-server', 'profile']) {
+      // Derived: a word leaving the vocabulary must not leave a usage message
+      // advertising it, which is the stale-help defect in its argv spelling.
+      for (const type of REGISTRY_ENTRY_TYPES) {
         expect(stderr, argv.join(' ')).toContain(type)
       }
     }
@@ -151,7 +156,7 @@ describe('panda add', () => {
       JSON.stringify({ pid: process.pid, host: 'test', acquiredAt: new Date().toISOString(), token: 'held' }),
     )
     const io = capture()
-    const code = await runPanda(['add', 'profile', 'p'], { ...io, homeDir })
+    const code = await runPanda(['add', 'mcp-server', 'p'], { ...io, homeDir })
     expect(code).toBe(2)
     const stderr = io.err.join('\n')
     expect(stderr).toContain('PANDA_REGISTRY_CONTENTION')
@@ -283,9 +288,9 @@ describe('what panda remove reports', () => {
     // one printed sentence the invariant test cannot check: it is a claim about
     // what a command DOES, not about whether it exists.
     const homeDir = await tempDir()
-    expect(await runPanda(['add', 'profile', 'p'], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['add', 'mcp-server', 'p'], { ...capture(), homeDir })).toBe(0)
     const io = capture()
-    expect(await runPanda(['remove', 'profile', 'p'], { ...io, homeDir })).toBe(0)
+    expect(await runPanda(['remove', 'mcp-server', 'p'], { ...io, homeDir })).toBe(0)
     const stderr = io.err.join(String.fromCharCode(10))
     expect(stderr).toContain('removes it from every location panda still owns')
     expect(stderr).toContain('reports the ones it no longer recognises rather than deleting them')
@@ -440,14 +445,14 @@ describe('panda remove', () => {
   it('reads the scope it is writing, so an entry inherited from the machine is not reported as removed', async () => {
     const homeDir = await tempDir()
     const projectDir = await tempDir()
-    expect(await runPanda(['add', 'profile', 'shared'], { ...capture(), homeDir })).toBe(0)
+    expect(await runPanda(['add', 'mcp-server', 'shared'], { ...capture(), homeDir })).toBe(0)
     const io = capture()
     // Visible to the project through inheritance, and NOT stored there: the
     // merged view would have reported a removal that did not happen.
-    const code = await runPanda(['project', 'remove', 'profile', 'shared', projectDir], { ...io, homeDir })
+    const code = await runPanda(['project', 'remove', 'mcp-server', 'shared', projectDir], { ...io, homeDir })
     expect(code).toBe(1)
     expect(io.err.join('\n')).toContain('nothing was removed')
-    expect(await storedEntries(homeDir)).toEqual([{ type: 'profile', id: 'shared' }])
+    expect(await storedEntries(homeDir)).toEqual([{ type: 'mcp-server', id: 'shared' }])
   })
 })
 
@@ -547,7 +552,7 @@ describe('a retired entry type through the binary', () => {
     const io = capture()
     expect(await runPanda(['add', 'tool', 'rg', '--command', 'rg'], { ...io, homeDir })).toBe(2)
     const stderr = io.err.join('\n')
-    for (const type of ['skill', 'mcp-server', 'profile']) expect(stderr).toContain(type)
+    for (const type of REGISTRY_ENTRY_TYPES) expect(stderr).toContain(type)
     // And it points at the one command that DOES take the word, so a user
     // upgrading is not told the entry they already have is unreachable.
     expect(stderr).toContain('`panda remove tool <id>`')
@@ -619,6 +624,61 @@ describe('a retired entry type through the binary', () => {
     const after = capture()
     expect(await runPanda(['list'], { ...after, homeDir })).toBe(0)
     expect(after.err.join('\n')).not.toContain('tool')
+  })
+
+  // Story M4.F. The second retired word is what shows the machinery is keyed by
+  // the retired vocabulary rather than fitted to `tool`: every row below is
+  // derived over `RETIRED_ENTRY_TYPES`, or holds both words at once.
+  it('refuses EVERY retired word at `add`, in the same words, with no branch on which', async () => {
+    for (const type of RETIRED_ENTRY_TYPES) {
+      const homeDir = await tempDir()
+      const io = capture()
+      expect(await runPanda(['add', type, 'x'], { ...io, homeDir }), type).toBe(2)
+      const stderr = io.err.join('\n')
+      expect(stderr, type).toContain('RETIRED entry type')
+      for (const live of REGISTRY_ENTRY_TYPES) expect(stderr, type).toContain(live)
+      expect(stderr, type).toContain(`\`panda remove ${type} <id>\``)
+      await expect(storedEntries(homeDir)).rejects.toMatchObject({ code: 'ENOENT' })
+    }
+  })
+
+  it('lists BOTH retired entries and clears each with its own printed command', async () => {
+    // Matrix rows 3 and 4: a registry holding both retired words stays readable,
+    // `panda list` shows both, and each entry's command clears that entry and
+    // leaves the other untouched. A mechanism with one table keyed by the word
+    // passes this; one with a branch per word does not.
+    const homeDir = await tempDir()
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(
+      join(homeDir, '.panda', 'registry.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          entries: [
+            { type: 'tool', id: 'rg', command: 'rg' },
+            { type: 'profile', id: 'frontend' },
+            { type: 'skill', id: 'demo', entryPath: './d.md' },
+          ],
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+
+    const listed = capture()
+    expect(await runPanda(['list'], { ...listed, homeDir })).toBe(0)
+    expect(listed.err.join('\n')).toContain('global · tool · rg')
+    expect(listed.err.join('\n')).toContain('global · profile · frontend')
+
+    expect(await runPanda(['remove', 'tool', 'rg'], { ...capture(), homeDir })).toBe(0)
+    expect(await storedEntries(homeDir)).toEqual([
+      { type: 'profile', id: 'frontend' },
+      { type: 'skill', id: 'demo', entryPath: './d.md' },
+    ])
+
+    expect(await runPanda(['remove', 'profile', 'frontend'], { ...capture(), homeDir })).toBe(0)
+    expect(await storedEntries(homeDir)).toEqual([{ type: 'skill', id: 'demo', entryPath: './d.md' }])
   })
 
   it('says so and exits non-zero when the retired entry is already gone', async () => {

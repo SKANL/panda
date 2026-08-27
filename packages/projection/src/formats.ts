@@ -846,7 +846,7 @@ function byId(a: { id: string }, b: { id: string }): number {
 
 /**
  * Reduces the registry to the MCP servers every target can express, in stable
- * id order. Kinds this story does not project (tools, skills, profiles) and MCP
+ * id order. Kinds this story does not project (skills) and MCP
  * entries with no command are REPORTED through skippedEntryIds rather than
  * approximated into something no executor reads — Stories 2.9 and 2.10 own
  * those concepts. `present` is EVERY mcp-server id the registry holds,

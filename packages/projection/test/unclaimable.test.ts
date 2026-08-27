@@ -15,7 +15,6 @@ import { createCodexConfigTarget } from '../src/targets/codex-config.ts'
 const ENTRIES: RegistryEntriesByKind = {
   skill: [],
   'mcp-server': [{ type: 'mcp-server', id: 'ctx', command: 'npx', args: ['-y', 'ctx'] }],
-  profile: [],
 }
 
 const codex = () => createCodexConfigTarget({ filePath: '/home/u/.codex/config.toml' })
@@ -56,7 +55,7 @@ describe('a Codex config that already defines the server', () => {
     // is how a config loses a server the user still wants.
     const native = '[mcp_servers]\nctx = { command = "mine" }\n'
     const outcome = await codex().merge({
-      entries: { skill: [], 'mcp-server': [], profile: [] },
+      entries: { skill: [], 'mcp-server': [] },
       records: [
         {
           targetId: 'codex-config',
