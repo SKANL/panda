@@ -420,7 +420,7 @@ async function runInit(
       if (undetermined !== undefined) err(undetermined)
       return 2
     }
-    const failed = result.targets.filter((target) => target.error !== undefined)
+    const failed = [...result.targets, ...result.skills].filter((target) => target.error !== undefined)
     for (const target of failed) err(`${target.executorId}: ${target.error?.code}: ${target.error?.message}`)
     return failed.length > 0 ? 1 : 0
   } catch (error) {
@@ -439,7 +439,7 @@ async function runInit(
  */
 function reportDiagnostics(result: InitResult, err: (line: string) => void): void {
   for (const warning of result.warnings) err(`${warning.code}: ${warning.detail}`)
-  for (const target of result.targets) {
+  for (const target of [...result.targets, ...result.skills]) {
     for (const entry of target.drift) {
       err(`${target.executorId}: drift (${entry.kind}) at ${entry.location}: ${entry.detail}`)
     }

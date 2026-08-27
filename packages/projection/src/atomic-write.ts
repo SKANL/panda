@@ -54,18 +54,30 @@ async function writeTargetOf(path: string): Promise<string> {
   }
 }
 
-export async function atomicWriteText(path: string, contents: string): Promise<void> {
+async function atomicWrite(path: string, contents: string | Uint8Array): Promise<void> {
   const target = await writeTargetOf(path)
   const dir = dirname(target)
   await mkdir(dir, { recursive: true })
   const mode = await priorMode(target)
   const tempPath = join(dir, `${basename(target)}.${randomUUID()}.tmp`)
   try {
-    await writeFile(tempPath, contents, 'utf8')
+    // `utf8` applies to the string form alone; a Uint8Array is written verbatim,
+    // which is what a materialised file needs — panda copies bytes it did not
+    // author and must not re-encode them.
+    await writeFile(tempPath, contents, typeof contents === 'string' ? 'utf8' : undefined)
     if (mode !== undefined) await chmod(tempPath, mode)
     await rename(tempPath, target)
   } catch (error) {
     await unlink(tempPath).catch(() => {})
     throw error
   }
+}
+
+export async function atomicWriteText(path: string, contents: string): Promise<void> {
+  await atomicWrite(path, contents)
+}
+
+/** The same discipline for a file panda COPIES rather than renders. */
+export async function atomicWriteBytes(path: string, contents: Uint8Array): Promise<void> {
+  await atomicWrite(path, contents)
 }

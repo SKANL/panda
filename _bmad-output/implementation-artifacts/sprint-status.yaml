@@ -79,7 +79,8 @@ development_status:
   m3a-distribution-and-a-falsifiable-sdk-proof: done
   m3b-plugins-mount-for-real: done
   m3c-the-token-budget-stops-being-a-boolean: done
-  2-9-filesystem-materialisation-targets: backlog
+  m4b-skills-materialise-where-executors-find-them: done           # implements 2.9
+  2-9-filesystem-materialisation-targets: superseded  # re-specified as m4b onto verified locations
   2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b
   2-11-remediate-blocks-written-by-a-previous-build: backlog
   epic-2-retrospective: optional

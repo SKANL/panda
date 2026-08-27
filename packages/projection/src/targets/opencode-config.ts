@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ProjectionTarget } from '@panda/contracts'
+import type { ProjectionConfigTarget } from '@panda/contracts'
 import { createProjectionTargetFromTraits } from '../formats.ts'
 import type { ProjectionTargetTraits, TraitTargetOptions } from '../formats.ts'
 
@@ -24,6 +24,6 @@ export const OPENCODE_CONFIG_TRAITS: ProjectionTargetTraits = {
 
 export type OpenCodeConfigTargetOptions = TraitTargetOptions
 
-export function createOpenCodeConfigTarget(options: OpenCodeConfigTargetOptions = {}): ProjectionTarget {
+export function createOpenCodeConfigTarget(options: OpenCodeConfigTargetOptions = {}): ProjectionConfigTarget {
   return createProjectionTargetFromTraits(OPENCODE_CONFIG_TRAITS, options)
 }

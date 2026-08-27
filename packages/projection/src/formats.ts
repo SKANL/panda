@@ -5,7 +5,7 @@ import type {
   ProjectionMcpEntry,
   ProjectionMergeOutcome,
   ProjectionMergeRequest,
-  ProjectionTarget,
+  ProjectionConfigTarget,
   RegistryEntriesByKind,
   RegistryEntry,
 } from '@panda/contracts'
@@ -927,7 +927,7 @@ function mergeNative(
 export function createProjectionTargetFromTraits(
   traits: ProjectionTargetTraits,
   options: TraitTargetOptions = {},
-): ProjectionTarget {
+): ProjectionConfigTarget {
   if (FORMAT_STRATEGIES[traits.fileFormat] === undefined) {
     throw new PandaError(
       PANDA_ERROR_CODES.projectionTraitsInvalid,

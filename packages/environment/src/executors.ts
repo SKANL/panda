@@ -1,13 +1,19 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ProjectionTarget } from '@panda/contracts'
+import type { ProjectionConfigTarget, ProjectionMaterialiseTarget } from '@panda/contracts'
 import {
   CLAUDE_MCP_TARGET_ID,
+  CLAUDE_SKILLS_TARGET_ID,
   CODEX_CONFIG_TARGET_ID,
+  CODEX_SKILLS_TARGET_ID,
   OPENCODE_CONFIG_TARGET_ID,
+  OPENCODE_SKILLS_TARGET_ID,
   createClaudeMcpTarget,
+  createClaudeSkillsTarget,
   createCodexConfigTarget,
+  createCodexSkillsTarget,
   createOpenCodeConfigTarget,
+  createOpenCodeSkillsTarget,
 } from '@panda/projection'
 
 // Which executors this machine has, and where panda projects into each of them.
@@ -37,6 +43,21 @@ import {
 // pinning a directory precisely because it is read from the project root too.
 // Codex has no project-scope configuration, so panda invents none: `project
 // init` reports it as skipped rather than writing somewhere Codex never reads.
+//
+// SKILLS are a second surface with the same rule and a harder proof. Each
+// `machineSkills` root mirrors the skills target's own `defaultRoot` — asserted
+// against the SHIPPED trait records in `test/skills.test.ts`, which is the link
+// that makes the live proof carry: that proof measures `defaultRoot`, panda
+// writes at `machineSkills(homeDir)`, and without an assertion tying the two
+// strings together the chain from "the binary confirmed this location" to "this
+// is where panda writes" is broken. Every one of the three roots was verified BY
+// EXECUTION against the real binary under an injected
+// home — see the comment on `@panda/projection`'s `targets/skills.ts` for what
+// each executor was asked and what it answered. An executor with no verified
+// root would carry `machineSkills: undefined` and go on reporting its skills
+// unprojectable; that branch is exercised at project scope, where none of the
+// three has a verified location because materialising into a project is
+// Ask-First in this story's Boundaries.
 
 /**
  * One filesystem location consulted for an executor, and what was found.
@@ -72,7 +93,20 @@ export interface ExecutorProfile {
   readonly machineConfig: (homeDir: string) => string
   /** Absent when the vendor has no verified project-scope configuration. */
   readonly projectConfig: ((projectDir: string) => string) | undefined
-  readonly createTarget: (filePath: string) => ProjectionTarget
+  readonly createTarget: (filePath: string) => ProjectionConfigTarget
+  /**
+   * The skills root panda has VERIFIED this executor reads, or `undefined`.
+   *
+   * Undefined is the honest answer, not a gap: an executor whose skills
+   * location panda has not proven by running the real binary reports its skills
+   * unprojectable, exactly as before this story. There is no project-scope
+   * entry here at all for the same reason — materialising into a project scope
+   * is Ask-First in this story's Boundaries, so `panda project init` reports
+   * skills unprojectable rather than inventing a second location.
+   */
+  readonly machineSkills: ((homeDir: string) => string) | undefined
+  readonly skillsTargetId: string | undefined
+  readonly createSkillsTarget: ((rootPath: string) => ProjectionMaterialiseTarget) | undefined
 }
 
 export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
@@ -87,6 +121,9 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineConfig: (homeDir) => join(homeDir, '.claude.json'),
     projectConfig: (projectDir) => join(projectDir, '.mcp.json'),
     createTarget: (filePath) => createClaudeMcpTarget({ filePath }),
+    machineSkills: (homeDir) => join(homeDir, '.claude', 'skills'),
+    skillsTargetId: CLAUDE_SKILLS_TARGET_ID,
+    createSkillsTarget: (rootPath) => createClaudeSkillsTarget({ rootPath }),
   },
   {
     executorId: 'codex',
@@ -100,6 +137,9 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineConfig: (homeDir) => join(homeDir, '.codex', 'config.toml'),
     projectConfig: undefined,
     createTarget: (filePath) => createCodexConfigTarget({ filePath }),
+    machineSkills: (homeDir) => join(homeDir, '.codex', 'skills'),
+    skillsTargetId: CODEX_SKILLS_TARGET_ID,
+    createSkillsTarget: (rootPath) => createCodexSkillsTarget({ rootPath }),
   },
   {
     executorId: 'opencode',
@@ -111,6 +151,9 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineConfig: (homeDir) => join(homeDir, '.config', 'opencode', 'opencode.json'),
     projectConfig: (projectDir) => join(projectDir, 'opencode.json'),
     createTarget: (filePath) => createOpenCodeConfigTarget({ filePath }),
+    machineSkills: (homeDir) => join(homeDir, '.config', 'opencode', 'skills'),
+    skillsTargetId: OPENCODE_SKILLS_TARGET_ID,
+    createSkillsTarget: (rootPath) => createOpenCodeSkillsTarget({ rootPath }),
   },
 ]
 

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import type { ProjectionLedgerRecord, ProjectionTarget, RegistryEntriesByKind } from '@panda/contracts'
+import type { ProjectionConfigTarget, ProjectionLedgerRecord, RegistryEntriesByKind } from '@panda/contracts'
 import { runProjection } from '../src/engine.ts'
 import { ProjectionLedger } from '../src/ledger.ts'
 import { createClaudeMcpTarget } from '../src/targets/claude-mcp.ts'
@@ -46,10 +46,10 @@ model = "gpt-5-codex"
 url = "https://mcp.linear.app/sse"
 `
 
-const claude = (): ProjectionTarget => createClaudeMcpTarget({ filePath: '/home/u/.claude.json' })
-const codex = (): ProjectionTarget => createCodexConfigTarget({ filePath: '/home/u/.codex/config.toml' })
+const claude = (): ProjectionConfigTarget => createClaudeMcpTarget({ filePath: '/home/u/.claude.json' })
+const codex = (): ProjectionConfigTarget => createCodexConfigTarget({ filePath: '/home/u/.codex/config.toml' })
 
-async function project(target: ProjectionTarget, nativeText: string) {
+async function project(target: ProjectionConfigTarget, nativeText: string) {
   return target.merge({ entries: ENTRIES, records: [], nativeText })
 }
 

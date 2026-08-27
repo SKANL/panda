@@ -5,7 +5,7 @@ export type {
   ProjectionRun,
   RunProjectionOptions,
 } from './engine.ts'
-export { ProjectionLedger, hashOwnedText, resolveOwnedPath, sameOwnedPath } from './ledger.ts'
+export { ProjectionLedger, hashOwnedBytes, hashOwnedText, resolveOwnedPath, sameOwnedPath } from './ledger.ts'
 export type {
   ProjectionLedgerOptions,
   ProjectionLedgerRead,
@@ -29,3 +29,17 @@ export {
   OPENCODE_CONFIG_TRAITS,
 } from './targets/opencode-config.ts'
 export type { OpenCodeConfigTargetOptions } from './targets/opencode-config.ts'
+export {
+  CLAUDE_SKILLS_TARGET_ID,
+  CLAUDE_SKILLS_TRAITS,
+  CODEX_SKILLS_TARGET_ID,
+  CODEX_SKILLS_TRAITS,
+  OPENCODE_SKILLS_TARGET_ID,
+  OPENCODE_SKILLS_TRAITS,
+  SKILL_ENTRY_FILE,
+  createClaudeSkillsTarget,
+  createCodexSkillsTarget,
+  createOpenCodeSkillsTarget,
+  createSkillsTargetFromTraits,
+} from './targets/skills.ts'
+export type { SkillsTargetOptions, SkillsTargetTraits } from './targets/skills.ts'

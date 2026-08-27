@@ -32,10 +32,11 @@ export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDet
 // POPULATE the registry this projects from, READ a result, and OBSERVE the run.
 //
 // The closure is NOT total, and saying so is cheaper than a claim that rots:
-// `RegistryStoreOptions.onStaleLockBreak` takes a `StaleLockBreak` and
-// `ExecutorProfile.createTarget` returns a `ProjectionTarget`, neither of which
-// is re-exported. Both are reachable only by a consumer implementing one of
-// those callbacks; the ordinary path needs neither. Recorded in
+// `RegistryStoreOptions.onStaleLockBreak` takes a `StaleLockBreak`,
+// `ExecutorProfile.createTarget` returns a `ProjectionConfigTarget` and
+// `ExecutorProfile.createSkillsTarget` a `ProjectionMaterialiseTarget`, none of
+// which is re-exported. All three are reachable only by a consumer implementing
+// one of those callbacks; the ordinary path needs none of them. Recorded in
 // deferred-work.md rather than fixed by widening the surface on speculation.
 export { RegistryStore } from '@panda/registry'
 export type { RegistryStoreOptions } from '@panda/registry'

@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ProjectionTarget } from '@panda/contracts'
+import type { ProjectionConfigTarget } from '@panda/contracts'
 import { createProjectionTargetFromTraits } from '../formats.ts'
 import type { ProjectionTargetTraits, TraitTargetOptions } from '../formats.ts'
 
@@ -28,6 +28,6 @@ export const CLAUDE_MCP_TRAITS: ProjectionTargetTraits = {
 
 export type ClaudeMcpTargetOptions = TraitTargetOptions
 
-export function createClaudeMcpTarget(options: ClaudeMcpTargetOptions = {}): ProjectionTarget {
+export function createClaudeMcpTarget(options: ClaudeMcpTargetOptions = {}): ProjectionConfigTarget {
   return createProjectionTargetFromTraits(CLAUDE_MCP_TRAITS, options)
 }

@@ -5,7 +5,7 @@ import { PANDA_ERROR_CODES } from '@panda/contracts'
 import type { DriftEntry, DriftKind, PandaErrorCode, ProjectionWarning } from '@panda/contracts'
 import type { ExecutorDetection } from './executors.ts'
 import { noExecutorsDetected, runScope, scopeDirectory } from './init.ts'
-import type { SkippedExecutor, TargetFailure, UnprojectableEntry } from './init.ts'
+import type { ScopeTarget, SkippedExecutor, TargetFailure, UnprojectableEntry } from './init.ts'
 
 // `panda doctor`: what `panda init` / `panda project init` WOULD do, and every
 // problem panda can see, with nothing written.
@@ -117,7 +117,7 @@ const RESOLUTION: Record<DiagnosisFindingKind, string> = {
   'registry-unreadable': 'panda never replaces a registry document it cannot read; `panda init` fails on it and projects nothing, so no entry is deleted from any vendor file',
   'ledger-damaged': 'panda leaves the ledger exactly as it is and claims nothing it cannot read; until it is readable again panda reports its own entries as foreign and touches none of them',
   'projection-warning': 'panda surfaced this from the projection run and resolves none of it by itself; `panda init` runs through the same condition',
-  'out-of-date': 'projecting rewrites this file to match the registry. Panda checked the location is writable, which is weaker than a guarantee: an ACL, a mount option or another process holding the file can still refuse the write, and on Windows that check sees only the read-only attribute',
+  'out-of-date': 'projecting makes this location match the registry — for a skills root that can mean REMOVING a tree panda wrote, not only writing one. Panda checked the location is writable, which is weaker than a guarantee: an ACL, a mount option or another process holding it can still refuse the write, and on Windows that check sees only the read-only attribute',
   'not-writable': 'panda cannot write here, so projecting fails on this location and changes nothing rather than half-applying it',
   unprojectable: 'no target can express this entry, so projecting again changes nothing for it; it stays out of this configuration',
   'target-failed': 'projecting again fails the same way for this executor and leaves its file untouched; the other executors are unaffected',
@@ -188,6 +188,13 @@ export interface Diagnosis {
   /** EVERY executor panda knows, found or not, with the paths consulted. */
   readonly detected: readonly ExecutorDetection[]
   readonly targets: readonly DiagnosisTarget[]
+  /**
+   * The same reading for each VERIFIED skills root. Separate from `targets`
+   * because `filePath` there names a file and here names a directory tree, and
+   * because a skills root is the one location where "projecting would change
+   * this" can mean panda REMOVING something.
+   */
+  readonly skills: readonly DiagnosisTarget[]
   readonly skipped: readonly SkippedExecutor[]
   readonly warnings: readonly ProjectionWarning[]
   /** Empty means clean. `severity: 'problem'` is what a non-zero exit answers for. */
@@ -331,7 +338,10 @@ async function findingsFor(
   // changed or not, so an unwritable ledger fails a run that would otherwise be
   // a no-op — and inspection cannot discover that by failing, because the write
   // it would fail on is the one this mode skips.
-  if (diagnosis.targets.length > 0 && (await writableLocation(diagnosis.ledgerPath)) === false) {
+  if (
+    diagnosis.targets.length + diagnosis.skills.length > 0 &&
+    (await writableLocation(diagnosis.ledgerPath)) === false
+  ) {
     findings.push(
       finding(
         'not-writable',
@@ -340,7 +350,10 @@ async function findingsFor(
       ),
     )
   }
-  for (const target of diagnosis.targets) {
+  // Config files first, then skills roots — the same catalogue order both
+  // arrays already carry, so one executor's two surfaces read together.
+  for (const target of [...diagnosis.targets, ...diagnosis.skills]) {
+    const tree = diagnosis.skills.includes(target)
     const at = { executorId: target.executorId, filePath: target.filePath }
     if (target.error !== undefined) {
       findings.push(finding('target-failed', `${target.error.code}: ${target.error.message}`, at))
@@ -349,12 +362,21 @@ async function findingsFor(
       // Reported as one or the other, never both: `out-of-date` promises a write
       // panda would perform, and at a location panda cannot write that promise
       // is false forever — which is the one thing this command may not say.
+      //
+      // A skills ROOT is probed as itself rather than through its parent: the
+      // writer creates the root when it is absent, so the nearest existing
+      // ancestor is what decides, and `permitsWrite` walks up to find it. A
+      // config file is probed through its DIRECTORY, because that is where the
+      // temp-file-then-rename actually lands.
+      const writable = tree ? await permitsWrite(target.filePath) : await writableLocation(target.filePath)
       findings.push(
-        (await writableLocation(target.filePath)) === false
+        writable === false
           ? finding('not-writable', `panda would rewrite '${target.filePath}' and the location is not writable`, at)
           : finding(
               'out-of-date',
-              `the bytes in '${target.filePath}' differ from what projecting would produce`,
+              tree
+                ? `the skills panda materialises under '${target.filePath}' differ from what projecting would produce`
+                : `the bytes in '${target.filePath}' differ from what projecting would produce`,
               at,
             ),
       )
@@ -367,6 +389,18 @@ async function findingsFor(
     }
   }
   return findings
+}
+
+function toDiagnosisTarget(row: ScopeTarget): DiagnosisTarget {
+  return {
+    executorId: row.executorId,
+    targetId: row.targetId,
+    filePath: row.filePath,
+    wouldWrite: row.changed,
+    drift: row.drift,
+    unprojectable: row.unprojectable,
+    ...(row.error === undefined ? {} : { error: row.error }),
+  }
 }
 
 /**
@@ -404,15 +438,8 @@ export async function diagnose(options: DiagnoseOptions = {}): Promise<Diagnosis
     detected: report.detected,
     // Named field by field rather than spread, so this payload's key order is
     // authored and pinned instead of inherited from a rest object.
-    targets: report.targets.map((row) => ({
-      executorId: row.executorId,
-      targetId: row.targetId,
-      filePath: row.filePath,
-      wouldWrite: row.changed,
-      drift: row.drift,
-      unprojectable: row.unprojectable,
-      ...(row.error === undefined ? {} : { error: row.error }),
-    })),
+    targets: report.targets.map(toDiagnosisTarget),
+    skills: report.skills.map(toDiagnosisTarget),
     skipped: report.skipped,
     warnings: report.warnings,
   }

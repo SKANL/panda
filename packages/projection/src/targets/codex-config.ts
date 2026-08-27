@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ProjectionTarget } from '@panda/contracts'
+import type { ProjectionConfigTarget } from '@panda/contracts'
 import { createProjectionTargetFromTraits } from '../formats.ts'
 import type { ProjectionTargetTraits, TraitTargetOptions } from '../formats.ts'
 
@@ -25,6 +25,6 @@ export const CODEX_CONFIG_TRAITS: ProjectionTargetTraits = {
 
 export type CodexConfigTargetOptions = TraitTargetOptions
 
-export function createCodexConfigTarget(options: CodexConfigTargetOptions = {}): ProjectionTarget {
+export function createCodexConfigTarget(options: CodexConfigTargetOptions = {}): ProjectionConfigTarget {
   return createProjectionTargetFromTraits(CODEX_CONFIG_TRAITS, options)
 }

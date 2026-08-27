@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES, projectionTargetLocation } from '@panda/contracts'
 import type {
+  ProjectionConfigTarget,
   ProjectionFailure,
   ProjectionLedgerRecord,
   ProjectionResult,
@@ -11,7 +12,8 @@ import type {
 } from '@panda/contracts'
 import { atomicWriteText } from './atomic-write.ts'
 import { resolveOwnedPath, sameOwnedPath } from './ledger.ts'
-import type { ProjectionLedger } from './ledger.ts'
+import type { ProjectionLedger, ProjectionLedgerScope } from './ledger.ts'
+import { materialiseTarget } from './materialise.ts'
 
 // Projection engine (FR-12): reads the ownership ledger once, then runs every
 // target SEQUENTIALLY — targets are never executed concurrently. Every failure
@@ -142,7 +144,7 @@ function toTargetFailure(targetId: string, error: unknown): ProjectionFailure {
 }
 
 async function projectTarget(
-  target: ProjectionTarget,
+  target: ProjectionConfigTarget,
   entries: RegistryEntriesByKind,
   records: readonly ProjectionLedgerRecord[],
   apply: boolean,
@@ -207,15 +209,30 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
   const failures: ProjectionFailure[] = []
 
   for (const target of targets) {
-    const scope = { targetId: target.targetId, filePath: resolveOwnedPath(target.filePath) }
-    const claimed = ledger.records.filter(
-      (record) =>
-        record.targetId === scope.targetId &&
-        sameOwnedPath(resolveOwnedPath(record.filePath), scope.filePath),
-    )
+    // EVERYTHING derived from the target lives inside the try, including the
+    // ownership scope. Computing it outside was a hole in the engine's own
+    // containment promise: a target that is neither kind — a plain object
+    // reaching a published port — threw out of `runProjection` and took every
+    // sibling target with it.
     let projected: { result: ProjectionResult; records: readonly ProjectionLedgerRecord[] }
+    let scope: ProjectionLedgerScope
     try {
-      projected = await projectTarget(target, entries, claimed, apply)
+      // One ownership scope for both kinds: a config target's file, or a
+      // materialisation target's root. The ledger keys on it either way, so a
+      // target's claims are exactly the ones taken under the location it owns.
+      scope = {
+        targetId: target.targetId,
+        filePath: resolveOwnedPath(projectionTargetLocation(target)),
+      }
+      const claimed = ledger.records.filter(
+        (record) =>
+          record.targetId === scope.targetId &&
+          sameOwnedPath(resolveOwnedPath(record.filePath), scope.filePath),
+      )
+      projected =
+        target.kind === 'materialise'
+          ? await materialiseTarget(target, entries, claimed, apply)
+          : await projectTarget(target, entries, claimed, apply)
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
       continue

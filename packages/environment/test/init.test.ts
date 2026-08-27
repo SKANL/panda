@@ -187,13 +187,20 @@ describe('projection results are specific per target', () => {
     // why the failure is flattened to a code and a message at the boundary.
     expect(JSON.parse(JSON.stringify(result, null, 2))).toEqual(result)
 
-    // Every projected target reached the record sink, failures included.
+    // Every projected target reached the record sink, failures included — and
+    // every detected executor now has TWO: its configuration file and its
+    // skills root. A skills target that never reached the sink would make the
+    // record stream silent about the one surface where panda deletes.
     await log.drain()
     expect(log.records.map((record) => `${record.event} ${record.subject}`).sort()).toEqual([
+      `action.completed ${PROJECTION_ACTION_ID}#claude-skills`,
       `action.completed ${PROJECTION_ACTION_ID}#codex-config`,
+      `action.completed ${PROJECTION_ACTION_ID}#codex-skills`,
       `action.failed ${PROJECTION_ACTION_ID}#claude-mcp`,
       `action.invoked ${PROJECTION_ACTION_ID}#claude-mcp`,
+      `action.invoked ${PROJECTION_ACTION_ID}#claude-skills`,
       `action.invoked ${PROJECTION_ACTION_ID}#codex-config`,
+      `action.invoked ${PROJECTION_ACTION_ID}#codex-skills`,
     ])
   })
 })

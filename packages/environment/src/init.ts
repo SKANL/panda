@@ -1,10 +1,11 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError, projectionTargetLocation } from '@panda/contracts'
 import type {
   DriftEntry,
   PandaErrorCode,
+  ProjectionResult,
   ProjectionTarget,
   ProjectionWarning,
   RegistryEntry,
@@ -91,7 +92,10 @@ export interface TargetFailure {
 export interface TargetProjection {
   readonly executorId: string
   readonly targetId: string
-  /** The vendor's own file, at the location that vendor reads. */
+  /**
+   * The vendor's own location, as that vendor reads it: a configuration FILE in
+   * `targets`, a skills ROOT DIRECTORY in `skills`.
+   */
   readonly filePath: string
   readonly written: boolean
   readonly drift: readonly DriftEntry[]
@@ -111,6 +115,15 @@ export interface InitResult {
   /** EVERY executor panda knows, found or not, with the paths consulted. */
   readonly detected: readonly ExecutorDetection[]
   readonly targets: readonly TargetProjection[]
+  /**
+   * The skills root of every detected executor whose location panda has
+   * VERIFIED, one row each — a separate array rather than more `targets` rows
+   * because the two surfaces are not the same thing: one names a file panda
+   * merges text into, the other a directory tree panda materialises and, when a
+   * skill leaves the registry, removes. Empty where no verified location
+   * applies, which is every executor at project scope.
+   */
+  readonly skills: readonly TargetProjection[]
   readonly skipped: readonly SkippedExecutor[]
   readonly warnings: readonly ProjectionWarning[]
 }
@@ -157,16 +170,33 @@ export function noExecutorsDetected(result: { readonly detected: readonly Execut
  * than mcp-server, or an mcp-server with no command. Nothing else can be behind
  * a skipped id.
  *
- * ponytail: the reason is DERIVED here rather than reported by the target,
- * because the projection outcome has no reason channel. Upgrade path: one on
- * `ProjectionMergeOutcome`, which belongs with Story 2.9's materialisation work,
- * where a target first has reasons of its own (deferred-work.md).
+ * A target that KNOWS why says so itself, through `ProjectionResult.skipped`,
+ * and its reason wins wherever it is present — the skills target is the first
+ * one with reasons of its own ("this skill names a source panda cannot read"),
+ * which no derivation from the registry entry could ever have produced.
+ *
+ * `skillsHandled` is the other half of the same correction. Once an executor has
+ * a verified skills root, "this executor has no native representation for a
+ * skill" is FALSE for that executor, so skill entries stop being candidates
+ * here; an id left with no candidate at all is dropped from the config row
+ * entirely rather than explained by a sentence that is no longer true.
  */
-function reasonUnprojectable(entries: readonly RegistryEntry[], executorId: string): string {
-  const candidates = entries.filter((entry) => entry.type !== 'mcp-server' || entry.command === undefined)
+function reasonUnprojectable(
+  entries: readonly RegistryEntry[],
+  executorId: string,
+  skillsHandled: boolean,
+): string | undefined {
+  const candidates = entries.filter(
+    (entry) =>
+      (entry.type !== 'mcp-server' || entry.command === undefined) &&
+      !(skillsHandled && entry.type === 'skill'),
+  )
   if (candidates.length === 0) {
-    // No entry panda handed over can explain this id: said plainly rather than
-    // guessed, because a reason panda cannot establish is still a fact.
+    // Only when this executor materialises skills can an id legitimately have no
+    // candidate left, and then the id belongs to the skills row, not this one.
+    if (skillsHandled && entries.length > 0) return undefined
+    // Otherwise no entry panda handed over can explain this id: said plainly
+    // rather than guessed, because a reason panda cannot establish is still a fact.
     return `'${executorId}' reported this entry as unprojectable and the registry holds no entry that explains it`
   }
   return candidates
@@ -176,6 +206,26 @@ function reasonUnprojectable(entries: readonly RegistryEntry[], executorId: stri
         : `'${executorId}' has no native representation for a ${entry.type} entry (correction-01 C5)`,
     )
     .join('; ')
+}
+
+/**
+ * The per-entry reasons a target row carries: the target's own words where it
+ * had any, and the registry-derived sentence everywhere else.
+ */
+function unprojectableFor(
+  result: ProjectionResult | undefined,
+  byId: ReadonlyMap<string, RegistryEntry[]>,
+  executorId: string,
+  skillsHandled: boolean,
+): UnprojectableEntry[] {
+  const stated = new Map((result?.skipped ?? []).map((skip) => [skip.entryId, skip.reason]))
+  const rows: UnprojectableEntry[] = []
+  for (const entryId of result?.skippedEntryIds ?? []) {
+    const reason =
+      stated.get(entryId) ?? reasonUnprojectable(byId.get(entryId) ?? [], executorId, skillsHandled)
+    if (reason !== undefined) rows.push({ entryId, reason })
+  }
+  return rows
 }
 
 function scopeUnavailable(detail: string, cause?: unknown): PandaError {
@@ -217,22 +267,40 @@ export async function scopeDirectory(label: string, value: string): Promise<stri
   return resolved
 }
 
+interface PlannedTarget {
+  readonly profile: ExecutorProfile
+  readonly target: ProjectionTarget
+}
+
 function targetsFor(
   scope: 'machine' | 'project',
   detected: readonly ExecutorDetection[],
   homeDir: string,
   projectDir: string,
 ): {
-  readonly planned: readonly { profile: ExecutorProfile; target: ProjectionTarget }[]
+  readonly planned: readonly PlannedTarget[]
+  /**
+   * The skills roots, planned only where the executor has a location panda
+   * VERIFIED. Machine scope only: no executor has a project-scope skills
+   * location panda has proven, so `panda project init` materialises none and
+   * the skills stay reported as unprojectable — the same refusal that keeps
+   * Codex out of a project's MCP configuration.
+   */
+  readonly skills: readonly PlannedTarget[]
   readonly skipped: readonly SkippedExecutor[]
 } {
-  const planned: { profile: ExecutorProfile; target: ProjectionTarget }[] = []
+  const planned: PlannedTarget[] = []
+  const skills: PlannedTarget[] = []
   const skipped: SkippedExecutor[] = []
   const present = new Set(
     detected.filter((detection) => detection.present).map((detection) => detection.executorId),
   )
   for (const profile of EXECUTOR_PROFILES) {
     if (!present.has(profile.executorId)) continue
+    const rootPath = scope === 'machine' ? profile.machineSkills?.(homeDir) : undefined
+    if (rootPath !== undefined && profile.createSkillsTarget !== undefined) {
+      skills.push({ profile, target: profile.createSkillsTarget(rootPath) })
+    }
     const filePath =
       scope === 'machine' ? profile.machineConfig(homeDir) : profile.projectConfig?.(projectDir)
     if (filePath === undefined) {
@@ -244,7 +312,7 @@ function targetsFor(
     }
     planned.push({ profile, target: profile.createTarget(filePath) })
   }
-  return { planned, skipped }
+  return { planned, skills, skipped }
 }
 
 /**
@@ -300,6 +368,8 @@ export interface ScopeReport {
   readonly entryCount: number
   readonly detected: readonly ExecutorDetection[]
   readonly targets: readonly ScopeTarget[]
+  /** One row per VERIFIED skills root; see `InitResult.skills`. */
+  readonly skills: readonly ScopeTarget[]
   readonly skipped: readonly SkippedExecutor[]
   readonly warnings: readonly ProjectionWarning[]
   /**
@@ -410,7 +480,7 @@ export async function runScope(
   }
 
   const detected = await detectExecutors(homeDir)
-  const { planned, skipped } = targetsFor(scope, detected, homeDir, projectDir)
+  const { planned, skills, skipped } = targetsFor(scope, detected, homeDir, projectDir)
   const ledger = new ProjectionLedger({ homeDir })
   if (registryError !== undefined) {
     // No engine call at all: every per-target verdict is derived from the
@@ -423,17 +493,19 @@ export async function runScope(
       entryCount: 0,
       detected,
       targets: [],
+      skills: [],
       skipped,
       warnings: [],
       registryError,
     }
   }
 
-  for (const { target } of planned) recordProjection(log, 'action.invoked', target.targetId)
+  const everyTarget = [...planned, ...skills]
+  for (const { target } of everyTarget) recordProjection(log, 'action.invoked', target.targetId)
 
   const run = await runProjection({
     entries: groupByKind(entries),
-    targets: planned.map((plan) => plan.target),
+    targets: everyTarget.map((plan) => plan.target),
     ledger,
     mode,
   })
@@ -448,25 +520,44 @@ export async function runScope(
   // its ledger update yields ONE row carrying both facts. Two rows, or a row
   // hardcoding `changed: false` for a failure, is how panda came to report
   // `written: false` for bytes it had already landed.
-  const targets: ScopeTarget[] = planned.map(({ profile, target }) => {
+  const materialising = new Set(skills.map(({ profile }) => profile.executorId))
+  const rowFor = ({ profile, target }: PlannedTarget): ScopeTarget => {
     const result = results.get(target.targetId)
     const failure = failures.get(target.targetId)
     recordProjection(log, failure === undefined ? 'action.completed' : 'action.failed', target.targetId)
     return {
       executorId: profile.executorId,
       targetId: target.targetId,
-      filePath: target.filePath,
+      filePath: projectionTargetLocation(target),
       changed: result?.written ?? false,
       drift: result?.drift ?? [],
-      unprojectable: (result?.skippedEntryIds ?? []).map((entryId) => ({
-        entryId,
-        reason: reasonUnprojectable(byId.get(entryId) ?? [], profile.executorId),
-      })),
+      // A config row stops claiming an executor cannot express a SKILL once that
+      // executor has a verified skills root: the skills row below is the
+      // authority for those ids, and two rows answering for one entry is how a
+      // user is told a skill was both materialised and impossible.
+      //
+      // KNOWN LOSS OF GRANULARITY, and it is deliberate. When the skills target
+      // FAILS outright, its row carries the coded error and an empty
+      // `unprojectable` list, while this row has already dropped those ids — so
+      // no row names the individual skills. The alternative is worse: the config
+      // row's only sentence is "this executor has no native representation for a
+      // skill", which is false for an executor that has a verified root and
+      // merely could not be written to this run. A per-target failure is loud in
+      // its own right (`error` on the row, `target-failed` in doctor, non-zero
+      // exit), so what is lost is which entries it covered, not the failure.
+      unprojectable: unprojectableFor(
+        result,
+        byId,
+        profile.executorId,
+        target.kind !== 'materialise' && materialising.has(profile.executorId),
+      ),
       ...(failure === undefined
         ? {}
         : { error: { code: failure.error.code, message: failure.error.message } }),
     }
-  })
+  }
+  const targets: ScopeTarget[] = planned.map(rowFor)
+  const skillRows: ScopeTarget[] = skills.map(rowFor)
 
   return {
     pandaDir: pandaDirOf(scope === 'machine' ? homeDir : projectDir),
@@ -475,8 +566,28 @@ export async function runScope(
     entryCount: entries.length,
     detected,
     targets,
+    skills: skillRows,
     skipped,
     warnings: run.warnings,
+  }
+}
+
+function toTargetProjection(row: ScopeTarget): TargetProjection {
+  // Named field by field, NOT spread. A spread rebuilds the row in the spread's
+  // order and silently moved `written` from index 3 to last, after `error`, with
+  // both suites green — and this is a documented payload a caller prints.
+  // `test/init.test.ts` pins the order.
+  return {
+    executorId: row.executorId,
+    targetId: row.targetId,
+    filePath: row.filePath,
+    written: row.changed,
+    drift: row.drift,
+    unprojectable: row.unprojectable,
+    // A row carrying no `error` key keeps carrying none: an `error: undefined`
+    // in the payload reads to every JSON consumer as a field panda decided to
+    // say nothing about.
+    ...(row.error === undefined ? {} : { error: row.error }),
   }
 }
 
@@ -488,22 +599,8 @@ function toInitResult(scope: 'machine' | 'project', registryPath: string, report
     ledgerPath: report.ledgerPath,
     entryCount: report.entryCount,
     detected: report.detected,
-    // Spread-minus-`changed`, so a row carrying no `error` key keeps carrying
-    // none: an `error: undefined` in the payload reads to every JSON consumer as
-    // a field panda decided to say nothing about.
-    // Named field by field, NOT spread. A spread rebuilds the row in the spread's
-    // order and silently moved `written` from index 3 to last, after `error`, with
-    // both suites green — and this is a documented payload a caller prints.
-    // `test/init.test.ts` pins the order.
-    targets: report.targets.map((row) => ({
-      executorId: row.executorId,
-      targetId: row.targetId,
-      filePath: row.filePath,
-      written: row.changed,
-      drift: row.drift,
-      unprojectable: row.unprojectable,
-      ...(row.error === undefined ? {} : { error: row.error }),
-    })),
+    targets: report.targets.map(toTargetProjection),
+    skills: report.skills.map(toTargetProjection),
     skipped: report.skipped,
     warnings: report.warnings,
   }

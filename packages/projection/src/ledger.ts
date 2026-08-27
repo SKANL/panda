@@ -51,6 +51,31 @@ export function hashOwnedText(text: string): string {
   return createHash('sha256').update(text.replaceAll('\r\n', '\n'), 'utf8').digest('hex')
 }
 
+/**
+ * Hash of the exact BYTES panda copied to a path.
+ *
+ * Deliberately not {@link hashOwnedText}: a materialised file is copied verbatim
+ * from a source panda does not author, so "the same file" means the same bytes.
+ * Normalising EOL here would let panda overwrite a file whose line endings a
+ * user deliberately changed, and — far worse, since this is the delete path —
+ * let it REMOVE one.
+ */
+export function hashOwnedBytes(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+/**
+ * The EOL-normalised form of the same bytes, for the OVERWRITE comparison only.
+ *
+ * Never for a removal. A removal is decided byte for byte, because a false
+ * match there precedes `rm`; an overwrite decided byte for byte instead makes
+ * a skills root kept under `core.autocrlf` report every panda file as edited
+ * forever, and the product has no adopt, force or reclaim path out of that.
+ */
+export function canonicalBytesHash(bytes: Uint8Array): string {
+  return hashOwnedText(Buffer.from(bytes).toString('utf8'))
+}
+
 /** Ownership keys must be one canonical spelling of a path, never two. */
 export function resolveOwnedPath(filePath: string): string {
   return resolve(filePath)
@@ -85,9 +110,34 @@ export interface ProjectionLedgerOptions {
   readonly filePath?: string
 }
 
+/**
+ * A malformed `ownedPaths` makes the WHOLE record invalid, and that direction is
+ * the point: a dropped record claims nothing, so panda under-claims and removes
+ * nothing. Keeping a record whose path list is half-readable would hand the one
+ * operation that deletes a user's files an authority panda cannot vouch for.
+ */
+function isOwnedPathList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item['path'] === 'string' &&
+        item['path'] !== '' &&
+        typeof item['contentHash'] === 'string' &&
+        item['contentHash'] !== '' &&
+        (item['canonicalHash'] === undefined ||
+          (typeof item['canonicalHash'] === 'string' && item['canonicalHash'] !== '')),
+    )
+  )
+}
+
 function isLedgerRecord(value: unknown): value is ProjectionLedgerRecord {
   if (!isRecord(value)) return false
-  return RECORD_FIELDS.every((field) => typeof value[field] === 'string' && value[field] !== '')
+  if (!RECORD_FIELDS.every((field) => typeof value[field] === 'string' && value[field] !== '')) {
+    return false
+  }
+  return value['ownedPaths'] === undefined || isOwnedPathList(value['ownedPaths'])
 }
 
 function recordKey(record: ProjectionLedgerRecord): string {

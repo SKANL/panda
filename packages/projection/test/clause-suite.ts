@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { PANDA_ERROR_CODES } from '@panda/contracts'
-import type { ProjectionTarget, RegistryEntriesByKind } from '@panda/contracts'
+import type { ProjectionConfigTarget, RegistryEntriesByKind } from '@panda/contracts'
 import { runProjection } from '../src/engine.ts'
 import { ProjectionLedger } from '../src/ledger.ts'
 
@@ -19,7 +19,7 @@ afterAll(() => Promise.all(tempRoots.map((dir) => rm(dir, { recursive: true, for
 export interface TargetClauseCase {
   readonly label: string
   /** Must return a target whose file lives INSIDE homeDir. */
-  readonly makeTarget: (homeDir: string) => ProjectionTarget
+  readonly makeTarget: (homeDir: string) => ProjectionConfigTarget
   /** Foreign-content-rich native sample the target must project around. */
   readonly sampleNative: string
   /** Distinctive foreign fragments that must survive projection, in order. */
@@ -54,7 +54,7 @@ export function makeLedger(homeDir: string): ProjectionLedger {
   return new ProjectionLedger({ homeDir })
 }
 
-function staticSiblingTarget(homeDir: string, label: string): ProjectionTarget {
+function staticSiblingTarget(homeDir: string, label: string): ProjectionConfigTarget {
   return {
     targetId: `${label}-sibling`,
     filePath: join(homeDir, `${label}-sibling.out`),

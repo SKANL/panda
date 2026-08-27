@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { isRecord } from '@panda/contracts'
 import type { ProjectionMcpEntry, RegistryEntriesByKind } from '@panda/contracts'
 import * as projection from '../src/index.ts'
 import type { ProjectionTargetTraits } from '../src/formats.ts'
@@ -140,14 +141,46 @@ function writtenDocumentKeys(traits: ProjectionTargetTraits, text: string, entry
 }
 
 /**
- * Derived from the package's own exports, never hand-maintained: a fourth
- * target added to the barrel is conformance-tested the moment it exists.
+ * Every trait record the package exports. Derived from the barrel and never
+ * hand-maintained: a fourth target is conformance-tested the moment it exists.
  */
-const SHIPPED_TRAITS: readonly ProjectionTargetTraits[] = Object.entries(projection)
-  .filter(([name]) => name.endsWith('_TRAITS'))
-  .map(([, value]) => value as ProjectionTargetTraits)
+const ALL_TRAITS: readonly (readonly [string, Record<string, unknown>])[] = Object.entries(projection)
+  .filter(([name, value]) => name.endsWith('_TRAITS') && isRecord(value))
+  .map(([name, value]) => [name, value as unknown as Record<string, unknown>] as const)
+
+/** An MCP config trait: the only kind whose vendor conformance this file judges. */
+function isMcpTraits(value: Record<string, unknown>): boolean {
+  return 'mcpContainerKey' in value
+}
+
+/** A materialisation trait: a root, and no vendor key to conform to. */
+function isSkillsTraits(value: Record<string, unknown>): boolean {
+  return 'defaultRoot' in value && !('mcpContainerKey' in value)
+}
+
+const SHIPPED_TRAITS: readonly ProjectionTargetTraits[] = ALL_TRAITS.filter(([, value]) =>
+  isMcpTraits(value),
+).map(([, value]) => value as unknown as ProjectionTargetTraits)
 
 describe('the shipped target set', () => {
+  it('classifies EVERY exported trait record, so none can be silently excluded', () => {
+    // The discovery used to key on the `_TRAITS` name alone, and narrowing it to
+    // a shape made a new export without that shape drop out SILENTLY instead of
+    // failing loudly — a strictly weaker check than the one it replaced. So the
+    // partition is asserted to be total: an export that is neither an MCP trait
+    // record nor a skills trait record turns this red, whatever it is called.
+    expect(ALL_TRAITS.length).toBeGreaterThanOrEqual(6)
+    for (const [name, value] of ALL_TRAITS) {
+      expect(
+        isMcpTraits(value) || isSkillsTraits(value),
+        `'${name}' is a trait record no suite knows how to judge; give it a vendor schema or a root`,
+      ).toBe(true)
+    }
+    // And each kind is actually populated, or the partition above passes by
+    // being empty on one side.
+    expect(ALL_TRAITS.filter(([, value]) => isSkillsTraits(value)).length).toBeGreaterThanOrEqual(3)
+  })
+
   it('is discovered from the exports, and every target has a vendor schema', () => {
     expect(SHIPPED_TRAITS.length).toBeGreaterThanOrEqual(3)
     for (const traits of SHIPPED_TRAITS) {
