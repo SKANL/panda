@@ -88,6 +88,7 @@ development_status:
   m4e-the-registry-declares-only-what-panda-can-deliver: done           # removes tool; profile deferred with its evidence banked
   m4f-profile-is-a-selection-not-an-entry: done           # PRD glossary settles it: a Profile is a selection OVER entries; Bundles carry Profiles (Epic 5)
   m5a-the-methodplugin-contract-is-published-or-it-is-not: done           # implements 5.3/FR-23/RD-3; 5.4 hot swap stays out
+  m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
   epic-2-retrospective: optional
 
   epic-3: backlog
@@ -95,8 +96,8 @@ development_status:
   3-2-filesystem-and-sqlite-providers-prove-the-swap: backlog
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-managed-git-worktrees-with-durable-ownership: backlog
+  epic-4: in-progress
+  4-1-managed-git-worktrees-with-durable-ownership: superseded  # implemented as m6a onto the measured AD-2 split
   4-2-concurrent-sessions-across-worktrees: backlog
   4-3-crash-safe-disposal: backlog
   epic-4-retrospective: optional
