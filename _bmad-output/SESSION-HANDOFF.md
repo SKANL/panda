@@ -71,6 +71,13 @@ in the order to reach for them:
 - **The code itself**, measured with the tools in §3.
 - **The vendors**, by RUNNING them: `codex`, `claude` and `opencode` are all on
   PATH. Executing the real tool beats reading about it, and beats remembering.
+- **`research/`** — one folder per investigation, with frontmatter and a
+  measured executive summary. `cordis-spatiotemporal-composability-2026-09-01/`
+  is the newest: panda's kernel turns out to be a hand-rolled implementation of
+  a published paradigm (revertible effects + reactive coeffects), and it records
+  what panda takes from it, what it refuses and why, and the answer to Story
+  5.4's blocking question. The cordis checkout it measures is at `C:\code\cordis`
+  — outside panda, indexed by all three graph tools, and safe to delete.
 
 ## 3. Tools — all three work, but two have traps
 
@@ -320,9 +327,18 @@ projection layer actually delivers.
    ordered `onDeactivate`→`onActivate` needs methods MOUNTED, and "persists
    across processes" crosses a boundary where nothing is mounted. **M5.C shipped
    the persistence half** as `panda swap executor`, so 5.4 inherits the verb, the
-   scopes and the layer-honesty and only has to answer where a method comes from:
-   a host-supplied set through the SDK, built-ins inside panda, or a loader panda
-   does not have. Decide that FIRST.
+   scopes and the layer-honesty.
+
+   **The blocking question is now ANSWERED** — see
+   `planning-artifacts/research/cordis-spatiotemporal-composability-2026-09-01/research.md`.
+   A method comes from a declarative entry naming a module specifier
+   (`{ id, name, config }`, cordis's shape), mounted with plain `await import()`,
+   in a CONSUMER-TIER package — never in the kernel, which forbids dynamic
+   imports in writing (`packages/kernel/src/manifest.ts`, first comment). And
+   "hot swap" in v1 means mounting/unmounting an already-loaded method plus the
+   persisted selection, **not** live reloading of changed module code: the only
+   shipped implementation of that (cordis's HMR) needs `--expose-internals`,
+   which panda must not require. 5.4 should say so rather than promise it.
 
    `deferred-work.md` banks four more decisions it inherits: the zero-argument
    hooks (whatever a swap hands a method IS the swap surface), the single
