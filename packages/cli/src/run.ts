@@ -18,6 +18,7 @@ import {
 } from '@panda/environment'
 import { readExecutorConfigLayers, runSession, type SessionOptions } from '@panda/session'
 import { isRegistryVerb, runRegistryCommand, type RegistryVerb } from './registry-commands.ts'
+import { SWAP_NOUNS, runSwap } from './swap-command.ts'
 
 // Exit codes (documented in the package README):
 //   0 — run completed with an ok envelope / init completed with no failed target
@@ -71,6 +72,8 @@ export const USAGE = [
   '       panda project doctor [directory]',
   '       panda remediate <adopt|release|repair|discard> [--executor <id>] [--entry <id>] [--apply]',
   '       panda project remediate <adopt|release|repair|discard> [directory] [--executor <id>] [--entry <id>] [--apply]',
+  `       panda swap <${SWAP_NOUNS.join('|')}> <id>`,
+  `       panda project swap <${SWAP_NOUNS.join('|')}> <id> [directory]`,
   '       panda --help',
   '',
   'run           Runs <prompt> through the selected executor inside a workspace under .panda/workspaces.',
@@ -97,6 +100,11 @@ export const USAGE = [
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
   'project doctor  The same report for a project, matching what project init would do.',
+  "swap          Writes the selection into panda's own config so later runs use it, and reports the",
+  '              layer that actually decides. Writing the machine document while the project one',
+  '              names something else changes nothing a run will do, and swap says so rather than',
+  '              reporting a success it did not deliver. An id panda has no adapter for is refused',
+  '              before a byte is written, listing the ids there are.',
   'remediate     Leaves ONE state doctor reported, named by the user. Describes and writes nothing',
   '              unless --apply is given; nothing is ever remediated automatically or in bulk.',
   "  adopt    Panda claims what is at its own location, exactly as it is. No vendor byte is written;",
@@ -182,6 +190,13 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       remediate({ ...selector, homeDir: options.homeDir, scope: 'machine' }),
     )
   }
+  if (argv[0] === 'swap') {
+    if (isHelp(argv[1])) {
+      out(USAGE)
+      return 0
+    }
+    return await runSwap(argv.slice(1), 'machine', err, DEFAULT_USAGE, options)
+  }
   if (argv[0] === 'project') {
     if (isHelp(argv[1])) {
       out(USAGE)
@@ -201,6 +216,18 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
           projectDir: directory ?? options.cwd,
         }),
       )
+    }
+    if (argv[1] === 'swap') {
+      // Handled HERE and not inside `runSwap`, mirroring the machine branch
+      // above. The printed-command invariant dispatches every verb path with a
+      // help flag and requires exit 0; without this the flag was read as the
+      // NOUN and the project scope exited 2. The invariant caught it, which is
+      // the second real defect it has found in this story.
+      if (isHelp(argv[2])) {
+        out(USAGE)
+        return 0
+      }
+      return await runSwap(argv.slice(2), 'project', err, DEFAULT_USAGE, options)
     }
     if (isRegistryVerb(argv[1])) {
       return await runRegistry(argv[1], argv.slice(2), 'project', out, err, options)

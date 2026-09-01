@@ -81,3 +81,17 @@ export type {
 } from '@panda/contracts'
 export { createMemoryLogSink } from '@panda/kernel'
 export type { LogRecord, LogSink, MemoryLogSink } from '@panda/kernel'
+// Re-exported, not reimplemented. This package may not touch the filesystem at
+// all (see test/guard.test.ts): the ledger is the sole authority for what panda
+// writes, and the clause is blunt on purpose. The WRITER is forwarded so the CLI
+// reaches it through this facade -- the same shape as createMemoryLogSink above
+// -- while the atomic primitive it uses stays inside @panda/projection, where a
+// previous story deliberately un-exported it.
+export {
+  WRITABLE_CONFIG_KEYS,
+  configPathFor,
+  setConfigValue,
+  type ConfigWriteOptions,
+  type ConfigWriteResult,
+  type WritableConfigKey,
+} from '@panda/projection'

@@ -69,6 +69,15 @@ async function atomicWrite(path: string, contents: string | Uint8Array): Promise
     await rename(tempPath, target)
   } catch (error) {
     await unlink(tempPath).catch(() => {})
+    // Rethrown RAW, deliberately. `toTargetFailure` in `engine.ts` wraps a raw
+    // error as `PANDA_PROJECTION_TARGET_FAILED` and passes a `PandaError`
+    // through unchanged, so every projection caller already receives a coded
+    // failure and `doctor` classifies this state from that code. Coding it here
+    // was tried and reverted: it changed the code doctor sees, and the "bare
+    // errno reaches a caller" defect it was meant to fix does not exist for any
+    // caller that goes through the engine. A caller that does NOT — panda's own
+    // config writer — codes it at its own boundary, where the right vocabulary
+    // is a configuration one rather than a projection one.
     throw error
   }
 }

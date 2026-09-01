@@ -36,6 +36,8 @@ const packagesDir = join(import.meta.dirname, '..', '..')
 const NOT_A_COMMAND = new Map<string, string>([
   ['panda has no adapter named \'<value>\'; available executors: <value>', 'the catalogue\'s error for an unknown executor id'],
   ['panda <verb>', 'the GRAMMAR, written with a placeholder where a verb goes'],
+  ["panda will not write '<value>' because <value>", 'the config writer refusing to overwrite a document it cannot read'],
+  ["panda does not persist a '<value>' setting; it writes <value>", 'the config writer refusing a key outside its allowlist'],
   ['panda project <verb> [directory]', 'the project GRAMMAR, same placeholder'],
   ['panda <value> needs an entry type: <value>', 'a usage error whose verb came from argv the dispatcher had already accepted'],
   ['panda <value> needs the id of the <value> entry', 'the same usage error, for a missing id'],

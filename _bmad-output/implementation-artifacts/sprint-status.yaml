@@ -89,6 +89,7 @@ development_status:
   m4f-profile-is-a-selection-not-an-entry: done           # PRD glossary settles it: a Profile is a selection OVER entries; Bundles carry Profiles (Epic 5)
   m5a-the-methodplugin-contract-is-published-or-it-is-not: done           # implements 5.3/FR-23/RD-3; 5.4 hot swap stays out
   m5b-every-rule-the-contract-states-is-enforced: done   # closes M5.A's two prose-only rules: the artifact `path` claim and the pair rule the type never checked
+  m5c-panda-writes-the-selection-it-tells-you-to-edit: done   # the persistence verb FR-28 needs; closes the hand-edit hole 2.7c left in FR-7/FR-9
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
   epic-2-retrospective: optional
 

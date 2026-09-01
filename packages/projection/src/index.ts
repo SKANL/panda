@@ -5,6 +5,20 @@ export type {
   ProjectionRun,
   RunProjectionOptions,
 } from './engine.ts'
+// `atomicWriteText` is deliberately NOT here. A previous story un-exported it so
+// `@panda/environment` could not reach it, and `packages/environment/test/guard.test.ts`
+// is the clause that notices if it comes back — the ledger is the sole authority
+// for what panda writes into a vendor's file. Panda's OWN configuration document
+// is a different thing and needs the same symlink-resolving write, so the WRITER
+// lives here, beside the primitive, and only the writer is published.
+export {
+  WRITABLE_CONFIG_KEYS,
+  configPathFor,
+  setConfigValue,
+  type ConfigWriteOptions,
+  type ConfigWriteResult,
+  type WritableConfigKey,
+} from './config-write.ts'
 export { runRemediation } from './remediate.ts'
 export type {
   AdoptRemediationOptions,
