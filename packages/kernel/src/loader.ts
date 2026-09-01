@@ -9,9 +9,20 @@ import {
 import { isRecordIdentifier, recordCodeOf, recordSafely, type LogSink } from './log.ts'
 import { validateManifest, type PluginManifest } from './manifest.ts'
 
+/**
+ * WHY a service is absent, which the kernel branches on and used to discard.
+ *
+ * A consumer could not tell a misspelled service name from a provider that
+ * crashed on startup — two problems with opposite fixes — so typed absence was
+ * carrying less than the fact it was invented to carry (AD-5). The loader emits
+ * only `no-provider`: it decides PRESENCE, and a provider's readiness is the
+ * lifecycle's answer, not its own.
+ */
+export type AbsenceReason = 'no-provider' | 'provider-unready' | 'provider-failed'
+
 export type ServiceResolution =
   | { readonly kind: 'provided'; readonly providerId: string }
-  | { readonly kind: 'absent' }
+  | { readonly kind: 'absent'; readonly reason: AbsenceReason }
 
 export interface LoadedPlugin {
   readonly manifest: PluginManifest
@@ -145,7 +156,7 @@ function resolveGraph(parsed: readonly PluginManifest[], log: LogSink): PluginLo
     for (const consumption of manifest.consumes) {
       const providerId = providers.get(consumption.service)
       if (providerId === undefined) {
-        resolutions.set(consumption.service, { kind: 'absent' })
+        resolutions.set(consumption.service, { kind: 'absent', reason: 'no-provider' })
         recordSafely(log, { event: 'service.unresolved', subject: manifest.id, service: consumption.service })
         if (consumption.mode === 'hard') missingHardServices.push(consumption.service)
       } else {

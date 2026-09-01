@@ -161,7 +161,9 @@ describe('lifecycle: post-dispose use', () => {
 
   it('resolves never-provided services to typed absent, not undefined', () => {
     const { kernel } = startWith(provider('a', 'svc.a', 1))
-    expect(kernel.getService('svc.never')).toEqual({ kind: 'absent' })
+    // The reason is asserted rather than ignored: M7.B widened this additively,
+    // and an exact-equality assertion is what forced the widening to be noticed.
+    expect(kernel.getService('svc.never')).toEqual({ kind: 'absent', reason: 'no-provider' })
   })
 })
 
@@ -883,5 +885,57 @@ describe('M7.A rows 10-11: the window around the disposer loop', () => {
 
     expect(kernel.getService('svc.p')).toEqual({ kind: 'provided', pluginId: 'p', value: 'new' })
     expect(lifecycleTrail(log)).toContain('plugin.disposal-failed:p')
+  })
+})
+
+describe('M7.B rows 10-14: typed absence says WHICH absence', () => {
+  it('names a service no plugin provides', () => {
+    const { kernel } = startWith(provider('a', 'svc.a', 1))
+    expect(kernel.getService('svc.never')).toEqual({ kind: 'absent', reason: 'no-provider' })
+  })
+
+  // ROW 11. A constant `reason` passes row 10, so this is the row that
+  // discriminates: the provider EXISTS and is parked, which is a different
+  // problem with a different fix from a misspelled service name.
+  it('distinguishes a provider that never became ready', () => {
+    const kernel = createKernel()
+    // `blocked` hard-consumes a service nothing provides, so it stays unready —
+    // and `svc.blocked` therefore has a registered provider that is not active.
+    kernel.register(
+      manifest({ id: 'blocked', provides: ['svc.blocked'], consumes: [{ service: 'svc.missing', mode: 'hard' }] }),
+      () => ({ status: 'activated', services: { 'svc.blocked': 1 }, dispose: () => {} }),
+    )
+    kernel.start()
+
+    expect(kernel.getService('svc.blocked')).toEqual({ kind: 'absent', reason: 'provider-unready' })
+    // And the two answers are genuinely different, which is the whole point.
+    expect(kernel.getService('svc.missing')).toEqual({ kind: 'absent', reason: 'no-provider' })
+  })
+
+  it('distinguishes a provider whose activation failed', () => {
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'broken', provides: ['svc.broken'] }), () => {
+      throw new Error('activation exploded')
+    })
+    kernel.start()
+
+    expect(kernel.getService('svc.broken')).toEqual({ kind: 'absent', reason: 'provider-failed' })
+  })
+
+  it('still THROWS for a provider that was disposed, rather than reporting absence', async () => {
+    const { kernel } = startWith(provider('p', 'svc.p', 1))
+    await kernel.stop()
+
+    expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
+  })
+
+  it('leaves a consumer that only checks the kind working unchanged', () => {
+    const { kernel } = startWith(provider('a', 'svc.a', 1))
+    const resolution = kernel.getService('svc.never')
+
+    // The field is ADDITIVE: every existing `kind === 'absent'` check still
+    // compiles and still means exactly what it meant.
+    expect(resolution.kind).toBe('absent')
+    if (resolution.kind === 'absent') expect(typeof resolution.reason).toBe('string')
   })
 })

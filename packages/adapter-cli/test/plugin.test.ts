@@ -93,8 +93,10 @@ describe('the executor adapter as a kernel plugin', () => {
     const message = started.failures[0]!.error.message
     expect(message).toContain("panda has no adapter named 'aider'")
     expect(message).toContain('available executors: claude-code, codex, opencode')
-    // Absence stays TYPED: the use site gets `{ kind: 'absent' }`, never undefined.
-    expect(kernel.getService(EXECUTOR_SERVICE)).toEqual({ kind: 'absent' })
+    // Absence stays TYPED, and since M7.B it carries WHY: the adapter plugin is
+    // registered and its activation was rejected, which reads differently from a
+    // service no plugin provides.
+    expect(kernel.getService(EXECUTOR_SERVICE)).toEqual({ kind: 'absent', reason: 'provider-failed' })
   })
 
   it('rejects activation for a config key of the wrong type, naming what it wanted', () => {

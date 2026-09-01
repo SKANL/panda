@@ -38,8 +38,48 @@ export interface PluginManifest {
 
 const CONFIG_PROBE = Symbol('panda-config-probe')
 
+/** One violation, in the single sentence this validator has always produced. */
+function issueText(field: string, reason: string): string {
+  return `invalid plugin manifest: '${field}' ${reason}`
+}
+
+/**
+ * The issues found so far, for the ONE call in flight.
+ *
+ * Module-scoped and cleared at entry rather than threaded through nine helpers:
+ * `validateManifest` is synchronous by contract (`is synchronous and never
+ * returns a promise` is a pinned test) and the kernel never validates two
+ * manifests at once, so there is no interleaving for a shared buffer to lose.
+ * The moment either of those stops being true this has to become a parameter.
+ */
+let collected: string[] = []
+
+/**
+ * A FIELD-level violation: recorded, and validation walks on.
+ *
+ * This is the one to reach for by default. Use {@link fail} instead exactly when
+ * the code below your check dereferences the value you just rejected — that is
+ * the rule, not a judgement call.
+ */
+function collect(field: string, reason: string): void {
+  collected.push(issueText(field, reason))
+}
+
+/**
+ * A STRUCTURAL violation: the code after this point cannot run, so it throws.
+ *
+ * Reach for this only when the value you rejected is dereferenced below — a
+ * manifest that is not an object, a `consumes` entry that is not an object, an
+ * absent `configSchema` whose `~standard` is read four lines later. Making those
+ * collect instead would turn a coded refusal into a raw `TypeError` (AD-7).
+ *
+ * It carries everything collected BEFORE it, so hitting a wall does not throw
+ * away what the kernel had already found.
+ */
 function fail(field: string, reason: string): never {
-  throw new ManifestInvalidError(`invalid plugin manifest: '${field}' ${reason}`)
+  const message = issueText(field, reason)
+  const issues = [...collected, message]
+  throw new ManifestInvalidError(issues.length === 1 ? message : issues.join('; '), { issues })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,50 +115,109 @@ function isStandardSchemaV1Like(value: unknown): value is StandardSchemaV1Like {
   )
 }
 
-function requireField<T>(manifest: Record<string, unknown>, field: string, check: (value: unknown) => value is T, description: string): T {
+/**
+ * Reads a field, or COLLECTS why it could not be read and returns `undefined`.
+ *
+ * The predecessor threw on the first bad field, which is why a manifest with a
+ * bad `id` and a bad `version` cost two runs. Returning `undefined` is what lets
+ * validation walk the rest of the manifest; the `required()` guard below is what
+ * keeps that from reaching the returned object.
+ */
+function readField<T>(
+  manifest: Record<string, unknown>,
+  field: string,
+  check: (value: unknown) => value is T,
+  description: string,
+): T | undefined {
   const value = manifest[field]
-  if (value === undefined) fail(field, 'is required')
-  if (!check(value)) fail(field, `must be ${description}`)
+  if (value === undefined) {
+    collect(field, 'is required')
+    return undefined
+  }
+  if (!check(value)) {
+    collect(field, `must be ${description}`)
+    return undefined
+  }
   return value
 }
 
-function rejectDuplicateServices(services: readonly string[], field: string): void {
+function collectDuplicateServices(services: readonly string[], field: string): void {
   const seen = new Set<string>()
   for (const service of services) {
-    if (seen.has(service)) fail(field, `must not declare service '${service}' more than once`)
+    if (seen.has(service)) collect(field, `must not declare service '${service}' more than once`)
     seen.add(service)
   }
 }
 
+/** Throws every collected issue as one rejection, or returns if there are none. */
+function throwCollected(): void {
+  if (collected.length === 0) return
+  const issues = [...collected]
+  throw new ManifestInvalidError(issues.length === 1 ? issues[0]! : issues.join('; '), { issues })
+}
+
+/**
+ * Narrows a value that `throwCollected()` has already proven present.
+ *
+ * Unreachable by construction: every path that leaves one of these `undefined`
+ * called `collect`, and `throwCollected()` threw on anything collected. It is a
+ * coded refusal rather than a `!` assertion so that a future edit which adds a
+ * path leaving a field undefined WITHOUT collecting fails loudly and says which
+ * invariant broke, instead of putting `undefined` into a validated manifest.
+ */
+function required<T>(value: T | undefined, field: string): T {
+  if (value === undefined) {
+    throw new ManifestInvalidError(issueText(field, 'failed validation without recording why'))
+  }
+  return value
+}
+
 export function validateManifest(input: unknown): PluginManifest {
+  // Reset at entry, not at exit: an earlier call that threw leaves its issues
+  // behind, and inheriting them would report another manifest's mistakes.
+  collected = []
+
   if (!isRecord(input)) fail('manifest', 'must be an object')
 
-  const id = requireField(input, 'id', isNonEmptyString, 'a non-empty trimmed string').trim()
-  const version = requireField(input, 'version', isNonEmptyString, 'a non-empty trimmed string').trim()
-  if (!SEMVER_PATTERN.test(version)) {
-    fail('version', `must be a semver version (major.minor.patch, optional -prerelease and +build); got '${version}'`)
+  const id = readField(input, 'id', isNonEmptyString, 'a non-empty trimmed string')
+  const version = readField(input, 'version', isNonEmptyString, 'a non-empty trimmed string')
+  if (version !== undefined && !SEMVER_PATTERN.test(version.trim())) {
+    collect('version', `must be a semver version (major.minor.patch, optional -prerelease and +build); got '${version.trim()}'`)
   }
 
-  const rawProvides = requireField(input, 'provides', (value): value is string[] => Array.isArray(value), 'an array of service names')
-  for (const service of rawProvides) {
-    if (!isNonEmptyString(service)) fail('provides', 'entries must be non-empty trimmed strings')
+  const rawProvides = readField(input, 'provides', (value): value is string[] => Array.isArray(value), 'an array of service names')
+  if (rawProvides !== undefined) {
+    if (rawProvides.some((service) => !isNonEmptyString(service))) {
+      collect('provides', 'entries must be non-empty trimmed strings')
+    }
+    collectDuplicateServices(
+      rawProvides.filter(isNonEmptyString).map((service) => service.trim()),
+      'provides',
+    )
   }
-  rejectDuplicateServices(rawProvides.map((service) => service.trim()), 'provides')
 
-  const rawConsumes = requireField(input, 'consumes', (value): value is unknown[] => Array.isArray(value), 'an array of service consumptions')
+  const rawConsumes = readField(input, 'consumes', (value): value is unknown[] => Array.isArray(value), 'an array of service consumptions')
+  const consumes: ServiceConsumption[] = []
   const consumedServices: string[] = []
-  const consumes = rawConsumes.map((entry): ServiceConsumption => {
+  for (const entry of rawConsumes ?? []) {
+    // STRUCTURAL: `entry['service']` is read on the next line.
     if (!isRecord(entry)) fail('consumes', 'entries must be objects')
     const service = entry['service']
-    if (!isNonEmptyString(service)) fail('consumes', "entries must have a non-empty trimmed string 'service'")
     const mode = entry['mode']
-    if (!isServiceMode(mode)) fail('consumes', "entries must have a mode of 'hard' or 'soft'")
+    if (!isNonEmptyString(service)) collect('consumes', "entries must have a non-empty trimmed string 'service'")
+    if (!isServiceMode(mode)) collect('consumes', "entries must have a mode of 'hard' or 'soft'")
+    // A malformed entry contributes no service name: reporting it as a duplicate
+    // as well would be one mistake counted twice.
+    if (!isNonEmptyString(service) || !isServiceMode(mode)) continue
     consumedServices.push(service.trim())
-    return { service: service.trim(), mode }
-  })
-  rejectDuplicateServices(consumedServices, 'consumes')
+    consumes.push({ service: service.trim(), mode })
+  }
+  if (rawConsumes !== undefined) collectDuplicateServices(consumedServices, 'consumes')
 
   const configSchema = input['configSchema']
+  // STRUCTURAL, both of them: `configSchema['~standard'].validate` is called
+  // below, and on `undefined` or a non-schema that is a raw TypeError rather
+  // than a coded refusal (AD-7).
   if (configSchema === undefined) fail('configSchema', 'is required')
   if (!isStandardSchemaV1Like(configSchema)) {
     fail('configSchema', 'must be a Standard Schema v1 object (~standard with version 1 and a validate function)')
@@ -127,15 +226,19 @@ export function validateManifest(input: unknown): PluginManifest {
   try {
     probeResult = configSchema['~standard'].validate(CONFIG_PROBE) as { then?: unknown }
   } catch (error) {
-    throw new ManifestInvalidError(`invalid plugin manifest: 'configSchema' must validate without throwing`, { cause: error })
+    throw new ManifestInvalidError(issueText('configSchema', 'must validate without throwing'), { cause: error })
   }
-  if (typeof probeResult.then === 'function') fail('configSchema', 'must validate synchronously')
+  // Collectable: the probe already ran, so nothing below depends on this.
+  if (typeof probeResult.then === 'function') collect('configSchema', 'must validate synchronously')
+
+  throwCollected()
 
   return {
-    id,
-    version,
-    provides: rawProvides.map((service) => service.trim()),
+    id: required(id, 'id').trim(),
+    version: required(version, 'version').trim(),
+    provides: required(rawProvides, 'provides').map((service) => service.trim()),
     consumes,
     configSchema,
   }
 }
+

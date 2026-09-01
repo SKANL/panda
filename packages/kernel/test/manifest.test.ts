@@ -189,3 +189,149 @@ describe('validateManifest', () => {
     }
   })
 })
+
+// --- M7.B: the kernel tells an author everything it found --------------------
+
+describe('M7.B rows 1-2: every violation, not the first', () => {
+  it('reports a bad id, a bad version and a bad provides entry in ONE throw', () => {
+    try {
+      validateManifest({
+        id: '   ',
+        version: 'latest',
+        provides: [''],
+        consumes: [],
+        configSchema: passthroughSchema,
+      })
+      expect.unreachable()
+    } catch (error) {
+      const issues = (error as ManifestInvalidError).issues
+      expect(issues).toHaveLength(3)
+      expect(issues.join(' | ')).toContain("'id'")
+      expect(issues.join(' | ')).toContain("'version'")
+      expect(issues.join(' | ')).toContain("'provides'")
+    }
+  })
+
+  // The regression guard. Nine existing assertions read the MESSAGE of a
+  // single-violation rejection, and a story about better messages that breaks
+  // every message assertion has traded one problem for another.
+  it('leaves the single-violation message exactly as it reads today', () => {
+    try {
+      validateManifest({ id: 'ok', version: '1.2', provides: [], consumes: [], configSchema: passthroughSchema })
+      expect.unreachable()
+    } catch (error) {
+      expect((error as Error).message).toContain("invalid plugin manifest: 'version'")
+      expect((error as ManifestInvalidError).issues).toHaveLength(1)
+    }
+  })
+})
+
+describe('M7.B rows 3-7: structural failures stop, and carry what was already found', () => {
+  it('throws immediately when the manifest is not an object', () => {
+    expect(() => validateManifest('nope')).toThrow(ManifestInvalidError)
+    expect(() => validateManifest(null)).toThrow(ManifestInvalidError)
+  })
+
+  // ROW 4, the one a naive implementation gets wrong. Collecting correctly and
+  // then throwing the structural failure BARE passes every other row here: the
+  // author fixes the fatal problem, re-runs, and only then learns the kernel had
+  // already seen the others.
+  it('carries the issues collected BEFORE a structural failure', () => {
+    try {
+      validateManifest({
+        id: '',
+        version: 'nope',
+        provides: [],
+        consumes: 'not-an-array',
+        configSchema: passthroughSchema,
+      })
+      expect.unreachable()
+    } catch (error) {
+      const issues = (error as ManifestInvalidError).issues
+      expect(issues.join(' | ')).toContain("'id'")
+      expect(issues.join(' | ')).toContain("'version'")
+      expect(issues.join(' | ')).toContain("'consumes'")
+    }
+  })
+
+  it('never dereferences a consumes entry it just rejected', () => {
+    expect(() =>
+      validateManifest({
+        id: 'a',
+        version: '1.0.0',
+        provides: [],
+        consumes: ['not-an-object'],
+        configSchema: passthroughSchema,
+      }),
+    ).toThrow(ManifestInvalidError)
+  })
+
+  // Without the structural guard this reaches `configSchema['~standard']` on
+  // undefined and raises a raw TypeError, which is not a coded PandaError (AD-7).
+  it('refuses an absent configSchema coded, carrying what came before it', () => {
+    try {
+      validateManifest({ id: 'a', version: 'bad', provides: [], consumes: [] })
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManifestInvalidError)
+      expect((error as ManifestInvalidError).issues.join(' | ')).toContain("'version'")
+      expect((error as ManifestInvalidError).issues.join(' | ')).toContain("'configSchema'")
+    }
+  })
+
+  it('collects an async configSchema rather than treating it as structural', () => {
+    try {
+      validateManifest({
+        id: '',
+        version: '1.0.0',
+        provides: [],
+        consumes: [],
+        configSchema: { '~standard': { version: 1, validate: () => Promise.resolve({ value: 1 }) } },
+      })
+      expect.unreachable()
+    } catch (error) {
+      // The probe already ran, so this is a field-level fact and the blank id
+      // beside it must survive.
+      const issues = (error as ManifestInvalidError).issues
+      expect(issues.join(' | ')).toContain("'configSchema'")
+      expect(issues.join(' | ')).toContain("'id'")
+    }
+  })
+})
+
+describe('M7.B rows 8-9: duplicates, and the untouched happy path', () => {
+  it('reports a duplicate in provides and a duplicate in consumes together', () => {
+    try {
+      validateManifest({
+        id: 'a',
+        version: '1.0.0',
+        provides: ['svc.a', 'svc.a'],
+        consumes: [
+          { service: 'svc.b', mode: 'hard' },
+          { service: 'svc.b', mode: 'soft' },
+        ],
+        configSchema: passthroughSchema,
+      })
+      expect.unreachable()
+    } catch (error) {
+      const issues = (error as ManifestInvalidError).issues
+      expect(issues).toHaveLength(2)
+      expect(issues.join(' | ')).toContain("'provides'")
+      expect(issues.join(' | ')).toContain("'consumes'")
+    }
+  })
+
+  it('leaves a valid manifest untouched, object and all', () => {
+    const input = {
+      id: 'fine',
+      version: '1.0.0',
+      provides: ['svc.fine'],
+      consumes: [{ service: 'svc.dep', mode: 'hard' as const }],
+      configSchema: passthroughSchema,
+    }
+    const result = validateManifest(input)
+    expect(result.id).toBe('fine')
+    expect(result.provides).toEqual(['svc.fine'])
+    expect(result.consumes).toEqual([{ service: 'svc.dep', mode: 'hard' }])
+  })
+})

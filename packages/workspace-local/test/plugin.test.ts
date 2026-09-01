@@ -96,8 +96,11 @@ describe('the local workspace provider as a kernel plugin', () => {
     expect(started.started).toEqual([])
     expect(started.failures.map((failure) => failure.pluginId)).toEqual(['workspace'])
     expect(started.failures[0]!.error.message).toContain("'workspace.rootDir' is required")
-    // Typed absence, never undefined.
-    expect(kernel.getService(WORKSPACE_SERVICE)).toEqual({ kind: 'absent' })
+    // Typed absence, never undefined — and since M7.B it says WHICH absence.
+    // This is the scenario the discriminant exists for: the provider is
+    // registered and its activation was rejected, which a consumer must be able
+    // to tell apart from a service nothing provides at all.
+    expect(kernel.getService(WORKSPACE_SERVICE)).toEqual({ kind: 'absent', reason: 'provider-failed' })
   })
 
   it('REPORTS an unknown key on the bus and keeps serving', async () => {

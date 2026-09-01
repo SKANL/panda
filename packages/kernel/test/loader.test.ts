@@ -120,7 +120,9 @@ describe('loadPlugins', () => {
     expect(result.ready).toEqual(['optional'])
     expect(result.failures).toEqual([])
     const resolution = result.plugins[0]?.resolutions.get('svc.absent')
-    expect(resolution).toEqual({ kind: 'absent' })
+    // The loader decides PRESENCE, so 'no-provider' is the only reason it emits;
+    // readiness is the lifecycle's answer (see AbsenceReason).
+    expect(resolution).toEqual({ kind: 'absent', reason: 'no-provider' })
     expect(resolution?.kind).toBe('absent')
   })
 

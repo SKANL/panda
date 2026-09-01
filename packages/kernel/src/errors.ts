@@ -53,9 +53,20 @@ export class PandaKernelError extends Error {
 }
 
 export class ManifestInvalidError extends PandaKernelError {
-  constructor(message: string, options?: ErrorOptions) {
+  /**
+   * EVERY violation the validator found, not the first — the shape
+   * `SwapRejectedError` twelve lines below has always had.
+   *
+   * An author fixing a manifest reads this instead of parsing the message, and
+   * their own test can assert against it. The message keeps its single-line form
+   * for one issue, so nothing that asserts on message text had to change.
+   */
+  readonly issues: readonly string[]
+
+  constructor(message: string, options?: ErrorOptions & { readonly issues?: readonly string[] }) {
     super(KERNEL_ERROR_CODES.manifestInvalid, message, options)
     this.name = 'ManifestInvalidError'
+    this.issues = options?.issues ?? [message]
   }
 }
 

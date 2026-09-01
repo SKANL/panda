@@ -233,12 +233,16 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
 
   function lookup<T>(service: string): ConsumedService<T> {
     const providerId = serviceIndex.get(service)
-    if (providerId === undefined) return { kind: 'absent' }
+    // Three DIFFERENT facts that used to arrive as one. The kernel already
+    // branches on exactly this distinction; before M7.B it then threw it away.
+    if (providerId === undefined) return { kind: 'absent', reason: 'no-provider' }
     const plugin = runtime.get(providerId)
     if (plugin === undefined || plugin.state === 'disposed') {
       throw new PluginInactiveError(providerId, `service '${service}' was disposed with its plugin`)
     }
-    if (plugin.state !== 'active') return { kind: 'absent' }
+    if (plugin.state !== 'active') {
+      return { kind: 'absent', reason: plugin.state === 'failed' ? 'provider-failed' : 'provider-unready' }
+    }
     return { kind: 'provided', pluginId: providerId, value: plugin.services[service] as T }
   }
 
