@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 
 import { setConfigValue } from '@panda/environment'
-import { resolveExecutor } from '@panda/session'
+import { resolveExecutor, resolveMethod } from '@panda/session'
 
 // `panda swap <noun> <id>` — the verb that WRITES a selection.
 //
@@ -15,10 +15,32 @@ import { resolveExecutor } from '@panda/session'
 // id check and the effective selection are `@panda/session`'s. This file parses
 // argv, orders the two calls and prints. It decides nothing.
 
-/** The nouns `swap` takes. Story 5.4 adds `method` here when panda can read one. */
-export const SWAP_NOUNS = ['executor'] as const
+/**
+ * The nouns `swap` takes. Both are selections panda holds about ITSELF, which is
+ * why they share a verb: neither is a registry entry, and neither reaches an
+ * executor's own configuration.
+ *
+ * What differs is how an id is CHECKED. An executor id names one of a closed
+ * catalogue, so the catalogue answers. A method is named by a module specifier
+ * and there is no catalogue to answer with — panda has no installed-methods list
+ * in v1 (PRD §6.2 places methodologies post-v1) — so the only honest check is to
+ * LOAD it. That is why the branch below exists and why FR-28's "listing
+ * available methods" is renegotiated in this story's spec rather than faked.
+ */
+export const SWAP_NOUNS = ['executor', 'method'] as const
 
 export type SwapNoun = (typeof SWAP_NOUNS)[number]
+
+/**
+ * A predicate rather than a cast at the use site. `Array.includes` does not
+ * narrow, and the difference matters here: the noun is handed straight to
+ * `setConfigValue`, whose `key` is the published allowlist type. A cast would
+ * let a third noun added to `SWAP_NOUNS` reach the writer without anybody adding
+ * it to that allowlist too — which is the one thing the allowlist exists to stop.
+ */
+function isSwapNoun(value: string | undefined): value is SwapNoun {
+  return value !== undefined && (SWAP_NOUNS as readonly string[]).includes(value)
+}
 
 /** The layer each scope's document composes into, for the override report below. */
 const LAYER_FOR_SCOPE = { machine: 'global', project: 'project' } as const
@@ -35,12 +57,13 @@ function describe(error: unknown): string {
 }
 
 /**
- * `panda swap executor <id>` and `panda project swap executor <id> [directory]`.
+ * `panda swap <noun> <id>`, machine scope, and its `project` twin.
  *
  * The order is deliberate: VALIDATE, then write, then re-resolve. Validation
- * goes through `resolveExecutor`, so an unknown id gets the identical coded
- * refusal and identical id list that `panda run --executor` gives — one
- * vocabulary for one question, rather than a second list here that drifts.
+ * goes through the same function the RUN path uses — `resolveExecutor` for an
+ * executor, `resolveMethod` for a method — so a refusal here is byte-identical
+ * to the one the user would have hit later, rather than a second opinion that
+ * drifts from it.
  */
 export async function runSwap(
   tokens: readonly string[],
@@ -50,7 +73,7 @@ export async function runSwap(
   options: SwapCommandOptions = {},
 ): Promise<number> {
   const noun = tokens[0]
-  if (noun === undefined || !(SWAP_NOUNS as readonly string[]).includes(noun)) {
+  if (!isSwapNoun(noun)) {
     err(`panda swap needs one of: ${SWAP_NOUNS.join(', ')}`)
     err(usage)
     return 2
@@ -81,11 +104,19 @@ export async function runSwap(
   const projectDir = (scope === 'project' ? extra[0] : undefined) ?? options.cwd ?? process.cwd()
 
   try {
-    // Throws PANDA_EXECUTOR_NOT_FOUND naming every available id. Nothing is
-    // written before this returns: an id panda has no adapter for must cost no
-    // byte on disk, the same rule `runSession` applies before it makes a
-    // workspace directory.
-    await resolveExecutor({ executorId: id, homeDir, projectDir })
+    // Nothing is written before this returns, for either noun: a selection panda
+    // cannot honour must cost no byte on disk, the same rule `runSession`
+    // applies before it makes a workspace directory.
+    if (noun === 'executor') {
+      // Throws PANDA_EXECUTOR_NOT_FOUND naming every available id.
+      await resolveExecutor({ executorId: id, homeDir, projectDir })
+    } else {
+      // Loading IS the check. It also means `panda swap method` fails at the
+      // moment the user can still fix it, rather than at the next `panda run`
+      // when they have moved on — the same reason the executor id is resolved
+      // here instead of trusted.
+      await resolveMethod(id, projectDir)
+    }
   } catch (error) {
     err(describe(error))
     return 2
@@ -97,7 +128,7 @@ export async function runSwap(
       scope,
       homeDir,
       projectDir,
-      key: 'executor',
+      key: noun,
       value: id,
     })
   } catch (error) {
@@ -116,6 +147,12 @@ export async function runSwap(
   // command that stopped at "selected" would be telling the user it had done
   // something it had not. So the effective selection is resolved again, with no
   // override, and reported whenever it is not what was just written.
+  // The effective-selection report is EXECUTOR-only, and that asymmetry is
+  // deliberate rather than an omission: resolving the effective method would
+  // mean importing and ACTIVATING it here, in a process whose whole job is to
+  // write a string. A swap that ran a methodology's onActivate as a side effect
+  // of being configured is a side effect nobody asked for.
+  if (noun !== 'executor') return 0
   try {
     const effective = await resolveExecutor({ homeDir, projectDir })
     if (effective.executorId !== id || effective.layer !== LAYER_FOR_SCOPE[scope]) {

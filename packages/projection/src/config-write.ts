@@ -28,12 +28,18 @@ const CONFIG_FILE = 'config.json'
 /**
  * The keys panda will persist — an ALLOWLIST, not a suggestion.
  *
+ * The two literals are spelled here rather than imported: this package cannot
+ * reach '@panda/adapter-cli' (which owns EXECUTOR_CONFIG_KEY) under AD-2, and
+ * importing '@panda/contracts' for METHOD_CONFIG_KEY alone would make one of the
+ * pair look canonical while the other stayed a literal. Both are duplicated, and
+ * this comment is why.
+ *
  * Key-agnostic is not unconstrained. A key panda does not read is a value
  * written once and ignored forever, which is the same defect as a registry type
- * nothing projects: M4.E's rule, applied to configuration. Story 5.4 adds
- * `method` here in the change that teaches panda to read it, never before.
+ * nothing projects: M4.E's rule, applied to configuration. `method` arrived
+ * with M5.D, in the same change that taught panda to read and mount one.
  */
-export const WRITABLE_CONFIG_KEYS = ['executor'] as const
+export const WRITABLE_CONFIG_KEYS = ['executor', 'method'] as const
 
 export type WritableConfigKey = (typeof WRITABLE_CONFIG_KEYS)[number]
 

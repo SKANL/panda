@@ -90,6 +90,7 @@ development_status:
   m5a-the-methodplugin-contract-is-published-or-it-is-not: done           # implements 5.3/FR-23/RD-3; 5.4 hot swap stays out
   m5b-every-rule-the-contract-states-is-enforced: done   # closes M5.A's two prose-only rules: the artifact `path` claim and the pair rule the type never checked
   m5c-panda-writes-the-selection-it-tells-you-to-edit: done   # the persistence verb FR-28 needs; closes the hand-edit hole 2.7c left in FR-7/FR-9
+  m5d-a-method-is-a-selection-panda-mounts: done   # implements 5.4/FR-28/UJ-3; a method is config, not registry vocabulary
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
   epic-2-retrospective: optional
 
@@ -108,7 +109,7 @@ development_status:
   5-1-export-bundle-with-secrets-excluded: backlog
   5-2-import-and-re-project-elsewhere: backlog
   5-3-methodplugin-contract-published: superseded  # shipped as m5a (the contract) + m5b (the two rules m5a stated but did not enforce)
-  5-4-methodology-hot-swap: backlog
+  5-4-methodology-hot-swap: superseded  # re-specified as m5d onto the measured answer: a method is a selection panda mounts, not an entry it projects
   5-5-full-diagnostics: backlog
   5-6-environment-status-with-read-only-quota-surfacing: backlog
   epic-5-retrospective: optional

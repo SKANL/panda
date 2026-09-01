@@ -48,6 +48,7 @@ export {
   type StoredEntryType,
 } from './registry.ts'
 export {
+  METHOD_CONFIG_KEY,
   METHOD_PLUGIN_ROOT_KEYS,
   METHOD_PLUGIN_SCHEMA,
   SEMVER_PATTERN,

@@ -567,6 +567,13 @@ describe('createSessionKernel is the only composition surface', () => {
     // it is what `SessionOptions.kernel` is.
     const surface = (await import('../src/index.ts')) as Record<string, unknown>
     const values = Object.keys(surface).filter((name) => surface[name] !== undefined)
+    // WIDENED BY M5.D, deliberately, and the list is exact so that widening had
+    // to be a decision. Neither addition yields a kernel, a plugin or an adapter
+    // — the rule this clause states: `resolveMethod` hands back a validated
+    // MethodPlugin (a manifest, which `@panda/contracts` already validates in
+    // public) and `swapMethod` hands back a `MethodActivation`, which
+    // `activateMethod` already returns in public. `selectMethod` exists beside
+    // them and is NOT here: `runSession` is its only caller.
     expect(values.sort()).toEqual([
       'SESSION_ACTION_COST',
       'SESSION_ACTION_ID',
@@ -574,7 +581,9 @@ describe('createSessionKernel is the only composition surface', () => {
       'createSessionKernel',
       'readExecutorConfigLayers',
       'resolveExecutor',
+      'resolveMethod',
       'runSession',
+      'swapMethod',
     ])
   })
 

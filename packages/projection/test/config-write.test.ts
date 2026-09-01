@@ -193,8 +193,12 @@ describe('M5.C rows 13 and 14: the project scope', () => {
 })
 
 describe('M5.C: the key allowlist', () => {
+  // An EXACT list, not a `toContain`: the allowlist is what stops panda writing
+  // a key nothing reads, and a membership check would let one be added without
+  // anybody deciding. `method` was added by M5.D, in the same change that taught
+  // panda to read and mount one.
   it('publishes the keys panda will persist', () => {
-    expect([...WRITABLE_CONFIG_KEYS]).toEqual(['executor'])
+    expect([...WRITABLE_CONFIG_KEYS]).toEqual(['executor', 'method'])
   })
 
   it('refuses a key panda does not read, rather than writing one nothing will ever use', async () => {

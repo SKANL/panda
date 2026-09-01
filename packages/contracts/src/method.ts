@@ -36,6 +36,22 @@ export function isSemver(value: unknown): value is string {
   return typeof value === 'string' && SEMVER_PATTERN.test(value)
 }
 
+/**
+ * The configuration key holding the SELECTED method, in panda's own
+ * `<scope>/.panda/config.json`.
+ *
+ * A method is not registry vocabulary: `registry.ts` defines that vocabulary as
+ * the words that REACH AN EXECUTOR through the projection layer, and a method
+ * reaches none — panda mounts it in its own process. So it is a selection, and
+ * it lives beside the executor selection.
+ *
+ * The value is a MODULE SPECIFIER, stored verbatim: it may be a relative path
+ * or a bare package name, and normalising it as a path would corrupt the second
+ * kind. Owned here because this package owns the MethodPlugin contract, the
+ * same way `@panda/adapter-cli` owns `EXECUTOR_CONFIG_KEY`.
+ */
+export const METHOD_CONFIG_KEY = 'method'
+
 /** One step of the methodology, in declaration order. Order IS the phase order. */
 export interface MethodPhase {
   readonly id: string

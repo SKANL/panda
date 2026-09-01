@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { createExecutorPlugin, EXECUTOR_CONFIG_KEY, EXECUTOR_SERVICE } from '@panda/adapter-cli'
 import type { CliExecutorAdapterOptions, ExecutorService } from '@panda/adapter-cli'
 import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import type { MethodActivation } from '@panda/contracts'
 import type { ExecutorAdapter, ResultEnvelope, WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
 import {
   createKernel,
@@ -25,6 +26,7 @@ import {
   type ExecutorConfigLayers,
   type ExecutorSelection,
 } from './executors.ts'
+import { resolveMethod, selectMethod, swapMethod } from './methods.ts'
 
 /**
  * The PREFIX every session invocation is recorded under. The registered id is
@@ -544,10 +546,32 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
     throw error
   }
 
+  // The selected methodology, mounted for this session (FR-28 / UJ-3).
+  //
+  // Read from the kernel's ALREADY COMPOSED configuration rather than from disk
+  // again, so the method and the executor are decided by one layer resolution
+  // and cannot disagree about which document won.
+  //
+  // A failure here FAILS THE RUN. A broken method selection that fell through to
+  // "no method" would run a different methodology than the document names,
+  // silently — the same failure `selectExecutor` refuses for the executor, and
+  // the reason `resolveMethod` is coded rather than optional. No selection at
+  // all is the ordinary v1 state and costs nothing.
+  let method: MethodActivation | undefined
+  try {
+    const selected = selectMethod(kernel.config)
+    if (selected !== undefined) method = await swapMethod(undefined, await resolveMethod(selected.specifier, cwd ?? process.cwd()))
+  } catch (error) {
+    if (disposeProvider) await contained(() => provider.dispose())
+    if (stopKernel !== undefined) await contained(stopKernel)
+    throw error
+  }
+
   let handle: WorkspaceHandle
   try {
     handle = await provider.create()
   } catch (error) {
+    if (method !== undefined) await contained(() => method.deactivate())
     // Nothing was leased, so there is nothing to release — but the provider was
     // obtained and owns whatever it allocated before it failed.
     if (disposeProvider) await contained(() => provider.dispose())
@@ -584,6 +608,11 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
     await contained(() => removeSignalHandler())
     await contained(() => provider.release(handle))
     if (disposeProvider) await contained(() => provider.dispose())
+    // The method unmounts BEFORE the kernel stops and AFTER the workspace is
+    // released: its onDeactivate may touch what it materialised, and a teardown
+    // running against a half-disposed session is the failure this ordering
+    // exists to prevent. Contained like every other step here.
+    if (method !== undefined) await contained(() => method.deactivate())
     // A kernel this session BUILT is a kernel this session stops, which is what
     // runs every mounted plugin's disposer — the mounted provider's included. A
     // kernel the caller supplied is the caller's to stop, or two sessions on one

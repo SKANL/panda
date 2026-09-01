@@ -18,6 +18,16 @@ export {
   type ExecutorSelection,
   type ResolveExecutorOptions,
 } from './executors.ts'
+// `selectMethod` is deliberately NOT exported: `runSession` is its only caller,
+// and publishing a surface nothing outside consumes is the defect the handoff
+// records for four kernel exports that nothing reads.
+//
+// `swapMethod` IS exported although panda's own CLI never passes an outgoing
+// method — one CLI process has nothing mounted to unmount. FR-28's ordered swap
+// is delivered to the audience the PRD names first ("panda ships as an SDK
+// first"): a host with a long-lived kernel. Unexported, the guarantee this story
+// exists to provide would be reachable only from this package's own tests.
+export { resolveMethod, swapMethod } from './methods.ts'
 // `SessionOptions.adapterOptions` is on the surface, so its vocabulary has to be
 // too — the same rule the block below states: under pnpm's strict layout a
 // consumer that installed only `@panda/session` cannot resolve
