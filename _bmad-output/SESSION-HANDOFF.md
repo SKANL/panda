@@ -227,6 +227,25 @@ nearly every review — and finally inside the mechanism built to prevent it.
   NUL was written as an escape. `check-source-bytes.mjs` caught that one, exit 1
   with the line number, which is exactly what a guard that fails is for. Neither
   was visible by re-reading the text.
+- **A package manifest is not an architecture.** M5.C's frozen spec measured that
+  `@panda/environment` declares `@panda/projection` and concluded AD-2 permitted
+  the import. `packages/environment/test/guard.test.ts` refused it: that package
+  may import only `access`, `constants`, `mkdir` and `stat` from the filesystem,
+  and its source may not contain the string `atomicWriteText` — a clause that
+  exists because a reviewer had already reached it exactly that way. **Before
+  putting code in a package, read that package's guard test, not only its
+  `package.json`.** Every package here has one and they encode decisions no
+  manifest can.
+- **A harness that supplies what the real caller does not is testing a caller
+  that does not exist.** `panda project swap` exited 2 for every real user while
+  its whole suite was green, because every test passed `runPanda` a `cwd` and the
+  binary passes none. Found by DRIVING THE BINARY, which is the only lens that
+  could have. Run the thing as a user before believing a green suite.
+- **A test that passes without exercising anything.** M5.C's mode-preservation
+  row used `chmod(path, 0o600)`, which is a NO-OP on Windows (measured: the mode
+  stays 0o666), so it asserted `0o666 === 0o666`. Rewritten with 0o444, which
+  maps to the read-only attribute and takes on both platforms — and it
+  immediately failed, surfacing a real behaviour nobody had measured.
 - **A measurement instrument needs its own control.** M5.B's mutation harness
   reported "1 killed" for all eight mutations, and that was a lie: the reporter
   never wrote its output file, then `execFile` with `shell: true` swallowed
@@ -256,7 +275,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`3302658`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`d4800c2`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean.
 
 Stories closed, each with CI verified against its exact SHA:
@@ -270,6 +289,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `2974edd` | M5.A — published the MethodPlugin contract; live suite stops blaming panda for provider outages |
 | `087e357` | M6.A — worktrees panda can prove are its own (implements 4.1 / FR-18) |
 | `3302658` | M5.B — the artifact `path` rule and the hook pair are enforced, not stated |
+| `d4800c2` | M5.C — `panda swap executor`; panda writes the selection it used to tell you to hand-edit |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -284,16 +304,33 @@ projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **Story 5.4 — methodology hot swap** (`panda swap method`, FR-28). M5.A
-   deliberately left it untouched and M5.B did not move it, so it is now the
-   largest open piece of Epic 5. `deferred-work.md` has banked three decisions it
-   inherits: the zero-argument hooks (whatever a swap hands a method IS the swap
-   surface, which is why they start at zero), the single
+1. **Story 5.4 — methodology hot swap** (`panda swap method`, FR-28), and it is
+   BLOCKED on a question the story does not ask. Measured at `3e6f85c` while
+   scoping it: **panda cannot load a method from anywhere.** Dynamic imports
+   across `packages/*/src` are zero (control: 81 `export function` over the same
+   glob), exactly two plugins mount and both are constructed in process, and a
+   registry entry is JSON so it cannot carry the hook FUNCTIONS a `MethodPlugin`
+   is defined by. So 5.4's own precondition — "given two installed methods" — is
+   unreachable. The PRD is consistent about this and it reads like a conflict:
+   §6.1 puts `swap` inside v1's CLI and names the seventh contract the
+   "MethodPlugin **definition**", while §6.2 puts "official methodology plugins
+   (immediately post-v1)" outside it.
+
+   5.4 also asks one CLI process to do two things it cannot do at once: the
+   ordered `onDeactivate`→`onActivate` needs methods MOUNTED, and "persists
+   across processes" crosses a boundary where nothing is mounted. **M5.C shipped
+   the persistence half** as `panda swap executor`, so 5.4 inherits the verb, the
+   scopes and the layer-honesty and only has to answer where a method comes from:
+   a host-supplied set through the SDK, built-ins inside panda, or a loader panda
+   does not have. Decide that FIRST.
+
+   `deferred-work.md` banks four more decisions it inherits: the zero-argument
+   hooks (whatever a swap hands a method IS the swap surface), the single
    `PANDA_METHOD_HOOK_FAILED` code (an ordered swap has to branch on WHICH half
-   failed — a failed outgoing `onDeactivate` and a failed incoming `onActivate`
-   are different recoveries), and the gap that lets `METHOD-PLUGIN.md` name a
-   verb the binary does not have, because `shippedFiles` in
-   `packages/cli/test/printed-commands.test.ts` scans `.ts` and not `.md`.
+   failed), the M5.C blocker entry above, and the gap that lets
+   `METHOD-PLUGIN.md` name a verb the binary does not have, because
+   `shippedFiles` in `packages/cli/test/printed-commands.test.ts` scans `.ts`
+   and not `.md`.
 2. **Profiles (Epic 5).** The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
