@@ -125,8 +125,19 @@ something you KNOW is in the file.
 ## 4. How to run and check things
 
 ```bash
-cd /c/code/panda && pnpm check          # full gate: bytes + typecheck + lint + tests
+cd /c/code/panda && pnpm check          # bytes + typecheck + lint + tests
+cd /c/code/panda && pnpm build && pnpm proof:consumer-install   # the OTHER half
 ```
+
+**`pnpm check` is NOT the CI gate.** CI runs the FR-29 consumer-install proof as
+its own step, and `pnpm check` does not include it — it needs a build, which the
+development loop deliberately does without. M5.D pushed a green `pnpm check` and
+CI went **red on both jobs**: a literal `import('./x.mjs')` inside a JSDoc
+comment became a phantom import, because `relativeSpecifiers` in
+`packages/session/test/consumer-install.proof.ts` regexes raw source and does not
+strip comments, and the packed `.d.ts` keeps JSDoc. Same shape as the doc comment
+that tripped M5.A's printed-command scan. **Run the proof before pushing anything
+that adds an import specifier or a comment that looks like one.**
 
 **`pnpm check` ABORTS at the first failing package.** When it stops early, run
 the rest individually — `pnpm --filter` does NOT work here because of the
@@ -234,6 +245,13 @@ nearly every review — and finally inside the mechanism built to prevent it.
   NUL was written as an escape. `check-source-bytes.mjs` caught that one, exit 1
   with the line number, which is exactly what a guard that fails is for. Neither
   was visible by re-reading the text.
+- **A scanner that reads RAW SOURCE reads your comments too.** Twice now: M5.A's
+  doc comment spelled a verb the printed-command scan then demanded the binary
+  dispatch, and M5.D wrote a literal dot-relative specifier inside JSDoc, which
+  the packed `.d.ts` carried and the FR-29 reachability proof followed to a file
+  no tarball contains — CI red on both jobs after a green `pnpm check`. DESCRIBE
+  the example instead of writing it out, and remember that the local gate is not
+  the CI gate (§4).
 - **A package manifest is not an architecture.** M5.C's frozen spec measured that
   `@panda/environment` declares `@panda/projection` and concluded AD-2 permitted
   the import. `packages/environment/test/guard.test.ts` refused it: that package

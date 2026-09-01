@@ -28,11 +28,19 @@ import {
 /**
  * What `import()` is actually given, resolved from the USER's directory.
  *
- * `import(specifier)` resolves relative to the module that calls it, so a bare
- * `await import('./tdd.mjs')` here searched `packages/session/src/` — meaning no
- * relative specifier could ever work, which is the ordinary way a local method
- * is named. Found by running the binary while this package's suite was green,
- * because every test passed a `file://` URL and sidestepped resolution.
+ * `import(specifier)` resolves relative to the module that calls it, so a
+ * dot-relative specifier handed straight over searched `packages/session/src/` —
+ * meaning no relative specifier could ever work, which is the ordinary way a
+ * local method is named. Found by running the binary while this package's suite
+ * was green, because every test passed a `file://` URL and sidestepped
+ * resolution.
+ *
+ * The example is DESCRIBED rather than written out, and that is not fussiness:
+ * `relativeSpecifiers` in `test/consumer-install.proof.ts` regexes raw source
+ * for a dot-relative specifier and does not strip comments, so a literal one in
+ * this JSDoc becomes a phantom import the packed `.d.ts` "reaches" and the
+ * tarball cannot contain. It failed CI on both jobs exactly that way, which is
+ * the same shape as the doc comment that tripped M5.A's printed-command scan.
  *
  * A relative path is resolved against `baseDir` and handed over as a file URL.
  * A BARE specifier goes through `createRequire(baseDir)`, so a method installed
