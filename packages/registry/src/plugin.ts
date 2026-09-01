@@ -115,9 +115,12 @@ export function createRegistryPlugin(options: RegistryPluginOptions = {}): Regis
     return {
       status: 'activated',
       services: { registry: store },
-      dispose: () => {
-        void store.dispose()
-      },
+      // RETURNED, not voided. `RegistryStore.dispose()` waits for every in-flight
+      // mutation, and `void`-ing it meant `kernel.stop()` could resolve while a
+      // registry write was still landing — and a rejection there was an UNHANDLED
+      // one, which terminates the process. The kernel awaits this and contains a
+      // failure as a `DisposalFailure` (M7.A).
+      dispose: () => store.dispose(),
     }
   }
 

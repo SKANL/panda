@@ -53,7 +53,14 @@ export type PluginFactoryResult =
   | {
       readonly status: 'activated'
       readonly services?: Readonly<Record<string, unknown>>
-      readonly dispose?: () => void
+      /**
+       * Teardown. MAY be asynchronous: `stop()` and `dispose()` await the result,
+       * so a
+       * plugin holding a flush, a socket or an in-flight write can say "I am not
+       * done yet" instead of being fire-and-forgotten. `swap()` is synchronous
+       * and does NOT await a previous disposer — see its docblock.
+       */
+      readonly dispose?: () => unknown
     }
   | { readonly status: 'rejected'; readonly issues: readonly string[] }
 
@@ -135,12 +142,12 @@ interface RuntimePlugin {
   readonly manifest: PluginManifest
   state: PluginState
   services: Readonly<Record<string, unknown>>
-  disposer?: () => void
+  disposer?: () => unknown
 }
 
 interface ActivationAssessment {
   readonly services: Readonly<Record<string, unknown>>
-  readonly disposer?: () => void
+  readonly disposer?: () => unknown
 }
 
 type ActivationRejection = {
@@ -277,7 +284,26 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
     for (const key of Object.keys(services)) {
       if (!manifest.provides.includes(key)) issues.push(`service '${key}' is not declared in provides`)
     }
-    if (issues.length > 0) return { reason: pairing ? 'pairing' : 'coverage', issues }
+    if (issues.length > 0) {
+      // The factory RAN. It opened whatever it opened and handed back a disposer,
+      // and rejecting the candidate without calling it strands those resources
+      // permanently — nothing here holds a reference to it again. Contained, and
+      // the teardown failure is APPENDED rather than substituted: the author
+      // needs to know both that their services did not match and that their
+      // cleanup then failed, and the second must not hide the first.
+      //
+      // A `pairing` rejection fires only when `dispose` is undefined, so this is
+      // reachable for `coverage` alone; the optional call states that rather
+      // than relying on the reader to derive it.
+      try {
+        result.dispose?.()
+      } catch (error) {
+        issues.push(
+          `plugin '${manifest.id}' also failed to tear down after rejection: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      return { reason: pairing ? 'pairing' : 'coverage', issues }
+    }
     return { services, disposer: result.dispose }
   }
 
@@ -379,7 +405,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       const performStop = async (): Promise<StopResult> => {
         // Handler continuations may still mutate state a disposer could observe;
         // they settle (and their contained failures surface) before unwinding.
-        const handlerFailures = await bus.drain()
+        const handlerFailures: HandlerFailure[] = [...(await bus.drain())]
         // AD-8's drain-before-disposers rule, applied to the record stream too: a
         // disposer must not run while a pre-teardown record is still in flight, or
         // the stream would show disposal ahead of the transition it followed.
@@ -392,7 +418,10 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
           if (plugin === undefined || plugin.state !== 'active') continue
           let disposerThrew = false
           try {
-            plugin.disposer?.()
+            // AWAITED, one at a time. `Promise.all` over this loop would pass every
+            // containment test and destroy the reverse-order guarantee, which is
+            // the whole point of walking `activationOrder` backwards.
+            await plugin.disposer?.()
           } catch (error) {
             disposalErrors.push({ pluginId: id, error })
             disposerThrew = true
@@ -406,6 +435,11 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
           disposed.push(id)
         }
 
+        // A disposer may have emitted: the bus is still open here, and without
+        // this drain its listeners' async continuations would settle after
+        // `stop()` resolved, with their failures reaching nobody. Additive today
+        // (no shipped disposer emits) and the window closes before something uses it.
+        handlerFailures.push(...(await bus.drain()))
         record({ event: 'kernel.stopped', subject: 'kernel' })
         bus.close()
         // stop() resolves quiescent: nothing teardown recorded is still pending.
@@ -453,7 +487,17 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       record({ event: 'plugin.swapped', subject: pluginId })
 
       try {
-        previousDisposer?.()
+        // NOT awaited: `swap()` is synchronous by design and has no production
+        // caller, so making it async would be a breaking change to a published
+        // signature for a path nothing takes (deferred-work.md carries the
+        // upgrade path). A thenable previous teardown is still CONTAINED — an
+        // unhandled rejection here would take the process down.
+        const settling = previousDisposer?.() as { catch?: (fn: (error: unknown) => void) => unknown } | undefined
+        if (typeof settling?.catch === 'function') {
+          settling.catch(() => {
+            record({ event: 'plugin.disposal-failed', subject: pluginId })
+          })
+        }
       } catch (error) {
         // The swap itself committed; only the superseded implementation's
         // teardown failed, and that is the half the result object reports.
@@ -475,7 +519,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       // second time, and lost the record entirely.
       let disposerThrew = false
       try {
-        plugin.disposer?.()
+        await plugin.disposer?.()
       } catch {
         disposerThrew = true
       }

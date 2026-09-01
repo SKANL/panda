@@ -169,13 +169,15 @@ export function createWorkspacePlugin(options: WorkspacePluginOptions = {}): Wor
     return {
       status: 'activated',
       services: { [WORKSPACE_SERVICE]: provider },
-      dispose: () => {
-        // `dispose()` is async and idempotent and leaves every workspace
-        // directory in place, so there is nothing for the kernel to await and
-        // nothing a rejection here could undo — but a floating rejection would
-        // still take the process down, so it is settled rather than dropped.
-        void provider.dispose().catch(() => {})
-      },
+      // RETURNED, not voided. The previous note argued from what THIS provider's
+      // `dispose()` happens to do — idempotent, leaves every workspace directory
+      // in place — rather than from the contract, and
+      // `WorkspaceProvider.dispose(): Promise<void>` lets a third party's
+      // provider have teardown that genuinely must finish. Since M7.A the kernel
+      // awaits this and contains a rejection as a `DisposalFailure`, so the
+      // hand-rolled `.catch()` that existed only to stop a floating rejection is
+      // gone with the reason for it.
+      dispose: () => provider.dispose(),
     }
   }
 

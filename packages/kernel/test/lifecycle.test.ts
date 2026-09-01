@@ -477,7 +477,8 @@ describe('lifecycle: composition with the loader', () => {
 describe('lifecycle: drained shutdown', () => {
   it('drains pending event-handler continuations before any disposer runs, with the bus quiescent', async () => {
     const observations: string[] = []
-    const kernel = createKernel()
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
     kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), () => ({
       status: 'activated',
       services: { 'svc.p': 1 },
@@ -662,5 +663,225 @@ describe('lifecycle: record stream discipline', () => {
 
     await expect(kernel.stop()).resolves.toMatchObject({ disposed: ['p'] })
     expect(disposals).toEqual(['p'])
+  })
+})
+
+// --- M7.A: teardown does what the kernel says it does ------------------------
+
+describe('M7.A rows 1-4: a rejected candidate is torn down, not stranded', () => {
+  // The factory RAN. It opened whatever it opened and handed back a disposer.
+  // Rejecting it for coverage and dropping that disposer strands the resources
+  // permanently — nothing in the kernel ever holds a reference to it again.
+  it('runs the disposer of a candidate rejected for coverage, exactly once', () => {
+    let disposed = 0
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'hole', provides: ['svc.hole'] }), () => ({
+      status: 'activated',
+      services: { 'svc.hole': undefined },
+      dispose: () => {
+        disposed += 1
+      },
+    }))
+
+    const result = kernel.start()
+
+    expect(result.started).toEqual([])
+    expect(result.failures[0]?.error.message).toContain("'svc.hole'")
+    expect(disposed).toBe(1)
+  })
+
+  it('reports a teardown failure BESIDE the coverage issues, never instead of them', () => {
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'both', provides: ['svc.both'] }), () => ({
+      status: 'activated',
+      services: { 'svc.other': 1 },
+      dispose: () => {
+        throw new Error('cleanup exploded')
+      },
+    }))
+
+    const result = kernel.start()
+
+    const message = result.failures[0]?.error.message ?? ''
+    // The author needs BOTH facts: their services did not match, and their
+    // cleanup then failed. The second must not hide the first.
+    expect(message).toContain("'svc.both'")
+    expect(message).toContain('cleanup exploded')
+  })
+
+  it('runs the disposer of a candidate a SWAP rejected, while the previous keeps serving', () => {
+    const { kernel } = startWith(provider('p', 'svc.p', 'old'))
+    let disposed = 0
+
+    const candidate: PluginFactory = () => ({
+      status: 'activated',
+      services: { 'svc.other': 'x' },
+      dispose: () => {
+        disposed += 1
+      },
+    })
+
+    expect(() => kernel.swap('p', candidate)).toThrow(SwapRejectedError)
+    expect(disposed).toBe(1)
+    expect(kernel.getService('svc.p')).toEqual({ kind: 'provided', pluginId: 'p', value: 'old' })
+  })
+
+  it('leaves a pairing rejection alone, because there is nothing to call', () => {
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'nodisposer', provides: ['svc.x'] }), () => ({
+      status: 'activated',
+      services: { 'svc.x': 1 },
+    }))
+
+    const result = kernel.start()
+
+    expect(result.failures[0]?.error.message).toContain('pairs no disposer')
+  })
+})
+
+describe('M7.A rows 5-9: disposal may be asynchronous, and stop() waits for it', () => {
+  it('does not resolve stop() until an async disposer has settled', async () => {
+    let released!: () => void
+    const gate = new Promise<void>((resolve) => {
+      released = resolve
+    })
+    let finished = false
+
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'slow', provides: ['svc.slow'] }), () => ({
+      status: 'activated',
+      services: { 'svc.slow': 1 },
+      dispose: async () => {
+        await gate
+        finished = true
+      },
+    }))
+    kernel.start()
+
+    let stopResolved = false
+    const stopping = kernel.stop().then(() => {
+      stopResolved = true
+    })
+
+    // The assertion that DISCRIMINATES. Asserting `finished === false` here
+    // passes with or without the fix — the disposer is gated either way — so it
+    // proves nothing. What proves it is that `stop()` is STILL PENDING while the
+    // gate is shut. `setImmediate` drains the whole microtask queue first, so a
+    // stop() that did not await the disposer has already resolved by this line.
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(stopResolved, 'stop() resolved while a disposer was still running').toBe(false)
+    expect(finished).toBe(false)
+
+    released()
+    await stopping
+    expect(finished).toBe(true)
+  })
+
+  it('contains a REJECTING async disposer as a DisposalFailure instead of an unhandled rejection', async () => {
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
+    kernel.register(manifest({ id: 'boom', provides: ['svc.boom'] }), () => ({
+      status: 'activated',
+      services: { 'svc.boom': 1 },
+      dispose: () => Promise.reject(new Error('flush failed')),
+    }))
+    kernel.start()
+
+    const stopped = await kernel.stop()
+
+    expect(stopped.disposalErrors).toHaveLength(1)
+    expect(stopped.disposalErrors[0]?.pluginId).toBe('boom')
+    expect((stopped.disposalErrors[0]?.error as Error).message).toBe('flush failed')
+    expect(lifecycleTrail(log)).toContain('plugin.disposal-failed:boom')
+  })
+
+  it('contains the same rejection through dispose(pluginId)', async () => {
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
+    kernel.register(manifest({ id: 'one', provides: ['svc.one'] }), () => ({
+      status: 'activated',
+      services: { 'svc.one': 1 },
+      dispose: () => Promise.reject(new Error('nope')),
+    }))
+    kernel.start()
+
+    await kernel.dispose('one')
+
+    // A disposed plugin's service THROWS rather than reading absent — that is
+    // the existing contract, pinned above; the point of this row is that the
+    // rejecting async disposer was contained on the way there.
+    expect(() => kernel.getService('svc.one')).toThrow(PluginInactiveError)
+    expect(lifecycleTrail(log)).toContain('plugin.disposal-failed:one')
+  })
+
+  // ROW 9, the one that would be silent. A `Promise.all` over the disposal loop
+  // passes every row above and destroys reverse order, so the ordering has to be
+  // asserted against an ASYNC disposer that yields the microtask queue.
+  it('keeps reverse activation order exact when a disposer is asynchronous', async () => {
+    const order: string[] = []
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'first', provides: ['svc.first'] }), () => ({
+      status: 'activated',
+      services: { 'svc.first': 1 },
+      dispose: () => {
+        order.push('first')
+      },
+    }))
+    kernel.register(manifest({ id: 'second', consumes: [{ service: 'svc.first', mode: 'hard' }] }), () => ({
+      status: 'activated',
+      dispose: async () => {
+        await Promise.resolve()
+        order.push('second')
+      },
+    }))
+    kernel.start()
+
+    await kernel.stop()
+
+    // `second` activated last, so it tears down first — and its async body must
+    // FINISH before `first` begins, not merely be started before it.
+    expect(order).toEqual(['second', 'first'])
+  })
+})
+
+describe('M7.A rows 10-11: the window around the disposer loop', () => {
+  it('drains listener continuations a disposer started, so their failures are reported', async () => {
+    const kernel = createKernel()
+    kernel.bus.subscribe('global', async () => {
+      await Promise.resolve()
+      throw new Error('from a disposer-triggered listener')
+    })
+    kernel.register(manifest({ id: 'emitter', provides: ['svc.emitter'] }), (context) => ({
+      status: 'activated',
+      services: { 'svc.emitter': 1 },
+      dispose: () => {
+        context.bus.emit('teardown')
+      },
+    }))
+    kernel.start()
+
+    const stopped = await kernel.stop()
+
+    expect(stopped.handlerFailures.length).toBeGreaterThan(0)
+  })
+
+  it('records a rejecting previous disposer on swap instead of letting it float', async () => {
+    const log = createMemoryLogSink()
+    const kernel = createKernel({ log })
+    kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), () => ({
+      status: 'activated',
+      services: { 'svc.p': 'old' },
+      dispose: () => Promise.reject(new Error('async teardown failed')),
+    }))
+    kernel.start()
+
+    // swap() is synchronous by design and does not await; the guarantee here is
+    // only that the rejection is CONTAINED rather than becoming an unhandled one.
+    kernel.swap('p', () => ({ status: 'activated', services: { 'svc.p': 'new' }, dispose: () => {} }))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(kernel.getService('svc.p')).toEqual({ kind: 'provided', pluginId: 'p', value: 'new' })
+    expect(lifecycleTrail(log)).toContain('plugin.disposal-failed:p')
   })
 })

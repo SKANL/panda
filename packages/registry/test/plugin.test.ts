@@ -49,6 +49,50 @@ describe('registry as a real kernel plugin', () => {
     expect(() => kernel.getService('registry')).toThrow(/inactive/)
   })
 
+  // M7.A. The disposer used to be `void store.dispose()`: `kernel.stop()` could
+  // resolve while an in-flight registry mutation was still landing, and a
+  // rejection there was an UNHANDLED one, which terminates the process.
+  // `RegistryStore.dispose()` waits for every in-flight mutation, so returning
+  // it is what makes `stop()` mean what it says.
+  it('does not resolve stop() until the store has finished disposing', async () => {
+    const kernel = mount()
+    kernel.start()
+
+    const resolution = kernel.getService<RegistryStore>('registry')
+    if (resolution.kind !== 'provided') throw new Error('registry service should be provided')
+    const store = resolution.value
+
+    let disposeSettled = false
+    const realDispose = store.dispose.bind(store)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // The store's own teardown, gated by this test. A kernel that did not await
+    // the disposer resolves `stop()` before `disposeSettled` is ever set.
+    ;(store as { dispose: () => Promise<void> }).dispose = async () => {
+      await gate
+      await realDispose()
+      disposeSettled = true
+    }
+
+    let stopResolved = false
+    const stopping = kernel.stop().then(() => {
+      stopResolved = true
+    })
+
+    // `setImmediate` drains the whole microtask queue, so a `stop()` that
+    // fire-and-forgot the disposer has already resolved by this line. This is
+    // the assertion that discriminates; asserting `disposeSettled === false`
+    // alone would pass either way, because the gate holds it shut regardless.
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(stopResolved, 'stop() resolved while the registry store was still disposing').toBe(false)
+
+    release()
+    await stopping
+    expect(disposeSettled).toBe(true)
+  })
+
   it('fails fast when an invalid manifest is registered', () => {
     const kernel = createKernel()
     expect(() =>
