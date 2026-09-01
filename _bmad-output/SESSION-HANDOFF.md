@@ -79,6 +79,18 @@ in the order to reach for them:
   5.4's blocking question. The cordis checkout it measures is at `C:\code\cordis`
   — outside panda, indexed by all three graph tools, and safe to delete.
 
+  **The cordis mining is CLOSED.** Seven lenses ran across the repo: `core`
+  (fiber/events/registry/service), tests, ergonomics, `group`+loader config
+  tree, the logger, and a sweep of `timer`/`utils`/`create`/`reflect.ts`. They
+  produced four shipped stories (M7.A–M7.D) and one substantial design input
+  (Profiles, §9 item 1). The last sweep returned **zero** adoptable findings and
+  the reason generalises: `timer` and `utils` are thin veneers over `ctx.effect`,
+  cordis's incremental scope-disposer, and panda deliberately gives a plugin ONE
+  disposer; `reflect.ts` and `create` are load-bearing for choices panda made the
+  other way on purpose (ambient context, and an init that converges instead of
+  scaffolding). Do not re-open cordis hoping for more — re-open it to check a
+  specific claim.
+
 ## 3. Tools — all three work, but two have traps
 
 **codegraph — use the CLI, never the MCP tool.**
@@ -311,6 +323,32 @@ nearly every review — and finally inside the mechanism built to prevent it.
 - **Fixing roots compounds.** Retiring the first registry word cost a full story
   with nine blocking findings; the second cost two lines and touched one file.
 
+- **"Nothing reads this" is a claim about a glob, not about the code.** §9 item 3
+  listed four unread kernel exports. Three had readers; the grep had covered
+  `src` and not `test`. One of those test readers is the mechanism enforcing an
+  architecture rule. Re-run every "no consumer" claim over `test/` before acting
+  on it.
+- **A capability can be fully consumed while its factory is unread.**
+  `createEventBus` has zero callers outside the kernel and its bus has a
+  production subscriber, because the kernel constructs it once internally and
+  hands it out as `kernel.bus`. Grepping the constructor answers a different
+  question than "does anyone use this".
+- **A counter keyed by object identity is only readable by whoever holds that
+  object.** `lostRecordCount` looked like the obvious thing for the CLI to print.
+  Its WeakMap is keyed by the sink `recordSafely` was handed — the session's
+  wrapper — so a CLI reading it prints `0` on exactly the runs it was invented to
+  expose. Found by reading the WeakMap, not by running anything; a test would
+  have agreed with the bug.
+- **Do not build a branch that cannot fire.** An unconditional log sink was the
+  proposed design, so the loss counters would "always" print. But those counters
+  count failures of the write the *caller* supplies, so with no write they are
+  structurally zero. The conditional was then confirmed by mutation: making the
+  sink unconditional is killed by three clauses that predate the story.
+- **Check where `check` stops.** `pnpm check` is
+  `bytes && typecheck && test && lint` — lint runs LAST. A run that dies on a
+  test never lints, and treating that run as "the gate up to the failure" silently
+  skips it.
+
 **Process rules that earned their place:**
 
 - An implementer that FILES a renegotiation instead of implementing past a
@@ -323,8 +361,10 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`bb8e539`**, CI green on both jobs (`gates (24)` and `gates (26)`)
-verified against that exact SHA, working tree clean.
+`main` is at **`b498b9c`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+verified against that exact SHA, working tree clean. (This document's own commit
+sits one above it — check `git log`, do not trust this line alone. It has been
+stale about its own state twice.)
 
 Stories closed, each with CI verified against its exact SHA:
 
@@ -343,6 +383,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `7d13d58` | M7.A — the kernel's teardown does what the kernel says it does; found by reading cordis, including a live unhandled-rejection hazard |
 | `b7e782c` | M7.B — the kernel tells an author EVERY manifest violation, and typed absence says which of three it is |
 | `bb8e539` | M7.C — the kernel APPLIES the configSchema every manifest must declare; three plugins stop hand-rolling it |
+| `b498b9c` | M7.D — `panda run --trace`; the binary finally holds a sink, and `lostRecordCount` is measured UNREACHABLE from the CLI rather than surfaced wrong |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -369,12 +410,67 @@ projection layer actually delivers.
    `model` at the root of `~/.claude/settings.json` and `opencode.json` are
    SINGLETON SCALARS, and projecting N ids into one slot is a selection, not a
    projection.
+
+   **Cordis prior art for this, measured (the last lens before the mining closed):**
+   - A Profile is a **patch layer over a named document**, not a copy of one.
+     `packages/include/src/index.ts:101-164` folds a declarative `PatchOptions[]`
+     over a loaded tree and patches a *copy*; the base file is never touched. Its
+     `name` field is a **guard**, not an address: a patch whose target no longer
+     matches is skipped rather than applied to the wrong entry. Panda's version
+     keys on `${type}:${id}` (`registry/src/store.ts:61-63`), guards on `type`,
+     and must FAIL coded where cordis warns — panda has no warn-and-continue
+     register. Insertion point is one function between `store.list()` and
+     `groupByKind`, called from `environment/src/remediate.ts:229` and
+     `init.ts:780`.
+   - **Do not revive `profile` as an entry type.** In cordis a group IS an entry
+     (`loader/src/config/entry.ts:11-12`), which is legal only because its
+     payload is `config?: any`. Panda's envelope is closed twice over
+     (`KNOWN_ROOT_KEYS`, `REGISTRY_PATH_FIELDS`), so a container has nowhere to
+     put members. M4.F's retirement was right, and cordis confirms it from the
+     outside.
+   - Panda has **no active/inactive axis at all**: `grep -i "disabled|enabled"`
+     over `packages/*/src` → 1 hit, prose. Cordis expresses selection as an
+     inherited tri-state `disabled` overlay with no membership array anywhere.
+     The lazy correct shape is (a) selection lives in the Profile document, the
+     registry keeps saying what EXISTS; (b) an `enabled` field on the envelope
+     triggers the `REGISTRY_TYPE_FIELDS` split already flagged at
+     `contracts/src/registry.ts:107-110`.
+   - Panda's scope merge is **whole-entry replacement**
+     (`store.ts:262`: `merged.set(entryKey(entry), entry)`), not the per-key
+     layering that "per-executor model/effort selections" needs. Confine the
+     per-key fold to the Profile layer rather than changing `list()`'s meaning
+     for every caller. `extensions` is the only root slot that admits provider
+     vocabulary and has **zero** readers in `packages/projection/src`.
+   - **Cordis versions nothing** about groups or bundles — verified by absence.
+     Panda's own `STORE_VERSION` equality check plus the retired-vocabulary read
+     path is better prior art than anything cordis has. First pin whether the
+     PRD's "versioned" means schema version or content revision; they are
+     different designs.
 2. **The unguarded window** between `readIfPresent` and `statSnapshot` in
    `discardLegacy` — a write landing there is captured by the snapshot, so the
    guard correctly reports no change while `text` is stale. In the ledger.
-3. **Four kernel exports with no consumer** outside the kernel:
-   `createEventBus`, `createLogSink`, `lostRecordCount`, `validateManifest`.
-   Observability that exists and nothing reads.
+3. ~~**Four kernel exports with no consumer**~~ — **this entry was wrong, and
+   M7.D measured it.** Three of the four have readers, and the fourth was the
+   real gap:
+   - `createLogSink` — genuinely unread. **Fixed by M7.D**: `panda run --trace`
+     is its first production consumer.
+   - `lostRecordCount` — read by `packages/session/test/kernel-composition.test.ts:130`,
+     and **not surfaceable from the CLI by construction**: its `lostRecords`
+     WeakMap (`packages/kernel/src/log.ts:403`) is keyed by the sink object
+     `recordSafely` was handed, which is always the session's waterfall wrapper
+     (`lifecycle.ts:230`), never the caller's. A CLI reading it would print `0`
+     on every run *including* the runs where the kernel did reject its own
+     records. Do not "fix" this by surfacing it.
+   - `validateManifest` — read by two `packages/contracts/test/` suites; that IS
+     its job (the AD-1 duplication parity check).
+   - `createEventBus` — the FACTORY is unread, but the capability is fully
+     consumed as `kernel.bus`, with a production subscriber at
+     `packages/session/src/run-session.ts:345`. Nothing to fix.
+
+   The lesson, which is the reusable part: **"no consumer" was measured with a
+   grep over `src` only.** Three of four had test consumers, and one of those
+   test consumers is the mechanism that enforces an architecture rule. A test is
+   a consumer. Re-run any "nothing reads this" claim over `test/` too.
 4. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
    (worktrees), Epic 5's export/import bundle.
 
