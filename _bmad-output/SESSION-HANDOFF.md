@@ -145,6 +145,10 @@ node_modules junctions:
 
 ```bash
 cd /c/code/panda/packages/<name> && ./node_modules/.bin/vitest run
+# Excluding the live suites needs `**/*live.test.ts` — NO dot. Panda has two
+# naming styles (`skills-discovery.live.test.ts` and `confinement-live.test.ts`)
+# and `**/*.live.test.ts` silently misses the second, so several sessions of
+# "live excluded" runs were quietly running it and reading its flake as a break.
 ```
 
 Run the binary:
@@ -309,7 +313,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`7d13d58`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`b7e782c`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean.
 
 Stories closed, each with CI verified against its exact SHA:
@@ -327,6 +331,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `88a5333` | cordis measured: take the ideas, refuse the dependency — and Story 5.4 unblocked |
 | `182473f` | M5.D — `panda swap method`; a method is a selection panda MOUNTS, not an entry it projects (Story 5.4 / FR-28 / UJ-3) |
 | `7d13d58` | M7.A — the kernel's teardown does what the kernel says it does; found by reading cordis, including a live unhandled-rejection hazard |
+| `b7e782c` | M7.B — the kernel tells an author EVERY manifest violation, and typed absence says which of three it is |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -341,18 +346,7 @@ projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **M7.B — the kernel reports EVERY manifest violation, with paths.** Measured
-   this session and not yet built. `packages/kernel/src/manifest.ts` defines
-   `fail()` as a THROW with 13 call sites, so an author fixes one mistake per
-   run — while `@panda/contracts` accumulates into `issues[]` and METHOD-PLUGIN.md
-   promises "every violation at once, not the first". One product, two lessons.
-   ~20 lines: `fail()` pushes, one throw at the end, `ManifestInvalidError` gains
-   `readonly issues` (`SwapRejectedError` already has it). Pairs with carrying the
-   Standard Schema issue `path`, which panda declares as `{message}` only in BOTH
-   copies and drops on the floor — a third party plugging in Zod or Valibot gets
-   a populated `path` and panda throws it away.
-
-2. **M7.C — the kernel APPLIES `configSchema`.** The field is REQUIRED on every
+1. **M7.C — the kernel APPLIES `configSchema`.** The field is REQUIRED on every
    manifest and never applied to anything; `packages/workspace-local/src/plugin.ts`
    says so in its own words ("replacing this constant with a no-op that accepts
    anything leaves every suite green"), and three first-party plugins hand-roll
@@ -361,12 +355,7 @@ projection layer actually delivers.
    three shipped plugins and has to settle what "a plugin's own subtree" means,
    which is currently a per-plugin convention rather than a kernel rule.
 
-3. **`{kind: 'absent'}` collapses three distinct causes** the kernel internally
-   distinguishes — no provider registered, provider failed to start, provider
-   unready. Typed absence that does not carry the fact it was invented to carry;
-   ~4 lines in `lookup()` and additive to the union.
-
-4. **Profiles (Epic 5).** Story 5.4 having
+2. **Profiles (Epic 5).** Story 5.4 having
    shipped as M5.D. The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
@@ -378,13 +367,13 @@ projection layer actually delivers.
    `model` at the root of `~/.claude/settings.json` and `opencode.json` are
    SINGLETON SCALARS, and projecting N ids into one slot is a selection, not a
    projection.
-5. **The unguarded window** between `readIfPresent` and `statSnapshot` in
+3. **The unguarded window** between `readIfPresent` and `statSnapshot` in
    `discardLegacy` — a write landing there is captured by the snapshot, so the
    guard correctly reports no change while `text` is stale. In the ledger.
-6. **Four kernel exports with no consumer** outside the kernel:
+4. **Four kernel exports with no consumer** outside the kernel:
    `createEventBus`, `createLogSink`, `lostRecordCount`, `validateManifest`.
    Observability that exists and nothing reads.
-7. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
+5. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
    (worktrees), Epic 5's export/import bundle.
 
 ## 10. The live executor tests, and the principle behind them
