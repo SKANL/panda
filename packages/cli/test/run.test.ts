@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
+import { renderLogRecord } from '../src/run.ts'
 import type { ExecutorAdapter, ResultEnvelope, WorkspaceProvider } from '@panda/contracts'
 import { RegistryStore } from '@panda/environment'
 
@@ -678,5 +679,117 @@ describe('panda doctor', () => {
     expect(await runPanda(['project', 'doctor', missing], { ...io, homeDir: await tempCwd() })).toBe(2)
     expect(io.err.join('\n')).toContain('PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE')
     expect(io.out).toHaveLength(0)
+  })
+})
+
+describe('panda run --trace', () => {
+  const ok = { status: 'ok', data: { result: 'a.txt' }, summary: 'listed', errors: [] } as const
+
+  it('writes the action waterfall to stderr and leaves stdout the envelope alone', async () => {
+    const io = capture()
+    const code = await runPanda(['run', '--trace', 'list files'], {
+      ...io,
+      cwd: await tempCwd(),
+      homeDir: await tempCwd(),
+      createAdapter: () => fakeAdapter({ ...ok }),
+    })
+    expect(code).toBe(0)
+    // stdout is the envelope and NOTHING else: a trace on stdout would break
+    // every consumer that pipes `panda run` into a JSON reader.
+    expect(io.out).toHaveLength(1)
+    expect(JSON.parse(io.out.join('\n')).status).toBe('ok')
+    const traced = io.err.filter((line) => /^\[\d+] action\./.test(line))
+    expect(traced.length).toBeGreaterThan(0)
+  })
+
+  it('is silent without the flag, so an untraced run keeps the stderr it had', async () => {
+    const io = capture()
+    expect(
+      await runPanda(['run', 'list files'], {
+        ...io,
+        cwd: await tempCwd(),
+        homeDir: await tempCwd(),
+        createAdapter: () => fakeAdapter({ ...ok }),
+      }),
+    ).toBe(0)
+    expect(io.err.filter((line) => /^\[\d+] /.test(line))).toHaveLength(0)
+  })
+
+  it('composes with --executor in either order, and neither flag becomes prompt text', async () => {
+    for (const argv of [
+      ['run', '--trace', '--executor', 'codex', 'list files'],
+      ['run', '--executor', 'codex', '--trace', 'list files'],
+    ]) {
+      const io = capture()
+      let seenPrompt: string | undefined
+      expect(
+        await runPanda(argv, {
+          ...io,
+          cwd: await tempCwd(),
+          homeDir: await tempCwd(),
+          createAdapter: () => ({
+            async run(request) {
+              seenPrompt = request.prompt
+              return { ...ok }
+            },
+          }),
+        }),
+      ).toBe(0)
+      expect(seenPrompt).toBe('list files')
+      expect(io.err.join('\n')).toContain('executor: codex')
+      expect(io.err.filter((line) => /^\[\d+] action\./.test(line)).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('takes no value, so --trace=<anything> stays an unrecognized option', async () => {
+    const io = capture()
+    expect(await runPanda(['run', '--trace=verbose', 'hi'], { ...io, cwd: await tempCwd() })).toBe(2)
+    expect(io.err.join('\n')).toContain("unrecognized option '--trace=verbose'")
+    expect(io.out).toHaveLength(0)
+  })
+
+  it('is not a prompt: --trace with nothing else is a usage error', async () => {
+    const io = capture()
+    expect(await runPanda(['run', '--trace'], { ...io, cwd: await tempCwd() })).toBe(2)
+    expect(io.out).toHaveLength(0)
+  })
+
+  it('reports a trace it could not fully write rather than truncating in silence', async () => {
+    // The only reachable cause is stderr itself refusing a line (a closed pipe),
+    // and that is exactly the case where silence and a quiet run look identical.
+    const io = capture()
+    let written = 0
+    const code = await runPanda(['run', '--trace', 'list files'], {
+      ...io,
+      stderr: (line) => {
+        written += 1
+        if (/^\[\d+] action\./.test(line)) throw new Error('EPIPE')
+        io.err.push(line)
+      },
+      cwd: await tempCwd(),
+      homeDir: await tempCwd(),
+      createAdapter: () => fakeAdapter({ ...ok }),
+    })
+    expect(code).toBe(0)
+    expect(written).toBeGreaterThan(0)
+    expect(io.err.join('\n')).toMatch(/trace: \d+ record\(s\) could not be written/)
+    // The run still produced its result: a diagnostic never aborts the thing it
+    // describes.
+    expect(JSON.parse(io.out.join('\n')).status).toBe('ok')
+  })
+
+  it('renders only the fields a record carries, in emission order', () => {
+    const base = { version: 1, seq: 7, at: 0, event: 'action.invoked', subject: 'run' } as const
+    expect(renderLogRecord({ ...base })).toBe('[7] action.invoked run')
+    expect(renderLogRecord({ ...base, event: 'action.estimated', cost: 12 })).toBe(
+      '[7] action.estimated run cost=12',
+    )
+    expect(renderLogRecord({ ...base, event: 'service.resolved', service: 'workspace' })).toBe(
+      '[7] service.resolved run service=workspace',
+    )
+    // A zero cost is a measurement, not an absence — `?? ` would erase it.
+    expect(renderLogRecord({ ...base, event: 'action.settled', cost: 0 })).toBe(
+      '[7] action.settled run cost=0',
+    )
   })
 })

@@ -56,7 +56,14 @@ export type {
   WorkspaceHandle,
   WorkspaceProvider,
 } from '@panda/contracts'
-export { createMemoryLogSink } from '@panda/kernel'
+// Two sink constructors, and neither is a factory in the sense the note below
+// withdraws. `createMemoryLogSink` retains; `createLogSink` takes the caller's
+// own write function and retains nothing — it is the bring-your-own-exporter
+// door, and `SessionOptions.log` is the only thing either one is for. What was
+// withdrawn was a factory a caller could invoke with an `ActivationContext` to
+// get back a wired vendor adapter; a function from `LogWrite` to `LogSink`
+// composes nothing and reaches no adapter.
+export { createLogSink, createMemoryLogSink } from '@panda/kernel'
 // `PandaKernel` is a TYPE and nothing else — it is what names
 // `SessionOptions.kernel` and the return of `createSessionKernel`, and it erases
 // at runtime. `createKernel` itself, both plugin FACTORIES and the config

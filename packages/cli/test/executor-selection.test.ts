@@ -161,7 +161,7 @@ describe('panda run --executor puts that vendor on the command line', () => {
 describe('panda run --executor', () => {
   it('documents the flag in the usage block', () => {
     expect(USAGE).toContain('--executor <id>')
-    expect(USAGE).toContain('usage: panda run [--executor <id>] "<prompt>"')
+    expect(USAGE).toContain('usage: panda run [--executor <id>] [--trace] "<prompt>"')
     // The three exit codes it shares with every other run stay stated.
     expect(USAGE).toContain('2 usage/environment error')
   })

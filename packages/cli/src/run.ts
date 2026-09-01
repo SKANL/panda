@@ -16,7 +16,13 @@ import {
   type RemediationKind,
   type RemediationReport,
 } from '@panda/environment'
-import { readExecutorConfigLayers, runSession, type SessionOptions } from '@panda/session'
+import {
+  createLogSink,
+  readExecutorConfigLayers,
+  runSession,
+  type LogRecord,
+  type SessionOptions,
+} from '@panda/session'
 import { isRegistryVerb, runRegistryCommand, type RegistryVerb } from './registry-commands.ts'
 import { SWAP_NOUNS, runSwap } from './swap-command.ts'
 
@@ -59,7 +65,7 @@ const ADD_TYPES = `<${REGISTRY_ENTRY_TYPES.join('|')}>`
 const REMOVE_TYPES = `<${REMOVABLE_ENTRY_TYPES.join('|')}>`
 
 export const USAGE = [
-  'usage: panda run [--executor <id>] "<prompt>"',
+  'usage: panda run [--executor <id>] [--trace] "<prompt>"',
   `       panda add ${ADD_TYPES} <id> [--command <c>] [--entry-path <p>] [--arg <a>]...`,
   `       panda project add ${ADD_TYPES} <id> [directory] [--command <c>] [--entry-path <p>] [--arg <a>]...`,
   `       panda remove ${REMOVE_TYPES} <id>`,
@@ -84,6 +90,9 @@ export const USAGE = [
   '                   It overrides a configuration panda can READ; a document that exists and',
   '                   cannot be used still fails, because running a different agent than the one',
   '                   configured is the failure this selection exists to remove.',
+  '  --trace          Writes the action waterfall to stderr as it happens: one line per',
+  '                   intercepted action, with its cost when the pipeline estimated one.',
+  '                   stdout stays the result envelope, so a piped run is unaffected.',
   'add           Puts ONE entry in the registry and projects nothing; it names the command that does.',
   '  --command <c>    The executable an mcp-server runs.',
   '  --entry-path <p> A skill entry file, or the directory holding one.',
@@ -265,7 +274,7 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     err(DEFAULT_USAGE)
     return 2
   }
-  const { prompt, executorId } = parsed
+  const { prompt, executorId, trace } = parsed
   if (prompt.length === 0) {
     err(DEFAULT_USAGE)
     return 2
@@ -282,8 +291,13 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       homeDir: options.homeDir,
       projectDir: options.cwd,
     })
+    // Only under `--trace`. `state.dropped` counts failures of the write the
+    // CALLER supplied, so with no write there is nothing that can fail and an
+    // unconditional sink would carry a counter that is structurally zero.
+    const log = trace ? createLogSink((record) => err(renderLogRecord(record))) : undefined
     const envelope = await runSession({
       prompt,
+      log,
       configLayers,
       adapterOptions: options.adapterOptions,
       cwd: options.cwd,
@@ -298,6 +312,18 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       // on the machine, and silence would have been the other wrong answer.
       onWarning: (message) => err(message),
     })
+    // Before the envelope, and required rather than defensive: `SessionOptions`
+    // states the caller owns the sink they pass, DRAINING INCLUDED, so a write
+    // still in flight is neither written nor counted until this resolves. It
+    // also puts the whole trace on stderr before the result reaches stdout,
+    // which is the order a human reads them in.
+    if (log !== undefined) {
+      await log.drain()
+      // A trace the user asked for and did not fully get. Only reachable when
+      // stderr itself refused a line (a closed pipe), which is exactly the case
+      // where silence would be indistinguishable from a quiet run.
+      if (log.state.dropped > 0) err(`trace: ${log.state.dropped} record(s) could not be written`)
+    }
     // Printed AFTER cleanup now, where the old inline composition printed before
     // it. Deliberate, and the trade is worth naming: output can no longer be
     // interleaved with a half-torn-down workspace, but a HUNG release or dispose
@@ -364,13 +390,23 @@ function isRunHelp(tokens: readonly string[]): boolean {
  */
 function parseRunTokens(
   tokens: readonly string[],
-): { prompt: string; executorId: string | undefined } | { usageError: string } {
+): { prompt: string; executorId: string | undefined; trace: boolean } | { usageError: string } {
   const EXECUTOR_FLAG = '--executor'
+  const TRACE_FLAG = '--trace'
   const words: string[] = []
   let executorId: string | undefined
+  let trace = false
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]
     if (token === undefined) continue
+    // Above the `--` refusal below, and it takes NO value: `--trace=verbose`
+    // stays `unrecognized option`, because the thing after the `=` would have to
+    // mean something, and the session already narrows the stream to `action.*`
+    // — a second filter here would be a filter for one event family.
+    if (token === TRACE_FLAG) {
+      trace = true
+      continue
+    }
     if (token === EXECUTOR_FLAG) {
       const value = tokens[index + 1]
       // A following option is not a value: `panda run --executor --help` must be
@@ -396,7 +432,25 @@ function parseRunTokens(
     if (token.startsWith('--')) return { usageError: `unrecognized option '${token}'` }
     words.push(token)
   }
-  return { prompt: words.join(' ').trim(), executorId }
+  return { prompt: words.join(' ').trim(), executorId, trace }
+}
+
+/**
+ * One record, one line, for a human watching a run happen. Fields in the order
+ * the kernel writes them, each present only when the record carries it.
+ *
+ * It formats and decides nothing — the whole of cordis's `ConsoleExporter` is
+ * `console.log(this.render(message))` over a renderer just like this one. `at`
+ * is left out on purpose: the record carries a wall clock for whoever PERSISTS
+ * the stream, but ordering is `seq`, and a timestamp on a line scrolling past
+ * live is noise that carries no order the number does not already carry.
+ */
+export function renderLogRecord(record: LogRecord): string {
+  const parts = [`[${record.seq}]`, record.event, record.subject]
+  if (record.service !== undefined) parts.push(`service=${record.service}`)
+  if (record.code !== undefined) parts.push(record.code)
+  if (record.cost !== undefined) parts.push(`cost=${record.cost}`)
+  return parts.join(' ')
 }
 
 /**

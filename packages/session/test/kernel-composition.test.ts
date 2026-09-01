@@ -574,9 +574,20 @@ describe('createSessionKernel is the only composition surface', () => {
     // public) and `swapMethod` hands back a `MethodActivation`, which
     // `activateMethod` already returns in public. `selectMethod` exists beside
     // them and is NOT here: `runSession` is its only caller.
+    //
+    // WIDENED AGAIN BY M7.D, by one: `createLogSink`. It passes the same rule.
+    // The withdrawn five were dangerous because a factory invoked with an
+    // `ActivationContext` of the caller's own hands back a wired vendor adapter;
+    // this is a function from a write callback to a `LogSink`, it composes
+    // nothing, reaches no adapter, and its sibling `createMemoryLogSink` has
+    // been in this list since before the withdrawal. What it unlocks is the only
+    // thing `SessionOptions.log` was ever for, from the one package that cannot
+    // import the kernel: `packages/cli` depends on `@panda/environment` and
+    // `@panda/session` and nothing else.
     expect(values.sort()).toEqual([
       'SESSION_ACTION_COST',
       'SESSION_ACTION_ID',
+      'createLogSink',
       'createMemoryLogSink',
       'createSessionKernel',
       'readExecutorConfigLayers',

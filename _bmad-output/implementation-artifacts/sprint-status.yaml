@@ -94,6 +94,7 @@ development_status:
   m7b-the-kernel-tells-an-author-everything-it-found: done   # every manifest violation, not the first; and typed absence says which of three
   m7c-a-required-field-the-kernel-actually-applies: done   # the kernel APPLIES configSchema; three plugins stop hand-rolling it
   m7a-teardown-does-what-the-kernel-says-it-does: done   # three kernel promises found unenforced by reading cordis; one is a live unhandled rejection
+  m7d-the-binary-can-see-what-the-kernel-does: done   # `panda run --trace`; createLogSink gets its first production consumer, and lostRecordCount is measured UNREACHABLE from the CLI
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
   epic-2-retrospective: optional
 
