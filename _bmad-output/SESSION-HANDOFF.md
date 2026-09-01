@@ -265,6 +265,16 @@ nearly every review — and finally inside the mechanism built to prevent it.
   claimed panda lacked something it has. The mechanism descriptions were right
   every time — it is the "panda has it / does not have it" verdict that needs
   your own eyes. Ask agents for evidence and controls, then check the line.
+- **Checking a VALIDATOR tells you nothing if its caller pre-filters the input.**
+  M7.C froze a measurement saying each plugin's strictness lives in its own
+  schema, so having the kernel apply it preserved behaviour. For two plugins that
+  held. For `workspace-local` it did not: the schema returned an issue for a
+  non-record subtree and the FACTORY never handed it one — it warned and passed
+  an empty object instead — so the strict branch was unreachable dead code, and
+  applying the schema to the raw value turned a warning into a refusal to start.
+  Read what the caller
+  FEEDS the validator, not only what the validator returns. Caught by driving the
+  binary and confirmed against a stashed baseline.
 - **A package manifest is not an architecture.** M5.C's frozen spec measured that
   `@panda/environment` declares `@panda/projection` and concluded AD-2 permitted
   the import. `packages/environment/test/guard.test.ts` refused it: that package
@@ -313,7 +323,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`b7e782c`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`bb8e539`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean.
 
 Stories closed, each with CI verified against its exact SHA:
@@ -332,6 +342,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `182473f` | M5.D — `panda swap method`; a method is a selection panda MOUNTS, not an entry it projects (Story 5.4 / FR-28 / UJ-3) |
 | `7d13d58` | M7.A — the kernel's teardown does what the kernel says it does; found by reading cordis, including a live unhandled-rejection hazard |
 | `b7e782c` | M7.B — the kernel tells an author EVERY manifest violation, and typed absence says which of three it is |
+| `bb8e539` | M7.C — the kernel APPLIES the configSchema every manifest must declare; three plugins stop hand-rolling it |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -346,16 +357,7 @@ projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **M7.C — the kernel APPLIES `configSchema`.** The field is REQUIRED on every
-   manifest and never applied to anything; `packages/workspace-local/src/plugin.ts`
-   says so in its own words ("replacing this constant with a no-op that accepts
-   anything leaves every suite green"), and three first-party plugins hand-roll
-   the same eight lines to compensate. Already proposed in `deferred-work.md` with
-   its measurement. Bigger than M7.B: it is a kernel semantic change that touches
-   three shipped plugins and has to settle what "a plugin's own subtree" means,
-   which is currently a per-plugin convention rather than a kernel rule.
-
-2. **Profiles (Epic 5).** Story 5.4 having
+1. **Profiles (Epic 5).** Story 5.4 having
    shipped as M5.D. The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
@@ -367,13 +369,13 @@ projection layer actually delivers.
    `model` at the root of `~/.claude/settings.json` and `opencode.json` are
    SINGLETON SCALARS, and projecting N ids into one slot is a selection, not a
    projection.
-3. **The unguarded window** between `readIfPresent` and `statSnapshot` in
+2. **The unguarded window** between `readIfPresent` and `statSnapshot` in
    `discardLegacy` — a write landing there is captured by the snapshot, so the
    guard correctly reports no change while `text` is stale. In the ledger.
-4. **Four kernel exports with no consumer** outside the kernel:
+3. **Four kernel exports with no consumer** outside the kernel:
    `createEventBus`, `createLogSink`, `lostRecordCount`, `validateManifest`.
    Observability that exists and nothing reads.
-5. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
+4. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
    (worktrees), Epic 5's export/import bundle.
 
 ## 10. The live executor tests, and the principle behind them
