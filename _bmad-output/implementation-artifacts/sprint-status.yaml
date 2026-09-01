@@ -106,7 +106,7 @@ development_status:
   epic-5: backlog
   5-1-export-bundle-with-secrets-excluded: backlog
   5-2-import-and-re-project-elsewhere: backlog
-  5-3-methodplugin-contract-published: backlog
+  5-3-methodplugin-contract-published: superseded  # shipped as m5a (the contract) + m5b (the two rules m5a stated but did not enforce)
   5-4-methodology-hot-swap: backlog
   5-5-full-diagnostics: backlog
   5-6-environment-status-with-read-only-quota-surfacing: backlog

@@ -59,8 +59,11 @@ in the order to reach for them:
   - `ROADMAP-01-composition-first.md`, `ROADMAP-02-the-container-and-the-promise.md`
     — the measured plan; ROADMAP-02 carries Amendments 3 and 4.
 - **Implementation artifacts — `_bmad-output\implementation-artifacts\`**
-  - `sprint-status.yaml` — story states. 16 backlog entries remain, 3 of which are
-    epic headers, so **13 real stories**.
+  - `sprint-status.yaml` — story states. 13 backlog entries remain, 2 of which are
+    epic headers, so **11 real stories**. Counted 2026-09-01; recount rather than
+    trust this line, and read the trailing comments — `5-3` sat in `backlog` for
+    two stories after M5.A shipped it, which is how a board lies while looking
+    complete.
   - `spec-*.md` — one frozen spec per story. Read the last two before writing a new one.
   - `deferred-work.md` — **append-only** ledger of deliberate simplifications and
     newly widened surfaces. Read it before claiming something is missing; it is
@@ -97,6 +100,20 @@ paper is compatible with zero reachability.
 
 **context7** — use for vendor documentation (it resolved opencode's model
 resolution order correctly). `chrome-devtools` failed to connect this session.
+
+**`rtk` silently COLLAPSES function bodies in `head` and `grep` output.** Same
+family as the codegraph trap above, and worse, because it fails as a plausible
+ZERO: a `grep -n "describe("` over a 375-line test file returned NOTHING, and
+the file was full of them. `cat` and `sed -n` pass through raw; `head` and
+`grep` go through the hook. Two ways out, both verified:
+
+```bash
+rtk proxy head -20 <file>     # bypasses the filter (quoting through it is fragile)
+```
+
+or use the harness's own Grep tool, which is ripgrep and is not hooked. Before
+believing any zero from a shell `grep` here, run the same query against
+something you KNOW is in the file.
 
 ## 4. How to run and check things
 
@@ -204,6 +221,25 @@ nearly every review — and finally inside the mechanism built to prevent it.
 - **Escaping bugs are silent.** `\b` became a literal backspace three times in
   one file; a regex "worked" only because other alternatives masked the branch
   that could never match. Verify a generated line with `cat -v`.
+  M5.B hit three more in one session, each through a different writer: a shell
+  heredoc collapsed `\\` to `\` in a ledger entry, and the file editor turned a
+  unicode escape into a **literal NUL byte** — inside the sentence claiming the
+  NUL was written as an escape. `check-source-bytes.mjs` caught that one, exit 1
+  with the line number, which is exactly what a guard that fails is for. Neither
+  was visible by re-reading the text.
+- **A measurement instrument needs its own control.** M5.B's mutation harness
+  reported "1 killed" for all eight mutations, and that was a lie: the reporter
+  never wrote its output file, then `execFile` with `shell: true` swallowed
+  stdout. It only surfaced because the harness printed **why** it could not read
+  a report instead of counting an unreadable result as a kill. A falsification
+  run is itself code, and an uninstrumented one produces exactly the confident
+  green it was built to prevent.
+- **Measure the "better" solution before rejecting the plain one.** The obvious
+  upgrade for M5.B's semver rule was a template-literal type. Measured against a
+  corpus with a control, it accepts `01.0.0` and `-1.0.0` and REJECTS
+  `1.0.0-rc.1` — it would break the build of an author doing everything right.
+  The lazy answer (leave it at runtime, and document where the line falls) was
+  the correct one, and only the measurement could say so.
 - **A comment that promises a future is a comment that lies.** Three shipped.
 - **Fixing roots compounds.** Retiring the first registry word cost a full story
   with nine blocking findings; the second cost two lines and touched one file.
@@ -220,9 +256,10 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`2974edd`**, CI green on both jobs, working tree clean.
+`main` is at **`3302658`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+verified against that exact SHA, working tree clean.
 
-Five stories closed this session, each with CI verified against its exact SHA:
+Stories closed, each with CI verified against its exact SHA:
 
 | commit | story |
 |---|---|
@@ -231,23 +268,33 @@ Five stories closed this session, each with CI verified against its exact SHA:
 | `bacce70` | M4.E — retired `tool`; retirement machinery so removing a word cannot brick a store |
 | `943e393` | M4.F — retired `profile`; it is a selection over entries, not an entry |
 | `2974edd` | M5.A — published the MethodPlugin contract; live suite stops blaming panda for provider outages |
+| `087e357` | M6.A — worktrees panda can prove are its own (implements 4.1 / FR-18) |
+| `3302658` | M5.B — the artifact `path` rule and the hook pair are enforced, not stated |
+
+**A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
+fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
+tree stashed, so it is nobody's uncommitted work. It aborts `pnpm check` before
+the later packages run — see §4 for running them individually. Its own
+accounting invariant is what breaks (`measured 2 of 3 executors -- the remaining
+cases did not report a reason`): one executor landed in neither the measured nor
+the not-measured bucket. Recorded in `deferred-work.md`.
 
 `REGISTRY_ENTRY_TYPES` is now exactly `skill` and `mcp-server` — the two the
 projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **The `path` rule that lies.** `METHOD-PLUGIN.md` documents artifact `path` as
-   "relative to the project root" and the validator accepts `../../etc/passwd`
-   and absolute paths — on the one field artifacts are later materialised from.
-   Deserves its own frozen block: enforcing it or admitting it is convention is
-   a CONTRACT decision, not a text fix.
-2. **The type catches the wrong half.** `MethodPlugin` rejects unknown keys but
-   silently accepts `onActivate` without `onDeactivate` and a non-semver
-   `version` — the pair rule is what the doc warns hardest about.
-3. **Story 5.4 — methodology hot swap** (`panda swap method`, FR-28). M5.A
-   deliberately left it untouched.
-4. **Profiles (Epic 5).** The PRD glossary defines a Profile as a named bundle of
+1. **Story 5.4 — methodology hot swap** (`panda swap method`, FR-28). M5.A
+   deliberately left it untouched and M5.B did not move it, so it is now the
+   largest open piece of Epic 5. `deferred-work.md` has banked three decisions it
+   inherits: the zero-argument hooks (whatever a swap hands a method IS the swap
+   surface, which is why they start at zero), the single
+   `PANDA_METHOD_HOOK_FAILED` code (an ordered swap has to branch on WHICH half
+   failed — a failed outgoing `onDeactivate` and a failed incoming `onActivate`
+   are different recoveries), and the gap that lets `METHOD-PLUGIN.md` name a
+   verb the binary does not have, because `shippedFiles` in
+   `packages/cli/test/printed-commands.test.ts` scans `.ts` and not `.md`.
+2. **Profiles (Epic 5).** The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
    independently: a user should never have to learn which model tier their
@@ -258,13 +305,13 @@ projection layer actually delivers.
    `model` at the root of `~/.claude/settings.json` and `opencode.json` are
    SINGLETON SCALARS, and projecting N ids into one slot is a selection, not a
    projection.
-5. **The unguarded window** between `readIfPresent` and `statSnapshot` in
+3. **The unguarded window** between `readIfPresent` and `statSnapshot` in
    `discardLegacy` — a write landing there is captured by the snapshot, so the
    guard correctly reports no change while `text` is stale. In the ledger.
-6. **Four kernel exports with no consumer** outside the kernel:
+4. **Four kernel exports with no consumer** outside the kernel:
    `createEventBus`, `createLogSink`, `lostRecordCount`, `validateManifest`.
    Observability that exists and nothing reads.
-7. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
+5. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
    (worktrees), Epic 5's export/import bundle.
 
 ## 10. The live executor tests, and the principle behind them
