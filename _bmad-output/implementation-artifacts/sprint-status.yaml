@@ -88,6 +88,7 @@ development_status:
   m4e-the-registry-declares-only-what-panda-can-deliver: done           # removes tool; profile deferred with its evidence banked
   m4f-profile-is-a-selection-not-an-entry: done           # PRD glossary settles it: a Profile is a selection OVER entries; Bundles carry Profiles (Epic 5)
   m5a-the-methodplugin-contract-is-published-or-it-is-not: done           # implements 5.3/FR-23/RD-3; 5.4 hot swap stays out
+  m5b-every-rule-the-contract-states-is-enforced: done   # closes M5.A's two prose-only rules: the artifact `path` claim and the pair rule the type never checked
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
   epic-2-retrospective: optional
 

@@ -6,6 +6,7 @@ import {
   PANDA_ERROR_CODES,
   PandaError,
   activateMethod,
+  isProjectRelativePath,
   isSemver,
   methodPluginIssues,
   validateMethodPlugin,
@@ -371,5 +372,136 @@ describe('MethodPlugin contract — matrix row 9: onActivate throws', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: 'PANDA_METHOD_HOOK_FAILED', message: expect.stringContaining('async boom') })
+  })
+})
+
+// --- M5.B: the rules the document stated and nothing enforced ----------------
+
+// Every entry is one of D1's eight rejection reasons or one of the accepted
+// forms. The ACCEPTED half is as load-bearing as the rejected half: a predicate
+// that rejects `a/b/../../c` blocks a legitimate manifest, which is its own
+// defect. Each rejected row names the SINGLE rule it is here to kill, so a
+// mutation that removes one rule cannot hide behind another row's coverage.
+const PATH_CORPUS: readonly [label: string, path: string, accepted: boolean][] = [
+  ['a plain relative path', 'docs/plan.md', true],
+  ['an explicitly-relative path', './docs/plan.md', true],
+  ['a path that walks up inside its own base', 'a/b/../../c', true],
+  ['a directory convention', 'docs/', true],
+  ['a traversal that escapes the root', '../../etc/passwd', false],
+  ['a backslash traversal', '..\\..\\etc', false],
+  ['a POSIX-absolute path', '/etc/passwd', false],
+  ['a UNC path', '//server/share', false],
+  ['a drive-absolute path', 'C:/Windows', false],
+  ['a drive-relative path', 'C:x', false],
+  ['a home-marked path', '~/secrets', false],
+  ['a path carrying a NUL byte', 'a\u0000b', false],
+  ['a path that resolves to the project root', 'a/..', false],
+  ['a backslash separator that escapes nothing', 'docs\\plan.md', false],
+  ['a blank path', '   ', false],
+]
+
+describe('MethodPlugin contract — M5.B rows 1-12: an artifact path is project-relative', () => {
+  it.each(PATH_CORPUS.filter(([, , accepted]) => accepted))('accepts %s', (_label, path) => {
+    expect(methodPluginIssues(methodPlugin({ artifacts: [{ id: 'a', path }] }))).toEqual([])
+  })
+
+  it.each(PATH_CORPUS.filter(([, , accepted]) => !accepted))('rejects %s', (_label, path) => {
+    expect(messagesFor(methodPlugin({ artifacts: [{ id: 'a', path }] }))).toContain('artifacts[0]')
+  })
+
+  it('publishes the predicate, so an author can check a path before shipping', () => {
+    for (const [label, path, accepted] of PATH_CORPUS) {
+      expect(isProjectRelativePath(path), label).toBe(accepted)
+    }
+  })
+
+  // Row 15. The predicate is published, so a JavaScript caller can hand it
+  // anything; it answers rather than throwing.
+  it('answers false for a non-string instead of throwing', () => {
+    expect(isProjectRelativePath(undefined)).toBe(false)
+    expect(isProjectRelativePath(42)).toBe(false)
+    expect(isProjectRelativePath(['docs/plan.md'])).toBe(false)
+  })
+})
+
+describe('MethodPlugin contract — M5.B rows 13 and 14: the path rule composes', () => {
+  // Row 13, the one that would be silent: a per-field early return would report
+  // the first bad path and hide the second, and the document promises EVERY
+  // violation, not the first.
+  it('reports every bad path, not the first', () => {
+    const message = messagesFor(
+      methodPlugin({
+        artifacts: [
+          { id: 'one', path: '/etc/passwd' },
+          { id: 'two', path: '../escape' },
+        ],
+      }),
+    )
+    expect(message).toContain('artifacts[0]')
+    expect(message).toContain('artifacts[1]')
+  })
+
+  it('lists a bad path alongside violations of the other rules', () => {
+    const message = messagesFor(
+      methodPlugin({ version: 'latest', artifacts: [{ id: 'a', path: '/etc/passwd' }] }),
+    )
+    expect(message).toContain('semver')
+    expect(message).toContain('artifacts[0]')
+  })
+})
+
+// Rows 16-20 are COMPILE-TIME assertions. `@ts-expect-error` is a failing guard
+// here: an unused directive is TS2578, `packages/contracts/tsconfig.json`
+// includes `test`, and this package's `typecheck` script is `tsc --noEmit`
+// inside `pnpm check`. So the moment the type stops rejecting one of these, the
+// gate goes red — which is the whole point of moving the pair rule out of prose.
+//
+// Each literal is also fed to the runtime validator, so one fixture pins both
+// halves and they cannot drift apart.
+describe('MethodPlugin contract — M5.B rows 16-20: the type carries the pair rule', () => {
+  const noop = (): void => {}
+  const manifest = {
+    id: 'tdd',
+    version: '1.0.0',
+    phases: [],
+    artifacts: [],
+    commands: [],
+  }
+
+  it('row 16 — rejects onActivate without onDeactivate, at compile time AND at runtime', () => {
+    // @ts-expect-error — the pair rule: a mount with no unmount.
+    const halfPair: MethodPlugin = { ...manifest, onActivate: noop }
+    expect(messagesFor(halfPair)).toContain("'onActivate' is declared without 'onDeactivate'")
+  })
+
+  it('row 16b — rejects onDeactivate without onActivate, the same half-pair from the other side', () => {
+    // @ts-expect-error — an unmount for something that was never registered.
+    const halfPair: MethodPlugin = { ...manifest, onDeactivate: noop }
+    expect(messagesFor(halfPair)).toContain("'onDeactivate' is declared without 'onActivate'")
+  })
+
+  it('row 17 — accepts both hooks', () => {
+    const paired: MethodPlugin = { ...manifest, onActivate: noop, onDeactivate: noop }
+    expect(methodPluginIssues(paired)).toEqual([])
+  })
+
+  it('row 18 — accepts neither hook', () => {
+    const bare: MethodPlugin = manifest
+    expect(methodPluginIssues(bare)).toEqual([])
+  })
+
+  it('row 19 — accepts an explicit undefined, because the type agrees with the validator', () => {
+    // The runtime rule is `value['onActivate'] !== undefined`. The type says
+    // `?: undefined`, not `?: never`, so the two answer identically here.
+    const explicit: MethodPlugin = { ...manifest, onActivate: undefined }
+    expect(methodPluginIssues(explicit)).toEqual([])
+  })
+
+  it('row 20 — still rejects a misspelled root key', () => {
+    // The guard D3 could have traded away: excess-property checking has to keep
+    // working against an intersection-with-a-union.
+    // @ts-expect-error — TS2561, the check that survived the type change.
+    const typo: MethodPlugin = { ...manifest, descripton: 'typo' }
+    expect(messagesFor(typo)).toContain("'descripton' is not allowed on the method plugin root")
   })
 })

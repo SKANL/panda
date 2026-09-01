@@ -43,10 +43,62 @@ export interface MethodPhase {
 }
 
 /**
+ * Whether `value` is a path a methodology may declare for an artifact: relative
+ * to the project root, on every platform, and unable to climb above it.
+ *
+ * Published alongside {@link isSemver} for the same reason — an author checks a
+ * path before shipping instead of learning the rule from a rejection.
+ *
+ * A PURE STRING predicate: no `node:path`, no filesystem. A manifest is authored
+ * once and consumed everywhere, so the verdict must not depend on the platform
+ * the validator happens to run on — `node:path` on POSIX calls `C:\Windows` a
+ * perfectly good relative filename, and the same manifest would then mean two
+ * different things on two machines.
+ *
+ * The separator is `/` on EVERY platform, and a backslash is rejected outright
+ * rather than translated. `docs\plan.md` is a nested file on Windows and a
+ * single flat filename on POSIX: accepting it would publish a contract whose
+ * meaning depends on the reader, which is the exact "kept syntactically, broken
+ * in substance" failure this contract exists to make impossible. The cost is
+ * recorded in `deferred-work.md`: a POSIX filename containing a literal
+ * backslash cannot be declared.
+ */
+export function isProjectRelativePath(value: unknown): value is string {
+  if (!isNonEmptyString(value)) return false
+  if (value.includes('\u0000')) return false // truncates in syscalls; written as the escape (check-source-bytes)
+  if (value.includes('\\')) return false // separator ambiguity, see above
+  if (value.startsWith('/')) return false // POSIX-absolute, and `//server/share` with it
+  if (/^[A-Za-z]:/.test(value)) return false // `C:\`, `c:/` and drive-relative `C:x` alike
+  if (value.startsWith('~')) return false // a leading '~' is a reserved marker here (normalizeRegistryEntryPaths)
+
+  // Resolve '.' and '..' by walking segments. `..` inside the base is legal —
+  // `a/b/../../c` names `c` — so only a climb PAST the base is an escape, and a
+  // path that resolves to nothing (`a/..`) names the project root rather than an
+  // artifact. Rejecting the legal middle case would block honest manifests,
+  // which is its own defect.
+  const resolved: string[] = []
+  for (const segment of value.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      if (resolved.length === 0) return false
+      resolved.pop()
+      continue
+    }
+    resolved.push(segment)
+  }
+  return resolved.length > 0
+}
+
+/**
  * An artifact CONVENTION: what the methodology produces and where it lands.
  * `path` is required because a declared artifact with no location states nothing
- * a tool or a human could act on. It is relative to the project root and is a
- * convention, not a claim that the file exists.
+ * a tool or a human could act on. It is a convention, not a claim that the file
+ * exists — but it IS enforced to be project-relative by
+ * {@link isProjectRelativePath}, because this is the field artifacts are later
+ * materialised from and a rule stated only in prose is not a rule.
+ *
+ * Panda validates it and stores it verbatim; normalising it is a
+ * materialisation decision, and no materialiser exists yet.
  */
 export interface MethodArtifact {
   readonly id: string
@@ -76,23 +128,48 @@ export type MethodActivateHook = () => void | Promise<void>
 /** The deactivation half. Same shape, and required whenever `onActivate` is present. */
 export type MethodDeactivateHook = () => void | Promise<void>
 
-/**
- * A MethodPlugin IS its manifest plus the optional hook pair — one object, one
- * validator, the way the kernel's `PluginManifest` carries its `configSchema`.
- */
-export interface MethodPlugin {
+/** The declarative half: everything a MethodPlugin states about itself. */
+export interface MethodManifest {
   readonly id: string
-  /** Semver. See {@link isSemver}. */
+  /**
+   * Semver. See {@link isSemver}. Enforced by the VALIDATOR, not by this type:
+   * the only type-level spelling available is `` `${number}.${number}.${number}` ``,
+   * which was measured to accept `01.0.0`, `-1.0.0` and `1e3.0.0` and to REJECT
+   * `1.0.0-rc.1` and `1.0.0+build.5`. A type that breaks the build of an author
+   * publishing a legitimate prerelease is worse than no type at all.
+   */
   readonly version: string
   readonly description?: string
   readonly phases: readonly MethodPhase[]
   readonly artifacts: readonly MethodArtifact[]
   readonly commands: readonly MethodCommand[]
-  readonly onActivate?: MethodActivateHook
-  readonly onDeactivate?: MethodDeactivateHook
   /** The one namespace open to payloads panda does not define. */
   readonly extensions?: Readonly<Record<string, unknown>>
 }
+
+/**
+ * RD-3's pair rule, as a type: both hooks or neither, never one.
+ *
+ * `?: undefined` rather than `?: never`, so the type answers exactly what the
+ * validator answers — the runtime rule is `value['onActivate'] !== undefined`,
+ * which accepts an explicitly-undefined hook. A neater-looking `never` would
+ * make the compiler and the validator disagree about the same manifest, and two
+ * disagreeing authorities on one rule is worse than one.
+ */
+export type MethodHookPair =
+  | { readonly onActivate?: undefined; readonly onDeactivate?: undefined }
+  | { readonly onActivate: MethodActivateHook; readonly onDeactivate: MethodDeactivateHook }
+
+/**
+ * A MethodPlugin IS its manifest plus the hook pair — one object, one validator,
+ * the way the kernel's `PluginManifest` carries its `configSchema`.
+ *
+ * The pair rule lives in the TYPE as well as the validator because it is the
+ * rule this contract's documentation warns hardest about, and a guarantee only
+ * prose enforces is the defect this contract exists to stop shipping. A
+ * half-pair was always rejected at runtime; now it never compiles.
+ */
+export type MethodPlugin = MethodManifest & MethodHookPair
 
 // Same discipline as the registry envelope (`registry.ts`): unknown keys at the
 // root are REJECTED, and provider-specific payloads have exactly one home, the
@@ -163,6 +240,7 @@ function collectionIssues(
   requiredStrings: readonly string[],
   optionalStrings: readonly string[],
   issues: StandardSchemaIssue[],
+  pathFields: readonly string[] = [],
 ): string[] {
   if (raw === undefined) {
     issues.push(issue(`'${field}' is required (declare an empty array if the method has none)`))
@@ -184,6 +262,21 @@ function collectionIssues(
       if (!isNonEmptyString(item[key])) issues.push(issue(`'${key}' must be a non-empty string on ${where}`))
     }
     for (const key of optionalStrings) optionalNonEmptyString(item, key, where, issues)
+    // Inside the SAME pass, so every bad path in the collection lands in the
+    // same list: a per-field early return would report the first and hide the
+    // second, and this contract promises every violation, not the first.
+    // Guarded on `isNonEmptyString` so a missing path reports "required" once
+    // rather than twice in two different vocabularies.
+    for (const key of pathFields) {
+      const declared = item[key]
+      if (isNonEmptyString(declared) && !isProjectRelativePath(declared)) {
+        issues.push(
+          issue(
+            `'${key}' must be a project-relative path on ${where}: '/' separators, no leading '/', drive letter, '~' or backslash, and it must not climb above the project root; got ${JSON.stringify(declared)}`,
+          ),
+        )
+      }
+    }
     issues.push(...unknownKeyIssues(item, keys, where))
     const id = item['id']
     if (isNonEmptyString(id)) {
@@ -237,7 +330,7 @@ export function methodPluginIssues(value: unknown): StandardSchemaIssue[] {
   optionalNonEmptyString(value, 'description', 'the method plugin root', issues)
 
   const phaseIds = collectionIssues(value['phases'], 'phases', PHASE_KEYS, ['id'], ['description'], issues)
-  collectionIssues(value['artifacts'], 'artifacts', ARTIFACT_KEYS, ['id', 'path'], ['phase'], issues)
+  collectionIssues(value['artifacts'], 'artifacts', ARTIFACT_KEYS, ['id', 'path'], ['phase'], issues, ['path'])
   collectionIssues(value['commands'], 'commands', COMMAND_KEYS, ['id'], ['summary', 'phase'], issues)
   phaseReferenceIssues(value['artifacts'], 'artifacts', phaseIds, issues)
   phaseReferenceIssues(value['commands'], 'commands', phaseIds, issues)

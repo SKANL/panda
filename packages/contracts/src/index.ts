@@ -52,6 +52,7 @@ export {
   METHOD_PLUGIN_SCHEMA,
   SEMVER_PATTERN,
   activateMethod,
+  isProjectRelativePath,
   isSemver,
   methodPluginIssues,
   validateMethodPlugin,
@@ -60,6 +61,8 @@ export {
   type MethodArtifact,
   type MethodCommand,
   type MethodDeactivateHook,
+  type MethodHookPair,
+  type MethodManifest,
   type MethodPhase,
   type MethodPlugin,
 } from './method.ts'

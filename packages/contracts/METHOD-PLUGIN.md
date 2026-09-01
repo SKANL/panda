@@ -81,6 +81,30 @@ where the methodology puts the thing, relative to the project root. `path` is
 required, because a declared artifact with no location states nothing anyone can
 act on. Artifact ids must be unique.
 
+**"Relative to the project root" is enforced, not advisory.** This is the field
+artifacts are later materialised from, so the rule is checked rather than
+trusted. The predicate is exported as `isProjectRelativePath(value)` — check a
+path before you ship it instead of learning the rule from a rejection.
+
+| Accepted | Rejected |
+|---|---|
+| `docs/plan.md` | `/etc/passwd` — no leading `/` (this covers `//server/share` too) |
+| `./docs/plan.md` | `C:/Windows`, `C:x` — no drive letter, absolute or drive-relative |
+| `a/b/../../c` — `..` inside the base is fine | `../../etc` — it must not climb above the project root |
+| `docs/` | `~/secrets` — a leading `~` is a reserved marker |
+| | `a/..` — resolves to the project root, which names no artifact |
+| | `docs\plan.md` — see the separator rule below |
+| | anything containing a NUL byte |
+
+**The separator is `/` on every platform**, and a backslash is rejected rather
+than translated. `docs\plan.md` is a nested file on Windows and a single flat
+filename on POSIX — the same manifest meaning two different things depending on
+who reads it. Your manifest is authored once and consumed everywhere, so it gets
+one meaning. The cost, stated plainly: you cannot declare a POSIX filename that
+contains a literal backslash.
+
+Panda validates `path` and stores it **verbatim** — it never rewrites it.
+
 ### Commands
 
 ```ts
@@ -142,7 +166,42 @@ Either declare **both** hooks or **neither**. A mount with no unmount cannot be
 undone; an unmount with no mount disposes something that was never registered.
 Both halves are rejected the same way.
 
+This one is in the **type**, so in TypeScript a half-pair never compiles — you
+do not have to run the validator to find out:
+
+```ts
+const bad: MethodPlugin = { ...manifest, onActivate: mount }
+//                                        ~~~~~~~~~~ 'onDeactivate' is missing
+```
+
 Hooks may be async. Anything they set up is theirs to tear down.
+
+## What the compiler catches, and what only the validator does
+
+A clean compile is not a valid manifest. Here is exactly where the line falls,
+so you know what you have not yet been told:
+
+| Rule | Compiler | Validator |
+|---|---|---|
+| Missing or wrongly-typed required field | ✅ | ✅ |
+| Unknown key at the root or on a collection item | ✅ | ✅ |
+| The `onActivate` / `onDeactivate` pair | ✅ | ✅ |
+| `version` is semver | — | ✅ |
+| `path` is project-relative | — | ✅ |
+| Ids unique within a collection | — | ✅ |
+| `phase` names a phase this manifest declares | — | ✅ |
+
+**Why `version` is not in the type.** The only type-level spelling available is
+`` `${number}.${number}.${number}` ``, and it was measured to accept `01.0.0`,
+`-1.0.0` and `1e3.0.0` while **rejecting** `1.0.0-rc.1` and `1.0.0+build.5`. A
+type that breaks the build of an author publishing a legitimate prerelease is
+worse than no type at all, so semver stays a runtime rule. Use `isSemver` if you
+want it early.
+
+Everything in the right-hand column is a value question — it depends on what the
+string says, not on its type — so run `validateMethodPlugin` (or
+`methodPluginIssues`) in your own tests. It reports **every** violation at once,
+not the first.
 
 ## Activating
 
@@ -202,10 +261,16 @@ if (result.issues) console.error(result.issues.map((i) => i.message).join('\n'))
 
 Values: `activateMethod`, `validateMethodPlugin`, `methodPluginIssues`,
 `METHOD_PLUGIN_SCHEMA`, `METHOD_PLUGIN_ROOT_KEYS`, `isSemver`, `SEMVER_PATTERN`,
-plus `PandaError` and `PANDA_ERROR_CODES`.
+`isProjectRelativePath`, plus `PandaError` and `PANDA_ERROR_CODES`.
 
-Types: `MethodPlugin`, `MethodPhase`, `MethodArtifact`, `MethodCommand`,
-`MethodActivateHook`, `MethodDeactivateHook`, `MethodActivation`.
+Types: `MethodPlugin`, `MethodManifest`, `MethodHookPair`, `MethodPhase`,
+`MethodArtifact`, `MethodCommand`, `MethodActivateHook`, `MethodDeactivateHook`,
+`MethodActivation`.
+
+`MethodPlugin` **is** `MethodManifest & MethodHookPair` — the declarative half
+and the pair rule. The two halves are exported because the pair rule is a union
+and TypeScript needs both names to emit the declaration; write your manifests
+against `MethodPlugin` and you will not need either directly.
 
 ## Not in this contract
 
