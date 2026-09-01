@@ -221,3 +221,45 @@ dependency (`cosmokit`) against AD-1's zero.
   `https://deepseek-harness.github.io/deepseek-harness/en/reference/`.
 - Every measurement above was executed on 2026-09-01, with a control where a
   zero was involved.
+
+## 8. Update, 2026-09-01 — what the ideas actually bought, once implemented
+
+The owner asked for the ideas to be IMPLEMENTED, not only recorded. Four
+context-free lenses were run over cordis (lifecycle/effects, events/coeffects,
+testing of guarantees, author ergonomics), each required to give file:line
+evidence, a control for every zero, and a verdict on whether panda already had
+the thing. Twenty findings came back. **Four did not survive the author
+re-reading the cited lines**, and that ratio is the useful number here.
+
+**Shipped as M7.A (`7d13d58`)** — three places where panda's own stated rule was
+not enforced, none of them a cordis feature panda lacks:
+
+- a candidate rejected for service coverage had its disposer discarded, after the
+  factory had already run to completion and allocated;
+- disposal was typed synchronous, which forced `@panda/registry`'s plugin into
+  `void store.dispose()` with no catch — a live unhandled-rejection hazard, since
+  that store waits for every in-flight mutation;
+- the bus stayed open across the disposer loop and was never drained again.
+
+**Discarded after verification, recorded so they are not re-derived:**
+unready-plugin re-activation (deliberate, with the reason on the line above it
+and a test pinning it); the "stop() resolves quiescent" comment (accurate — it is
+scoped to the record stream, which is drained); multi-party interception (panda's
+single-owner pipeline is a stated security posture, not an oversight);
+`DisposableList` (equal semantics at panda's scale, a pure refactor).
+
+**Queued with their measurements, in `SESSION-HANDOFF.md` §9:** the kernel
+reporting every manifest violation rather than the first — it throws on the first
+while `@panda/contracts` accumulates and the published document promises all of
+them; carrying the Standard Schema issue `path` that panda declares away in both
+copies; the kernel APPLYING `configSchema`, a required field it only probes and
+that three first-party plugins hand-roll around; and `{kind: 'absent'}` carrying
+which of three causes it means.
+
+**The honest headline, from the testing lens:** on ordering, once-only disposal
+and error containment, **panda's tests are stronger than cordis's**, and most
+cordis techniques bought nothing. The one technique panda's four review lenses do
+not name is TEMPORAL — assert the invariant from inside the window where the
+object is half-torn-down, rather than before it opens or after it closes. That is
+what found the open-bus window, and it is worth adding as a review question
+independent of whether any test is adopted.

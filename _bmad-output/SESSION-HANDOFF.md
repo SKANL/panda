@@ -252,6 +252,15 @@ nearly every review — and finally inside the mechanism built to prevent it.
   no tarball contains — CI red on both jobs after a green `pnpm check`. DESCRIBE
   the example instead of writing it out, and remember that the local gate is not
   the CI gate (§4).
+- **A subagent reports a MECHANISM correctly and a CONCLUSION wrongly.** Four
+  cordis lenses returned twenty findings; every one was re-read at the line before
+  it was believed, and four did not survive. Two were redesigns of DELIBERATE
+  decisions with the reason written directly above the line the agent cited
+  (unready plugins activate at most once; the "quiescent" comment is scoped to
+  the record stream). One overstated a lying comment that was accurate. One
+  claimed panda lacked something it has. The mechanism descriptions were right
+  every time — it is the "panda has it / does not have it" verdict that needs
+  your own eyes. Ask agents for evidence and controls, then check the line.
 - **A package manifest is not an architecture.** M5.C's frozen spec measured that
   `@panda/environment` declares `@panda/projection` and concluded AD-2 permitted
   the import. `packages/environment/test/guard.test.ts` refused it: that package
@@ -300,7 +309,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`182473f`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`7d13d58`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean.
 
 Stories closed, each with CI verified against its exact SHA:
@@ -317,6 +326,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `d4800c2` | M5.C — `panda swap executor`; panda writes the selection it used to tell you to hand-edit |
 | `88a5333` | cordis measured: take the ideas, refuse the dependency — and Story 5.4 unblocked |
 | `182473f` | M5.D — `panda swap method`; a method is a selection panda MOUNTS, not an entry it projects (Story 5.4 / FR-28 / UJ-3) |
+| `7d13d58` | M7.A — the kernel's teardown does what the kernel says it does; found by reading cordis, including a live unhandled-rejection hazard |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -331,7 +341,32 @@ projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **Profiles (Epic 5).** Now the largest open piece of Epic 5, Story 5.4 having
+1. **M7.B — the kernel reports EVERY manifest violation, with paths.** Measured
+   this session and not yet built. `packages/kernel/src/manifest.ts` defines
+   `fail()` as a THROW with 13 call sites, so an author fixes one mistake per
+   run — while `@panda/contracts` accumulates into `issues[]` and METHOD-PLUGIN.md
+   promises "every violation at once, not the first". One product, two lessons.
+   ~20 lines: `fail()` pushes, one throw at the end, `ManifestInvalidError` gains
+   `readonly issues` (`SwapRejectedError` already has it). Pairs with carrying the
+   Standard Schema issue `path`, which panda declares as `{message}` only in BOTH
+   copies and drops on the floor — a third party plugging in Zod or Valibot gets
+   a populated `path` and panda throws it away.
+
+2. **M7.C — the kernel APPLIES `configSchema`.** The field is REQUIRED on every
+   manifest and never applied to anything; `packages/workspace-local/src/plugin.ts`
+   says so in its own words ("replacing this constant with a no-op that accepts
+   anything leaves every suite green"), and three first-party plugins hand-roll
+   the same eight lines to compensate. Already proposed in `deferred-work.md` with
+   its measurement. Bigger than M7.B: it is a kernel semantic change that touches
+   three shipped plugins and has to settle what "a plugin's own subtree" means,
+   which is currently a per-plugin convention rather than a kernel rule.
+
+3. **`{kind: 'absent'}` collapses three distinct causes** the kernel internally
+   distinguishes — no provider registered, provider failed to start, provider
+   unready. Typed absence that does not carry the fact it was invented to carry;
+   ~4 lines in `lookup()` and additive to the union.
+
+4. **Profiles (Epic 5).** Story 5.4 having
    shipped as M5.D. The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
@@ -343,13 +378,13 @@ projection layer actually delivers.
    `model` at the root of `~/.claude/settings.json` and `opencode.json` are
    SINGLETON SCALARS, and projecting N ids into one slot is a selection, not a
    projection.
-2. **The unguarded window** between `readIfPresent` and `statSnapshot` in
+5. **The unguarded window** between `readIfPresent` and `statSnapshot` in
    `discardLegacy` — a write landing there is captured by the snapshot, so the
    guard correctly reports no change while `text` is stale. In the ledger.
-3. **Four kernel exports with no consumer** outside the kernel:
+6. **Four kernel exports with no consumer** outside the kernel:
    `createEventBus`, `createLogSink`, `lostRecordCount`, `validateManifest`.
    Observability that exists and nothing reads.
-4. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
+7. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
    (worktrees), Epic 5's export/import bundle.
 
 ## 10. The live executor tests, and the principle behind them
