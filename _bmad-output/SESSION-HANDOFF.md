@@ -79,17 +79,33 @@ in the order to reach for them:
   5.4's blocking question. The cordis checkout it measures is at `C:\code\cordis`
   — outside panda, indexed by all three graph tools, and safe to delete.
 
-  **The cordis mining is CLOSED.** Seven lenses ran across the repo: `core`
-  (fiber/events/registry/service), tests, ergonomics, `group`+loader config
-  tree, the logger, and a sweep of `timer`/`utils`/`create`/`reflect.ts`. They
-  produced four shipped stories (M7.A–M7.D) and one substantial design input
-  (Profiles, §9 item 1). The last sweep returned **zero** adoptable findings and
-  the reason generalises: `timer` and `utils` are thin veneers over `ctx.effect`,
-  cordis's incremental scope-disposer, and panda deliberately gives a plugin ONE
-  disposer; `reflect.ts` and `create` are load-bearing for choices panda made the
-  other way on purpose (ambient context, and an init that converges instead of
-  scaffolding). Do not re-open cordis hoping for more — re-open it to check a
-  specific claim.
+  **The cordis mining is now GENUINELY exhausted — all nine packages.** Eight
+  lenses ran: `core` (fiber/events/registry/service), tests, ergonomics,
+  `group`+loader config tree, the logger, a sweep of
+  `timer`/`utils`/`create`/`reflect.ts`, and finally `hmr`. They produced FIVE
+  shipped stories (M7.A–M7.E). Measured package by package
+  (`for d in packages/*/; do wc -l $d/src/*.ts; done`): core 1866, loader 870,
+  hmr 443, create 314, include 219, timer 146, logger-console 137, utils 42,
+  group 3. Every one is covered. There is nothing left to open.
+
+  Why the last three lenses returned little: `timer` and `utils` are thin
+  veneers over `ctx.effect`, cordis's incremental scope-disposer, and panda
+  deliberately gives a plugin ONE disposer; `reflect.ts` and `create` are
+  load-bearing for choices panda made the other way on purpose (ambient context,
+  and an init that converges instead of scaffolding); and `hmr`'s ROLLBACK does
+  not port at all, for a reason worth keeping — **cordis's recovery model is
+  backward (roll back) because a broken in-memory registry has no next run to
+  heal it; panda's is FORWARD (`doctor` → `foreign-collision` → `adopt`) because
+  it always has a next run.** `engine.ts:25-30` and `engine.test.ts:103` are
+  written to guarantee a failed target never touches its siblings, which is the
+  opposite of an all-or-nothing change set, on purpose.
+
+  **But the hmr lens still paid for itself, via a conclusion it got WRONG.** It
+  reported that a malformed vendor config gives the user a misleading message.
+  Driving it showed there is no message: `parseTree` recovered, panda spliced
+  into the guess, and `panda init` exited **0** having destroyed the user's own
+  server definition. That is M7.E. Follow a lens's THREAD even when its verdict
+  does not survive.
 
 ## 3. Tools — all three work, but two have traps
 
@@ -349,6 +365,35 @@ nearly every review — and finally inside the mechanism built to prevent it.
   test never lints, and treating that run as "the gate up to the failure" silently
   skips it.
 
+- **A recovering parser is a silent writer.** `jsonc-parser`'s `parseTree`
+  returns a tree for a broken document, and panda spliced by OFFSET into that
+  guess. `panda init` exited **0** having nested its own block inside a user's
+  server definition. Nothing in 1226 tests saw it, because every fixture was
+  valid. **When a library "handles" bad input, find out what it returns for bad
+  input before trusting the absence of a throw.**
+- **A safe-looking guard can reject valid input, and only a corpus says so.**
+  The obvious fix — refuse when `parseTree` reports any error — rejects TRAILING
+  COMMAS, which are legitimate JSONC, and reports them with the SAME error code
+  a genuinely doubled comma gets. `{ allowTrailingComma: true }` separates them
+  cleanly. Proven by mutation: dropping the option is killed by **fifteen**
+  clauses, most written long before the story. Same shape as M5.B's semver
+  template type — measure the "better" answer against a corpus with a control
+  before shipping it.
+- **A conclusion can be wrong and its THREAD still be worth following.** The
+  eighth cordis lens reported a misleading error message. There was no message —
+  the real defect was silent corruption, strictly worse. Had the verdict been
+  taken at face value, or discarded when it failed verification, the defect
+  stays. **Verify the claim, then follow where it was pointing.**
+- **"Next step" in a handoff is a claim like any other.** §9 item 1 said
+  Profiles was next. `profile` appears three times in `epics.md` and none is a
+  story; no FR specifies it. It was my own framing from a glossary line, carried
+  forward across sessions as though it were a requirement. **Re-derive the next
+  step from the planning artifacts, not from the last handoff's item 1.**
+- **`git stash` of ONE file is the cheapest proof a fix is not theatre.**
+  `git stash push -- <file>`, re-run the binary, read the corrupted output,
+  `stash pop`. Two commands, and it turned "the tests are green" into "exit 0
+  and a destroyed config, versus exit 1 and an untouched one".
+
 **Process rules that earned their place:**
 
 - An implementer that FILES a renegotiation instead of implementing past a
@@ -361,7 +406,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`b498b9c`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`2d4230e`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean. (This document's own commit
 sits one above it — check `git log`, do not trust this line alone. It has been
 stale about its own state twice.)
@@ -384,6 +429,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `b7e782c` | M7.B — the kernel tells an author EVERY manifest violation, and typed absence says which of three it is |
 | `bb8e539` | M7.C — the kernel APPLIES the configSchema every manifest must declare; three plugins stop hand-rolling it |
 | `b498b9c` | M7.D — `panda run --trace`; the binary finally holds a sink, and `lostRecordCount` is measured UNREACHABLE from the CLI rather than surfaced wrong |
+| `2d4230e` | M7.E — a malformed vendor config is REFUSED with its `line:column`, not spliced into a recovered parse tree; the old build exited 0 having destroyed a user's own server definition |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -398,7 +444,45 @@ projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **Profiles (Epic 5).** Story 5.4 having
+0. **READ THIS BEFORE ITEM 1: "Profiles" is not a specified requirement, and
+   item 1 was my framing, not the PRD's.** Measured on 2026-09-01, with a
+   control (`grep -c FR-28 epics.md` → 6, so the grep sees):
+   - `epics.md` mentions `profile` exactly **three** times and **none is a
+     story**. Epic 5's six stories are export, import, MethodPlugin, hot-swap,
+     diagnostics, status.
+   - The only FR that mentions Profiles is **FR-21**, in passing: *"a Bundle
+     containing the Registry, Profiles, and Skill sources"*. There is no FR, no
+     story, no acceptance criterion and no lifecycle verb for a Profile.
+   - Of FR-21's three legs, **one exists**: the Registry. Profiles have no
+     representation, and `SkillSource` is a declared port with an ingest path
+     and no shipped implementation (8 hits in `src`, control `ProjectionTarget`
+     → 43).
+
+   So designing Profiles means INVENTING requirements from a glossary line,
+   which is the thing that costs the most here. Item 1 below is kept for its
+   banked evidence, which is real and worth having when a Profile requirement
+   actually exists — but it is not a licence to build one.
+
+   **The versioning question it left open is SETTLED**, and by the PRD rather
+   than by argument: Story 5.2's own criterion is *"importing a newer
+   **schema-major** Bundle exits non-zero naming the incompatibility"*. Schema
+   version. Not content revision.
+
+   **Story 5.1 (Export Bundle) is the next actually-specified work**, and one of
+   its three testable consequences is ALREADY SATISFIED:
+   `normalizeRegistryEntryPaths` (`contracts/src/registry.ts:339`, labelled
+   "(NFR-6)" in the source) runs at WRITE time (`store.ts:123`), with a `~`
+   marker, a `~~` escape for literal tildes, and a lossless round trip pinned at
+   `contracts/test/registry.test.ts:195`. **The store on disk is already
+   portable.** What is missing is the Bundle artifact, the `panda export` verb,
+   and the secret detector — `grep -i secret` over all of `packages/*/src`
+   returns **one** hit and it is prose in a kernel comment. One more fact for
+   its spec: entry order in the store is INSERTION order (`store.ts:130-132`
+   filters and appends), so a Bundle is byte-identical for the same store read
+   twice — which is what the criterion asks — but is not canonical across two
+   stores holding the same content.
+1. **Profiles (Epic 5)** — evidence bank, NOT a green light; read item 0 first.
+   Story 5.4 having
    shipped as M5.D. The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
