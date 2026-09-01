@@ -281,3 +281,106 @@ describe('a native file that is absent or holds only whitespace', () => {
     }
   })
 })
+
+// --- A malformed vendor file is refused, not spliced (Spec M7.E) -----------
+//
+// `parseTree` RECOVERS: handed a broken document it returns a tree built from a
+// guess, and panda splices by OFFSET into whatever it returns. Before this, a
+// file whose only fault was an unquoted key parsed as an object and panda wrote
+// its own block INSIDE one of the user's own server definitions.
+//
+// The accept rows are not filler. They are what makes the refusal safe: without
+// `allowTrailingComma`, legitimate JSONC reports the SAME error code a genuinely
+// doubled comma does, and refusing on any error would reject working files.
+
+describe('OpenCode — a broken config is refused with its location', () => {
+  const target = createOpenCodeConfigTarget({ filePath: '/home/u/.config/opencode/opencode.json' })
+  const KEEP = '{ "type": "local", "command": ["x"] }'
+
+  const ACCEPTED: readonly (readonly [string, string])[] = [
+    ['a line comment', `{\n  // mine\n  "mcp": {\n    "keep": ${KEEP}\n  }\n}\n`],
+    ['a block comment', `{\n  /* mine */\n  "mcp": {\n    "keep": ${KEEP}\n  }\n}\n`],
+    ['a trailing comma', `{\n  "mcp": {\n    "keep": ${KEEP},\n  },\n}\n`],
+    ['a trailing comma inside an array', `{\n  "x": [1, 2, ],\n  "mcp": {\n    "keep": ${KEEP}\n  }\n}\n`],
+  ]
+
+  it.each(ACCEPTED)('accepts %s and preserves it byte-for-byte', async (_label, nativeText) => {
+    const outcome = await target.merge({ entries: ENTRIES, records: [], nativeText })
+    expect(outcome.text).toContain('context7')
+    expect(withoutOwnedSpans(outcome.text, outcome.ownedSpans)).toBe(nativeText)
+  })
+
+  // `merge` is declared async and refuses SYNCHRONOUSLY — `validate()` runs
+  // before the first await — so `expect(merge(...)).rejects` never receives a
+  // promise to reject. This catches both shapes, and fails loudly on the one
+  // outcome the whole story is about: merge returning instead of refusing.
+  async function refusal(nativeText: string): Promise<{ code?: string; message: string }> {
+    try {
+      await target.merge({ entries: ENTRIES, records: [], nativeText })
+    } catch (error) {
+      return error as { code?: string; message: string }
+    }
+    throw new Error('merge accepted a malformed document and spliced into it')
+  }
+
+  // Each location was verified by hand against the body above it, because a
+  // position that is merely PRESENT is worse than none: it sends the user to the
+  // wrong line with panda's authority behind it.
+  const REFUSED: readonly (readonly [string, string, string])[] = [
+    ['an unquoted key', `{\n  mcp: {\n    "keep": ${KEEP}\n  }\n}\n`, 'InvalidSymbol at line 2, column 3'],
+    [
+      'a doubled comma',
+      `{\n  "mcp": {\n    "keep": ${KEEP},,\n  }\n}\n`,
+      'PropertyNameExpected at line 3, column 51',
+    ],
+    [
+      'a missing close brace',
+      `{\n  "mcp": {\n    "keep": ${KEEP}\n`,
+      'CloseBraceExpected at line 4, column 1',
+    ],
+    [
+      'an unterminated string',
+      `{\n  "mcp": {\n    "keep": { "type": "local", "command": ["unterminat\n`,
+      'UnexpectedEndOfString at line 3, column 44',
+    ],
+  ]
+
+  it.each(REFUSED)('refuses %s, naming the fault and where it is', async (_label, nativeText, detail) => {
+    const error = await refusal(nativeText)
+    expect(error.code).toBe('PANDA_PROJECTION_NATIVE_MALFORMED')
+    expect(error.message).toContain(detail)
+  })
+
+  it('still refuses a non-object root in the words it always used', async () => {
+    // The one fault a recovering parse DOES surface as a shape rather than an
+    // error, so its existing message stays correct and stays.
+    const error = await refusal('[1, 2, 3]\n')
+    expect(error.code).toBe('PANDA_PROJECTION_NATIVE_MALFORMED')
+    expect(error.message).toContain('document root is not an object')
+  })
+
+  it('reports the very first byte as line 1, column 1', async () => {
+    // The offset-0 edge, which the arithmetic handles without a special case:
+    // `lastIndexOf('\n', -1)` is -1 and the +1 makes `lineStart` 0. Pinned
+    // because a special case WAS written here, measured to be unreachable, and
+    // deleted — this is what proves deleting it changed nothing.
+    expect((await refusal('oops\n')).message).toContain('line 1, column 1')
+  })
+})
+
+describe('Claude — the strict target keeps V8 as its parser', () => {
+  it('reports a broken file through JSON.parse, unchanged by M7.E', async () => {
+    // `strictJson: true` runs JSON.parse first and its message already carries a
+    // position. Re-deriving one would be two answers to one question.
+    const target = createClaudeMcpTarget({ filePath: '/home/u/.claude.json' })
+    let caught: { code?: string; message: string } | undefined
+    try {
+      await target.merge({ entries: ENTRIES, records: [], nativeText: '{\n  "mcpServers": {},,\n}\n' })
+    } catch (error) {
+      caught = error as { code?: string; message: string }
+    }
+    expect(caught?.code).toBe('PANDA_PROJECTION_NATIVE_MALFORMED')
+    // V8's own words, with V8's own position — not panda's re-derived one.
+    expect(caught?.message).toContain('position 21')
+  })
+})

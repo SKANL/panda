@@ -17,8 +17,8 @@ import type {
   RegistryEntriesByKind,
   RegistryEntry,
 } from '@panda/contracts'
-import type { Node } from 'jsonc-parser'
-import { parse, parseTree } from 'jsonc-parser'
+import type { Node, ParseError } from 'jsonc-parser'
+import { parse, parseTree, printParseErrorCode } from 'jsonc-parser'
 import { hashOwnedText, resolveOwnedPath, sameOwnedPath } from './ledger.ts'
 
 // Format-trait table + generic native-merge strategies (FR-8): everything that
@@ -219,11 +219,52 @@ function objectRootOf(body: string, filePath: string, strictJson: boolean): Node
     // Strict JSON already validated above; the tree exists by construction.
     return parseTree(body)!
   }
-  const root = parseTree(body)
+  // Errors are COLLECTED, and trailing commas are allowed while collecting.
+  // `parseTree` recovers: handed a broken document it returns a tree built from
+  // a guess, and panda splices by OFFSET into whatever it returns. Without this
+  // out-param a file whose only fault is an unquoted key parsed as an object and
+  // panda wrote its own block INSIDE one of the user's own server definitions.
+  //
+  // `allowTrailingComma` is not decoration. A trailing comma is legitimate JSONC
+  // that every JSONC-tolerant vendor accepts, and WITHOUT the option it reports
+  // the same `PropertyNameExpected` a genuinely doubled comma does — so
+  // refusing on any error would reject working files. With it, every legitimate
+  // spelling (comments, trailing commas, nested and in arrays) collects zero and
+  // every real fault collects at least one. `canonical()` below already parses
+  // this way; this is the same answer given at both doors.
+  const errors: ParseError[] = []
+  const root = parseTree(body, errors, { allowTrailingComma: true })
+  const first = errors[0]
+  if (first !== undefined) {
+    // The FIRST only. A recovering parser cascades — an unquoted key reports
+    // four — and the rest are that one's shadow.
+    //
+    // The parser's OWN code (`InvalidSymbol`, `PropertyNameExpected`), not prose
+    // panda invents for it. It is terser than a sentence and it is stable,
+    // greppable, and the same word the user's editor and every other
+    // jsonc-parser consumer already shows them for that fault.
+    throw nativeMalformed(
+      filePath,
+      new Error(`${printParseErrorCode(first.error)} at ${positionOf(body, first.offset)}`),
+    )
+  }
   if (!root || root.type !== 'object') {
     throw nativeMalformed(filePath, new Error('document root is not an object'))
   }
   return root
+}
+
+/**
+ * A byte offset as the 1-based `line:column` a user's editor shows.
+ *
+ * Offset 0 needs no special case and had one until it was measured: there
+ * `lastIndexOf('\n', -1)` is -1, the +1 makes `lineStart` 0, and `''.split('\n')`
+ * has length 1 — so the general form already answers `line 1, column 1`.
+ */
+function positionOf(text: string, offset: number): string {
+  const bounded = Math.max(0, Math.min(offset, text.length))
+  const lineStart = text.lastIndexOf('\n', bounded - 1) + 1
+  return `line ${text.slice(0, lineStart).split('\n').length}, column ${bounded - lineStart + 1}`
 }
 
 /**
