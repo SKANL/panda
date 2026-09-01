@@ -11,6 +11,23 @@ export interface ServiceConsumption {
 
 export interface StandardSchemaIssue {
   readonly message: string
+  /**
+   * Where in the validated value the issue is, as Standard Schema defines it.
+   *
+   * Panda's own schemas are hand-written and bake the coordinate into the
+   * message (`artifacts[0]`), so they carry none. A third party plugging in Zod
+   * or Valibot produces a populated one, and since M7.C the kernel APPLIES a
+   * plugin's schema — so this is the field that keeps `expected number` from
+   * being the whole story when forty keys could have produced it.
+   */
+  readonly path?: readonly (string | number)[]
+}
+
+/** One issue as an author reads it, with its coordinate when the schema gave one. */
+export function renderIssue(issue: StandardSchemaIssue): string {
+  return issue.path === undefined || issue.path.length === 0
+    ? issue.message
+    : `${issue.message} (at ${issue.path.join('.')})`
 }
 
 export type StandardSchemaResult<Output = unknown> =
@@ -33,6 +50,22 @@ export interface PluginManifest {
   readonly version: string
   readonly provides: readonly string[]
   readonly consumes: readonly ServiceConsumption[]
+  /**
+   * The plugin's own configuration schema, APPLIED by the kernel (since M7.C)
+   * rather than merely probed for shape.
+   *
+   * The kernel validates `config.resolve()[manifest.id]` — a plugin's subtree is
+   * its OWN ID, which is not a new convention but the one all three shipped
+   * plugins already spelled out by hand — and hands the factory the result's
+   * `value` as `ActivationContext.settings`, so defaults and transforms a schema
+   * supplies actually reach the plugin. Issues fail the plugin to start, before
+   * the factory body runs.
+   *
+   * STRICTNESS IS YOURS, not the kernel's. A schema that accepts `undefined`
+   * makes configuration optional; one that accepts unknown keys tolerates a
+   * forward-looking document. The kernel imposes no policy of its own — it only
+   * enforces the one you wrote.
+   */
   readonly configSchema: StandardSchemaV1Like
 }
 

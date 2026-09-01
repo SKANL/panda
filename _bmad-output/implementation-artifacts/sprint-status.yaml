@@ -92,6 +92,7 @@ development_status:
   m5c-panda-writes-the-selection-it-tells-you-to-edit: done   # the persistence verb FR-28 needs; closes the hand-edit hole 2.7c left in FR-7/FR-9
   m5d-a-method-is-a-selection-panda-mounts: done   # implements 5.4/FR-28/UJ-3; a method is config, not registry vocabulary
   m7b-the-kernel-tells-an-author-everything-it-found: done   # every manifest violation, not the first; and typed absence says which of three
+  m7c-a-required-field-the-kernel-actually-applies: done   # the kernel APPLIES configSchema; three plugins stop hand-rolling it
   m7a-teardown-does-what-the-kernel-says-it-does: done   # three kernel promises found unenforced by reading cordis; one is a live unhandled rejection
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
   epic-2-retrospective: optional

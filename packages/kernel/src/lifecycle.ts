@@ -18,7 +18,7 @@ import {
   type LogReader,
   type LogSink,
 } from './log.ts'
-import { validateManifest, type PluginManifest } from './manifest.ts'
+import { renderIssue, validateManifest, type PluginManifest, type StandardSchemaResult } from './manifest.ts'
 
 /**
  * Soft-consumption imposes no activation ordering by design: soft services resolve
@@ -47,6 +47,20 @@ export interface ActivationContext {
    * preference.
    */
   readonly actions: ActionPipeline
+  /**
+   * This plugin's OWN configuration, already validated by its own
+   * `manifest.configSchema` against `config.resolve()[manifest.id]` — including
+   * any default or transform that schema supplies.
+   *
+   * `config` above stays and is still the WHOLE composed document: a plugin
+   * legitimately reads other subtrees and other layers. `settings` is the slice
+   * the kernel guarantees was checked.
+   *
+   * `unknown` rather than generic: the kernel cannot know a plugin's output
+   * type without a type parameter on `PluginManifest`, and the plugin already
+   * knows what its own schema returns.
+   */
+  readonly settings: unknown
 }
 
 export type PluginFactoryResult =
@@ -136,6 +150,11 @@ export interface KernelOptions {
   readonly actionPolicy?: ActionPolicy
 }
 
+/** A composed configuration document, or something that is not one. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 type PluginState = 'unready' | 'active' | 'failed' | 'disposed'
 
 interface RuntimePlugin {
@@ -151,7 +170,7 @@ interface ActivationAssessment {
 }
 
 type ActivationRejection = {
-  readonly reason: 'rejected' | 'coverage' | 'pairing'
+  readonly reason: 'rejected' | 'coverage' | 'pairing' | 'config'
   readonly issues: readonly string[]
   readonly cause?: unknown
 }
@@ -261,9 +280,39 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
     manifest: PluginManifest,
     factory: PluginFactory,
   ): ActivationAssessment | ActivationRejection {
+    // The plugin's OWN configuration, validated by the plugin's OWN schema,
+    // BEFORE its body runs. `configSchema` was a required manifest field the
+    // kernel only probed for shape, so three shipped plugins hand-rolled this
+    // same ceremony and a schema replaced by a no-op left every suite green.
+    //
+    // Before the factory rather than inside it: a factory told its configuration
+    // was invalid AFTER it has opened resources is the leak M7.A closed by
+    // another route, and there is no reason to open that door again here.
+    let settings: unknown
+    try {
+      const composed = config.resolve()
+      const subtree = isRecord(composed) ? composed[manifest.id] : undefined
+      // Synchronous by construction: `validateManifest` refuses a schema that
+      // validates asynchronously, at REGISTRATION, so nothing here can be a
+      // promise and this function stays synchronous.
+      const validated = manifest.configSchema['~standard'].validate(subtree) as StandardSchemaResult
+      if (validated.issues !== undefined) {
+        return { reason: 'config', issues: validated.issues.map(renderIssue) }
+      }
+      settings = validated.value
+    } catch (error) {
+      // A schema that THROWS rather than returning issues is the plugin's bug,
+      // contained the same way a throwing factory is.
+      return {
+        reason: 'config',
+        issues: [error instanceof Error ? error.message : String(error)],
+        cause: error,
+      }
+    }
+
     let result: PluginFactoryResult
     try {
-      result = factory({ manifest, consume: (service) => lookup(service), bus, config, actions })
+      result = factory({ manifest, consume: (service) => lookup(service), bus, config, actions, settings })
     } catch (error) {
       return {
         reason: 'rejected',

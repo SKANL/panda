@@ -939,3 +939,205 @@ describe('M7.B rows 10-14: typed absence says WHICH absence', () => {
     if (resolution.kind === 'absent') expect(typeof resolution.reason).toBe('string')
   })
 })
+
+// --- M7.C: a required field the kernel actually applies ----------------------
+
+type SchemaResult = { value: unknown } | { issues: { message: string; path?: readonly (string | number)[] }[] }
+
+/** A plugin's own schema, so a test can make it default, accept, or reject. */
+function subtreeSchema(validate: (value: unknown) => SchemaResult): unknown {
+  return { '~standard': { version: 1, validate } }
+}
+
+describe('M7.C rows 1-4: the kernel applies the schema BEFORE the factory', () => {
+  it('hands the factory its own validated subtree', () => {
+    let seen: unknown
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'cfg', configSchema: subtreeSchema((value) => ({ value })) }), (context) => {
+      seen = context.settings
+      return { status: 'activated' }
+    })
+    kernel.config.setLayer('defaults', { cfg: { depth: 3 } })
+
+    kernel.start()
+
+    expect(seen).toEqual({ depth: 3 })
+  })
+
+  it('gives the factory the schema-applied DEFAULT when the subtree is absent', () => {
+    let seen: unknown
+    const kernel = createKernel()
+    kernel.register(
+      manifest({ id: 'cfg', configSchema: subtreeSchema((value) => ({ value: value ?? { depth: 1 } })) }),
+      (context) => {
+        seen = context.settings
+        return { status: 'activated' }
+      },
+    )
+
+    kernel.start()
+
+    // Validation that discarded `result.value` would hand the factory
+    // `undefined` here, and the default the author wrote would never arrive.
+    expect(seen).toEqual({ depth: 1 })
+  })
+
+  it('fails the plugin to start when its own subtree violates its own schema', () => {
+    const kernel = createKernel()
+    kernel.register(
+      manifest({
+        id: 'cfg',
+        configSchema: subtreeSchema(() => ({ issues: [{ message: "'depth' must be a number" }] })),
+      }),
+      () => ({ status: 'activated' }),
+    )
+
+    const result = kernel.start()
+
+    expect(result.started).toEqual([])
+    expect(result.failures[0]?.error).toBeInstanceOf(PluginStartFailedError)
+    expect(result.failures[0]?.error.message).toContain("'depth' must be a number")
+  })
+
+  // ROW 4, the discriminating one. Validating and then calling the factory
+  // ANYWAY passes every other row here: the rejection is still reported and the
+  // issues are still named. What it loses is the point — a factory that already
+  // opened resources and is then told its configuration was invalid is the leak
+  // M7.A closed by another route.
+  it('never runs the factory of a plugin whose configuration was rejected', () => {
+    let calls = 0
+    const kernel = createKernel()
+    kernel.register(
+      manifest({ id: 'cfg', configSchema: subtreeSchema(() => ({ issues: [{ message: 'no' }] })) }),
+      () => {
+        calls += 1
+        return { status: 'activated' }
+      },
+    )
+
+    kernel.start()
+
+    expect(calls).toBe(0)
+  })
+})
+
+describe('M7.C rows 5-9: what the schema decides, and what the message shows', () => {
+  it('lets a lenient schema accept an absent subtree', () => {
+    const kernel = createKernel()
+    kernel.register(
+      manifest({ id: 'lenient', configSchema: subtreeSchema((value) => ({ value: value ?? {} })) }),
+      () => ({ status: 'activated' }),
+    )
+
+    expect(kernel.start().started).toEqual(['lenient'])
+  })
+
+  // The regression this story most had to not cause: `workspace-local` tolerates
+  // a forward-looking key on purpose, and that leniency lives in ITS schema. A
+  // kernel that imposed strictness of its own would break `panda run` for a user
+  // with an unknown key while every kernel-level row above still passed.
+  it('lets a lenient schema accept unknown keys, so leniency stays the plugin decision', () => {
+    const kernel = createKernel()
+    kernel.register(
+      manifest({ id: 'lenient', configSchema: subtreeSchema((value) => ({ value })) }),
+      () => ({ status: 'activated' }),
+    )
+    kernel.config.setLayer('defaults', { lenient: { forwardLooking: true } })
+
+    expect(kernel.start().started).toEqual(['lenient'])
+  })
+
+  it('contains a schema that THROWS instead of returning issues', () => {
+    const kernel = createKernel()
+    kernel.register(
+      manifest({
+        id: 'thrower',
+        configSchema: subtreeSchema((value) => {
+          // The manifest probe passes a symbol, so registration succeeds and
+          // activation is where this lands.
+          if (typeof value === 'symbol') return { value }
+          throw new Error('schema exploded')
+        }),
+      }),
+      () => ({ status: 'activated' }),
+    )
+
+    const result = kernel.start()
+
+    expect(result.started).toEqual([])
+    expect(result.failures[0]?.error).toBeInstanceOf(PluginStartFailedError)
+    expect(result.failures[0]?.error.message).toContain('schema exploded')
+  })
+
+  it('renders the coordinate of an issue that carries a path', () => {
+    const kernel = createKernel()
+    kernel.register(
+      manifest({
+        id: 'cfg',
+        configSchema: subtreeSchema(() => ({
+          issues: [{ message: 'expected number', path: ['retry', 'attempts'] }],
+        })),
+      }),
+      () => ({ status: 'activated' }),
+    )
+
+    const message = kernel.start().failures[0]?.error.message ?? ''
+    expect(message).toContain('expected number')
+    expect(message).toContain('retry.attempts')
+  })
+
+  it('leaves a pathless issue reading exactly as it does today', () => {
+    const kernel = createKernel()
+    kernel.register(
+      manifest({ id: 'cfg', configSchema: subtreeSchema(() => ({ issues: [{ message: 'plain' }] })) }),
+      () => ({ status: 'activated' }),
+    )
+
+    const message = kernel.start().failures[0]?.error.message ?? ''
+    expect(message).toContain('plain')
+    expect(message).not.toContain('(at ')
+  })
+})
+
+describe('M7.C rows 10 and 12: swap, and the config that stays', () => {
+  it('validates a swap candidate through the same path, and keeps the previous serving when it fails', () => {
+    let reject = false
+    const kernel = createKernel()
+    kernel.register(
+      manifest({
+        id: 'p',
+        provides: ['svc.p'],
+        configSchema: subtreeSchema((value) =>
+          reject ? { issues: [{ message: 'candidate config is invalid' }] } : { value },
+        ),
+      }),
+      () => ({ status: 'activated', services: { 'svc.p': 'old' }, dispose: () => {} }),
+    )
+    kernel.start()
+
+    reject = true
+    expect(() =>
+      kernel.swap('p', () => ({ status: 'activated', services: { 'svc.p': 'new' }, dispose: () => {} })),
+    // SwapRejectedError, not PluginStartFailedError: nothing changed and the
+    // previous implementation is still serving, which is exactly what that error
+    // means — and it carries the issues, where the start failure carries prose.
+    ).toThrow(SwapRejectedError)
+    expect(kernel.getService('svc.p')).toEqual({ kind: 'provided', pluginId: 'p', value: 'old' })
+  })
+
+  it('still hands the factory the whole composed document through context.config', () => {
+    let composed: unknown
+    const kernel = createKernel()
+    kernel.register(manifest({ id: 'cfg', configSchema: subtreeSchema((value) => ({ value })) }), (context) => {
+      composed = context.config.resolve()
+      return { status: 'activated' }
+    })
+    kernel.config.setLayer('defaults', { cfg: { a: 1 }, somethingElse: { b: 2 } })
+
+    kernel.start()
+
+    // `settings` is the plugin's own slice; `config` remains the whole document,
+    // which `@panda/session` and the executor selection both still read.
+    expect(composed).toEqual({ cfg: { a: 1 }, somethingElse: { b: 2 } })
+  })
+})

@@ -5,6 +5,17 @@
 
 export interface StandardSchemaIssue {
   readonly message: string
+  /**
+   * Where in the validated value the issue is, as Standard Schema defines it.
+   *
+   * DUPLICATED with `packages/kernel/src/manifest.ts`, deliberately and for the
+   * same reason the semver pattern is: AD-1 forbids the kernel a runtime
+   * dependency on this package. Panda's own schemas are hand-written and bake
+   * the coordinate into the message (`artifacts[0]`), so they carry none; a
+   * third party's Zod or Valibot schema populates it, and since M7.C the kernel
+   * APPLIES a plugin's schema, which is what gives this field a reader.
+   */
+  readonly path?: readonly (string | number)[]
 }
 
 export type StandardSchemaResult<Output = unknown> =

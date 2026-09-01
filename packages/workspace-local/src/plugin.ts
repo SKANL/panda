@@ -59,7 +59,15 @@ const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set(['rootDir'])
  */
 const WORKSPACE_CONFIG_SCHEMA = defineStandardSchema((value): StandardSchemaResult<unknown> => {
   if (value === undefined) return { value: {} }
-  if (!isRecord(value)) return { issues: [issue('workspace plugin config must be an object')] }
+  // A non-object subtree is IGNORED, not rejected — and saying so here is the
+  // correction M7.C forced. This schema used to return an issue for it, and the
+  // factory never let it: it warned on the bus and passed `{}` on instead, so the
+  // strict branch was unreachable. Once the KERNEL applies this schema to the raw
+  // subtree, an unreachable strict branch becomes a plugin that refuses to start
+  // where it used to warn — and `run-session.ts` records that one forward-looking
+  // key failing every run on the machine is the failure this leniency exists for.
+  // The warning still happens, in the factory, off the raw document.
+  if (!isRecord(value)) return { value: {} }
   const rootDir = value['rootDir']
   if (rootDir !== undefined && !isNonEmptyString(rootDir)) {
     return { issues: [issue("'rootDir' must be a non-empty string when present")] }

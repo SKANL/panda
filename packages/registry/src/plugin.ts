@@ -80,8 +80,12 @@ export function createRegistryPlugin(options: RegistryPluginOptions = {}): Regis
   }
 
   const factory: PluginFactory = (context) => {
-    const composed = context.config.resolve()
-    const namespace = isRecord(composed) && isRecord(composed['registry']) ? composed['registry'] : {}
+    // The kernel has already resolved `config.resolve()['registry']` and checked
+    // it against this plugin's own schema (M7.C), so the subtree arrives
+    // validated. The merge below is still this plugin's own work and is still
+    // validated here, because only the MERGED value can be checked once it
+    // exists — the kernel checks the document, this checks the result.
+    const namespace = isRecord(context.settings) ? context.settings : {}
     // Explicit factory options override layered config. The namespace subtree
     // is validated VERBATIM (unknown keys inside it are rejected); only the
     // explicit-options side is filtered to known keys, since it also carries

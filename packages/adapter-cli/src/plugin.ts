@@ -174,21 +174,15 @@ export function createExecutorPlugin(options: ExecutorPluginOptions = {}): Execu
   }
 
   const factory: PluginFactory = (context: ActivationContext) => {
-    const composed = context.config.resolve()
-    const configured = isRecord(composed) ? composed[EXECUTOR_CONFIG_KEY] : undefined
-    const validated = EXECUTOR_CONFIG_SCHEMA['~standard'].validate(configured)
-    if (validated instanceof Promise) {
-      return { status: 'rejected', issues: ['the executor plugin config must validate synchronously'] }
-    }
-    if (validated.issues !== undefined) {
-      return { status: 'rejected', issues: validated.issues.map((entry) => entry.message) }
-    }
-    // A throw from either branch is NOT caught here. `runCandidate` in the
-    // kernel already converts it into `PANDA_KERNEL_PLUGIN_START_FAILED` naming
-    // this plugin AND preserves the original as `cause`; catching it locally
-    // produced the same message while discarding the cause chain, and made a
-    // clause unable to tell plugin containment from kernel containment.
-    const selected = validated.value as string | undefined
+    // Since M7.C the KERNEL resolves `config.resolve()[manifest.id]`, validates
+    // it against this plugin's own `configSchema`, and refuses the plugin before
+    // this body runs — so the read, the subtree pick, the validate call, the
+    // promise check and the issue mapping that used to live here are gone. What
+    // arrives is the schema's own `value`, already checked.
+    //
+    // The plugin id IS the config key (`executor` both), which is the rule the
+    // kernel now states rather than the convention three plugins each spelled out.
+    const selected = context.settings as string | undefined
     const adapter: ExecutorAdapter =
       createAdapter === undefined ? createExecutorAdapter(selected, adapterOptions) : createAdapter()
     const executorId = createAdapter === undefined ? selected ?? DEFAULT_EXECUTOR_ID : '(injected)'
