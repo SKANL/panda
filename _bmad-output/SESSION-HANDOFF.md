@@ -300,7 +300,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`d4800c2`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`182473f`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean.
 
 Stories closed, each with CI verified against its exact SHA:
@@ -315,6 +315,8 @@ Stories closed, each with CI verified against its exact SHA:
 | `087e357` | M6.A — worktrees panda can prove are its own (implements 4.1 / FR-18) |
 | `3302658` | M5.B — the artifact `path` rule and the hook pair are enforced, not stated |
 | `d4800c2` | M5.C — `panda swap executor`; panda writes the selection it used to tell you to hand-edit |
+| `88a5333` | cordis measured: take the ideas, refuse the dependency — and Story 5.4 unblocked |
+| `182473f` | M5.D — `panda swap method`; a method is a selection panda MOUNTS, not an entry it projects (Story 5.4 / FR-28 / UJ-3) |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -329,43 +331,8 @@ projection layer actually delivers.
 
 ## 9. Next steps, measured and in order
 
-1. **Story 5.4 — methodology hot swap** (`panda swap method`, FR-28), and it is
-   BLOCKED on a question the story does not ask. Measured at `3e6f85c` while
-   scoping it: **panda cannot load a method from anywhere.** Dynamic imports
-   across `packages/*/src` are zero (control: 81 `export function` over the same
-   glob), exactly two plugins mount and both are constructed in process, and a
-   registry entry is JSON so it cannot carry the hook FUNCTIONS a `MethodPlugin`
-   is defined by. So 5.4's own precondition — "given two installed methods" — is
-   unreachable. The PRD is consistent about this and it reads like a conflict:
-   §6.1 puts `swap` inside v1's CLI and names the seventh contract the
-   "MethodPlugin **definition**", while §6.2 puts "official methodology plugins
-   (immediately post-v1)" outside it.
-
-   5.4 also asks one CLI process to do two things it cannot do at once: the
-   ordered `onDeactivate`→`onActivate` needs methods MOUNTED, and "persists
-   across processes" crosses a boundary where nothing is mounted. **M5.C shipped
-   the persistence half** as `panda swap executor`, so 5.4 inherits the verb, the
-   scopes and the layer-honesty.
-
-   **The blocking question is now ANSWERED** — see
-   `planning-artifacts/research/cordis-spatiotemporal-composability-2026-09-01/research.md`.
-   A method comes from a declarative entry naming a module specifier
-   (`{ id, name, config }`, cordis's shape), mounted with plain `await import()`,
-   in a CONSUMER-TIER package — never in the kernel, which forbids dynamic
-   imports in writing (`packages/kernel/src/manifest.ts`, first comment). And
-   "hot swap" in v1 means mounting/unmounting an already-loaded method plus the
-   persisted selection, **not** live reloading of changed module code: the only
-   shipped implementation of that (cordis's HMR) needs `--expose-internals`,
-   which panda must not require. 5.4 should say so rather than promise it.
-
-   `deferred-work.md` banks four more decisions it inherits: the zero-argument
-   hooks (whatever a swap hands a method IS the swap surface), the single
-   `PANDA_METHOD_HOOK_FAILED` code (an ordered swap has to branch on WHICH half
-   failed), the M5.C blocker entry above, and the gap that lets
-   `METHOD-PLUGIN.md` name a verb the binary does not have, because
-   `shippedFiles` in `packages/cli/test/printed-commands.test.ts` scans `.ts`
-   and not `.md`.
-2. **Profiles (Epic 5).** The PRD glossary defines a Profile as a named bundle of
+1. **Profiles (Epic 5).** Now the largest open piece of Epic 5, Story 5.4 having
+   shipped as M5.D. The PRD glossary defines a Profile as a named bundle of
    Registry selections including "per-executor model/effort selections **where
    targets support native selection**". The owner arrived at the use case
    independently: a user should never have to learn which model tier their
@@ -376,13 +343,13 @@ projection layer actually delivers.
    `model` at the root of `~/.claude/settings.json` and `opencode.json` are
    SINGLETON SCALARS, and projecting N ids into one slot is a selection, not a
    projection.
-3. **The unguarded window** between `readIfPresent` and `statSnapshot` in
+2. **The unguarded window** between `readIfPresent` and `statSnapshot` in
    `discardLegacy` — a write landing there is captured by the snapshot, so the
    guard correctly reports no change while `text` is stale. In the ledger.
-4. **Four kernel exports with no consumer** outside the kernel:
+3. **Four kernel exports with no consumer** outside the kernel:
    `createEventBus`, `createLogSink`, `lostRecordCount`, `validateManifest`.
    Observability that exists and nothing reads.
-5. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
+4. Remaining: Epic 2's 2.6 liveness re-spec, Epic 3 (memory providers), Epic 4
    (worktrees), Epic 5's export/import bundle.
 
 ## 10. The live executor tests, and the principle behind them
