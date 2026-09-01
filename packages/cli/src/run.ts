@@ -23,7 +23,12 @@ import {
   type LogRecord,
   type SessionOptions,
 } from '@panda/session'
-import { isRegistryVerb, runRegistryCommand, type RegistryVerb } from './registry-commands.ts'
+import {
+  isRegistryVerb,
+  runExportCommand,
+  runRegistryCommand,
+  type RegistryVerb,
+} from './registry-commands.ts'
 import { SWAP_NOUNS, runSwap } from './swap-command.ts'
 
 // Exit codes (documented in the package README):
@@ -72,6 +77,7 @@ export const USAGE = [
   `       panda project remove ${REMOVE_TYPES} <id> [directory]`,
   '       panda list',
   '       panda project list [directory]',
+  '       panda export <path>',
   '       panda init',
   '       panda project init [directory]',
   '       panda doctor',
@@ -105,6 +111,12 @@ export const USAGE = [
   '              entry written by an older build has an exit through the product rather than by hand.',
   'list          Every registered entry with its type, id and the scope it came from. An empty',
   '              registry is a result, not a failure, and exits 0.',
+  'export        Writes the machine registry to <path> as a portable artifact, so an environment can',
+  '              move to another device. Machine scope only: an agent entry dies with its process and',
+  '              a project entry names a directory the destination does not have.',
+  '              An entry carrying anything that looks like a credential is LEFT OUT rather than',
+  '              redacted, and each one is named in the output with the field that stopped it, so what',
+  '              did not travel is a task you can see instead of a gap you discover later.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
@@ -190,6 +202,13 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
   }
   if (isRegistryVerb(argv[0])) {
     return await runRegistry(argv[0], argv.slice(1), 'machine', out, err, options)
+  }
+  if (argv[0] === 'export') {
+    if (isHelp(argv[1])) {
+      out(USAGE)
+      return 0
+    }
+    return await runExport(argv.slice(1), out, err, options)
   }
   if (argv[0] === 'init') {
     return await runInit(argv.slice(1), out, err, 0, options.homeDir, (homeDir) => initMachine({ homeDir }))
@@ -701,6 +720,32 @@ async function runRemediate(
  * usage while `--help --entry-path ./s.md` refuses would be two answers to one
  * question.
  */
+/**
+ * The export verb. Its own wrapper rather than a RegistryVerb: it takes no
+ * entry, no type and no directory, so the registry grammar has nothing to parse
+ * for it, and there is no project-scoped spelling to offer — a project's
+ * entries name a directory the destination machine does not have.
+ */
+async function runExport(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  options: RunCommandOptions,
+): Promise<number> {
+  try {
+    return await runExportCommand(tokens, {
+      out,
+      err,
+      defaultUsage: DEFAULT_USAGE,
+      homeDir: options.homeDir,
+      cwd: options.cwd,
+    })
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
 async function runRegistry(
   verb: RegistryVerb,
   tokens: readonly string[],

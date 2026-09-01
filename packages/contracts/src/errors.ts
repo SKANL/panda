@@ -51,6 +51,10 @@ export const PANDA_ERROR_CODES = {
   registryInactive: 'PANDA_REGISTRY_INACTIVE',
   registryProviderRejected: 'PANDA_REGISTRY_PROVIDER_REJECTED',
   registryOriginConflict: 'PANDA_REGISTRY_ORIGIN_CONFLICT',
+  // A bundle, not the store: the two fail for different reasons at different
+  // paths, and a user told their STORE is unavailable while their export
+  // destination is what refused would go looking in the wrong place.
+  registryBundleUnavailable: 'PANDA_REGISTRY_BUNDLE_UNAVAILABLE',
   projectionNativeMalformed: 'PANDA_PROJECTION_NATIVE_MALFORMED',
   projectionTargetFailed: 'PANDA_PROJECTION_TARGET_FAILED',
   projectionTraitsInvalid: 'PANDA_PROJECTION_TRAITS_INVALID',

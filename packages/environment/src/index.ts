@@ -56,6 +56,13 @@ export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDet
 // deferred-work.md rather than fixed by widening the surface on speculation.
 export { RegistryStore } from '@panda/registry'
 export type { RegistryStoreOptions } from '@panda/registry'
+// The bundle surface, for the same reason: a consumer holding a `RegistryStore`
+// can build the artifact and read what did not travel without resolving
+// `@panda/registry` itself. `writeBundle` is here and this package still writes
+// no file — it names a capability its own guard test forbids it to PERFORM,
+// which is the whole point of a facade.
+export { BUNDLE_KIND, BUNDLE_VERSION, createBundle, isCredential, serializeBundle, writeBundle } from '@panda/registry'
+export type { OmittedEntry, RegistryBundle } from '@panda/registry'
 export {
   DRIFT_KINDS,
   REGISTRY_ENTRY_TYPES,

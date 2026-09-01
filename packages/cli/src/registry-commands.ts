@@ -2,10 +2,12 @@ import { homedir } from 'node:os'
 import {
   REGISTRY_ENTRY_TYPES,
   REMOVABLE_ENTRY_TYPES,
+  createBundle,
   deliveryFor,
   isRetiredEntryType,
   scopeDirectory,
   storeFor,
+  writeBundle,
 } from '@panda/environment'
 import type { EntryDelivery, RegistryEntry, RegistryScope, StoredEntryType } from '@panda/environment'
 
@@ -480,6 +482,68 @@ async function runList(
       return 0
     }
     for (const row of rows) err(describeEntry(row.scope, row.entry))
+    return 0
+  } finally {
+    await bound.store.dispose()
+  }
+}
+
+/**
+ * `panda export <path>` — the machine's Registry as a portable artifact.
+ *
+ * It lives beside `add`/`remove`/`list` rather than in its own module because
+ * it needs `bind`, and `bind` is the trust boundary those three already share:
+ * one spelling of "the home directory" and a bound directory panda never
+ * creates. A second binding here is how two verbs come to disagree about which
+ * registry they are talking about.
+ *
+ * It is NOT a RegistryVerb. Those three also carry a project-scoped spelling,
+ * and a project-scoped export would name a directory the destination machine
+ * does not have — so the global scope is the only one that can travel, and
+ * there is no second grammar to offer.
+ */
+export async function runExportCommand(
+  tokens: readonly string[],
+  context: RegistryCommandContext,
+): Promise<number> {
+  const { out, err } = context
+  const [path, ...rest] = tokens
+  if (path === undefined || path.length === 0 || path.startsWith('-')) {
+    // The destination is REQUIRED. The binary passes no cwd, so a default would
+    // resolve one way under a harness that supplies one and another way for
+    // every real user — the defect that made `panda project swap` exit 2 for
+    // everyone while its whole suite was green.
+    err('usage: panda export <path>')
+    err(context.defaultUsage)
+    return 2
+  }
+  if (rest.length > 0) {
+    err(`unexpected argument '${rest[0]}'`)
+    err(context.defaultUsage)
+    return 2
+  }
+  const bound = await bind('machine', undefined, context)
+  try {
+    // `bound.homeDir` and not a second `homedir()` call: the bundle's paths have
+    // to be relative to the SAME home the store was bound to, or an export run
+    // with an injected home writes paths pointing at the real one.
+    const bundle = createBundle(await bound.store.list('global'), bound.homeDir)
+    await writeBundle(path, bundle)
+    out(
+      JSON.stringify(
+        {
+          path,
+          version: bundle.version,
+          scope: bundle.scope,
+          exported: bundle.entries.length,
+          // Named, never counted alone: an entry that did not travel is a task
+          // waiting on the other machine, and a bare number is not one.
+          omitted: bundle.omitted,
+        },
+        null,
+        2,
+      ),
+    )
     return 0
   } finally {
     await bound.store.dispose()

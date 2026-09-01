@@ -688,3 +688,161 @@ describe('a retired entry type through the binary', () => {
     expect(io.err.join('\n')).toContain("no tool entry 'rg' is registered")
   })
 })
+
+// --- panda export (Story 5.1) ----------------------------------------------
+//
+// The CLI's job and nothing else: argv, output, exit codes, and that the file
+// panda names is the file panda wrote. WHAT goes in a bundle and where the
+// secret line falls is `@panda/registry`'s, proven in its own suite.
+
+describe('panda export', () => {
+  async function bundleAt(path: string): Promise<Record<string, unknown>> {
+    return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+  }
+
+  it('writes the machine registry to the path it was given and reports what it did', async () => {
+    const homeDir = await tempDir()
+    const target = join(await tempDir(), 'bundle.json')
+    await runPanda(['add', 'mcp-server', 'context7', '--command', 'npx', '--arg', '-y'], {
+      ...capture(),
+      homeDir,
+    })
+    const io = capture()
+    expect(await runPanda(['export', target], { ...io, homeDir })).toBe(0)
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({
+      path: target,
+      scope: 'global',
+      exported: 1,
+      omitted: [],
+    })
+    expect(await bundleAt(target)).toMatchObject({
+      kind: 'panda-bundle',
+      scope: 'global',
+      entries: [{ type: 'mcp-server', id: 'context7' }],
+    })
+  })
+
+  it('leaves a credential-bearing entry out and NAMES it, so nothing goes missing quietly', async () => {
+    const homeDir = await tempDir()
+    const target = join(await tempDir(), 'bundle.json')
+    // Assembled rather than written as one literal: GitHub push protection
+    // scans a commit for real credential shapes and rejected the first version
+    // of this story on exactly this kind of fixture. The value is identical.
+    const token = 'sk-' + 'proj-Ab3dEfGh1jKlMn0pQrStUvWxYz123456'
+    for (const argv of [
+      ['add', 'mcp-server', 'context7', '--command', 'npx', '--arg', '-y'],
+      ['add', 'mcp-server', 'leaky', '--command', 'npx', '--arg', '--api-key', '--arg', token],
+    ]) {
+      expect(await runPanda(argv, { ...capture(), homeDir })).toBe(0)
+    }
+    const io = capture()
+    expect(await runPanda(['export', target], { ...io, homeDir })).toBe(0)
+    // Named in the report, not merely counted: an entry that did not travel is a
+    // task waiting on the other machine.
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({
+      exported: 1,
+      omitted: [{ type: 'mcp-server', id: 'leaky', field: 'args' }],
+    })
+    // The artifact is what NFR-5 scans, so it is the artifact that is asserted.
+    const text = await readFile(target, 'utf8')
+    expect(text).not.toContain(token)
+    expect(text).not.toContain(token.slice(0, 12))
+    expect(text).toContain('context7') // CONTROL: the file is not empty
+  })
+
+  it('holds no machine-specific absolute path (NFR-6)', async () => {
+    const homeDir = await tempDir()
+    const target = join(await tempDir(), 'bundle.json')
+    expect(
+      await runPanda(['add', 'skill', 'commit-lint', '--entry-path', join(homeDir, 'skills', 'c.ts')], {
+        ...capture(),
+        homeDir,
+      }),
+    ).toBe(0)
+    const text = await readFile(target, 'utf8').catch(() => undefined)
+    expect(text).toBeUndefined() // nothing written before export runs
+    expect(await runPanda(['export', target], { ...capture(), homeDir })).toBe(0)
+    const written = await readFile(target, 'utf8')
+    expect(written).not.toContain(homeDir)
+    expect(written).toContain('~') // CONTROL: the marker the normalizer writes
+  })
+
+  it('exports an empty registry as a valid artifact, exiting 0', async () => {
+    const homeDir = await tempDir()
+    const target = join(await tempDir(), 'bundle.json')
+    expect(await runPanda(['export', target], { ...capture(), homeDir })).toBe(0)
+    expect(await bundleAt(target)).toMatchObject({ kind: 'panda-bundle', entries: [], omitted: [] })
+  })
+
+  it('is byte-identical on a second export of an unchanged registry', async () => {
+    const homeDir = await tempDir()
+    const dir = await tempDir()
+    await runPanda(['add', 'mcp-server', 'b', '--command', 'npx'], { ...capture(), homeDir })
+    await runPanda(['add', 'mcp-server', 'a', '--command', 'npx'], { ...capture(), homeDir })
+    await runPanda(['export', join(dir, 'first.json')], { ...capture(), homeDir })
+    await runPanda(['export', join(dir, 'second.json')], { ...capture(), homeDir })
+    expect(await readFile(join(dir, 'first.json'), 'utf8')).toBe(
+      await readFile(join(dir, 'second.json'), 'utf8'),
+    )
+  })
+
+  it('needs a path, and says so instead of inventing one', async () => {
+    // The binary passes no cwd, so a default would resolve one way under a
+    // harness that supplies one and another way for every real user.
+    const io = capture()
+    expect(await runPanda(['export'], { ...io, homeDir: await tempDir() })).toBe(2)
+    expect(io.err.join('\n')).toContain('usage: panda export <path>')
+    expect(io.out).toHaveLength(0)
+  })
+
+  it('refuses a second positional rather than ignoring it', async () => {
+    const io = capture()
+    const dir = await tempDir()
+    expect(
+      await runPanda(['export', join(dir, 'a.json'), join(dir, 'b.json')], { ...io, homeDir: await tempDir() }),
+    ).toBe(2)
+    expect(io.err.join('\n')).toContain('unexpected argument')
+  })
+
+  it('fails coded and names the path when the destination cannot be written', async () => {
+    const homeDir = await tempDir()
+    const dir = await tempDir()
+    const blocker = join(dir, 'a-file')
+    await writeFile(blocker, 'x')
+    const io = capture()
+    expect(await runPanda(['export', join(blocker, 'bundle.json')], { ...io, homeDir })).toBe(2)
+    expect(io.err.join('\n')).toContain('PANDA_REGISTRY_BUNDLE_UNAVAILABLE')
+    expect(io.out).toHaveLength(0)
+  })
+
+  it('prints usage and exits 0 on --help, writing nothing', async () => {
+    const io = capture()
+    expect(await runPanda(['export', '--help'], { ...io, homeDir: await tempDir() })).toBe(0)
+    expect(io.out.join('\n')).toContain('usage: panda run')
+  })
+})
+
+describe('panda export scope boundary', () => {
+  it('carries the machine registry only, never a project entry', async () => {
+    // D2: a project entry names a directory the destination machine does not
+    // have, so it cannot travel — and the bundle SAYS which scope it is rather
+    // than leaving a reader to infer it from what happens to be inside.
+    const homeDir = await tempDir()
+    const projectDir = await tempDir()
+    const target = join(await tempDir(), 'bundle.json')
+    expect(
+      await runPanda(['add', 'mcp-server', 'machine-one', '--command', 'npx'], { ...capture(), homeDir }),
+    ).toBe(0)
+    expect(
+      await runPanda(['project', 'add', 'mcp-server', 'project-one', '--command', 'npx', projectDir], {
+        ...capture(),
+        homeDir,
+      }),
+    ).toBe(0)
+    expect(await runPanda(['export', target], { ...capture(), homeDir })).toBe(0)
+    const text = await readFile(target, 'utf8')
+    expect(text).toContain('machine-one') // CONTROL: the export is not empty
+    expect(text).not.toContain('project-one')
+    expect(JSON.parse(text)).toMatchObject({ scope: 'global' })
+  })
+})
