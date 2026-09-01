@@ -394,6 +394,35 @@ nearly every review — and finally inside the mechanism built to prevent it.
   `stash pop`. Two commands, and it turned "the tests are green" into "exit 0
   and a destroyed config, versus exit 1 and an untouched one".
 
+- **Reading what a function DOES is not reading what its caller GETS. Twice now,
+  one story apart.** M7.C: a schema's strict branch was unreachable because the
+  factory pre-filtered its input. M8.A: `RegistryStore` normalizes machine paths
+  at write time and the document on disk really is portable — but `list()` maps
+  `expandRegistryEntryPaths` over everything it returns, so the first bundle
+  carried `C:\Users\…` while the frozen spec asserted NFR-6 was already
+  satisfied. Both were caught by DRIVING THE BINARY and reading the output file,
+  neither by re-reading either function. **Read the call site, not the callee.**
+- **GitHub push protection scans your test fixtures.** M8.A's first push was
+  REJECTED: the Slack and GitLab rows of the secret-detector corpus are real
+  credential shapes, which is the whole point of them. The unblock URL marks a
+  fake as an ALLOWED REAL SECRET and is the wrong answer. Assemble each fixture
+  from a prefix and a body (`'glpat' + '-…'`) so no scannable literal exists on
+  disk; the value the code under test sees is identical. Applies to any corpus of
+  credential shapes anyone adds here later.
+- **A mutation can find a hole in the EVIDENCE rather than in the code.**
+  Disabling the generic token rule killed *detects a Google API key*, which
+  should have been caught by its own provider pattern. The fixture was 41
+  characters and Google issues `AIza` plus exactly 35, so that pattern had no
+  test exercising it and the generic rule was quietly covering the row. Nothing
+  was wrong with the code. **When a mutation kills a clause you did not expect it
+  to reach, the corpus is what to look at.**
+- **A detector that omits data needs a visible record, and that record is what
+  lets it be strict.** FR-21 says omit a secret-bearing entry; FR-22 needs those
+  entries listed on import. Recording `{type, id, field}` — never the value —
+  serves both AND turns a false positive from silent data loss into a named task,
+  which is what makes it safe to tune the detector toward catching credentials
+  rather than toward never annoying anyone.
+
 **Process rules that earned their place:**
 
 - An implementer that FILES a renegotiation instead of implementing past a
@@ -406,7 +435,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`2d4230e`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`7884e3e`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean. (This document's own commit
 sits one above it — check `git log`, do not trust this line alone. It has been
 stale about its own state twice.)
@@ -430,6 +459,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `bb8e539` | M7.C — the kernel APPLIES the configSchema every manifest must declare; three plugins stop hand-rolling it |
 | `b498b9c` | M7.D — `panda run --trace`; the binary finally holds a sink, and `lostRecordCount` is measured UNREACHABLE from the CLI rather than surfaced wrong |
 | `2d4230e` | M7.E — a malformed vendor config is REFUSED with its `line:column`, not spliced into a recovered parse tree; the old build exited 0 having destroyed a user's own server definition |
+| `7884e3e` | M8.A — `panda export`, implementing Story 5.1 / FR-21 / NFR-5 / NFR-6; a credential-bearing entry is left out AND named, so nothing goes missing quietly |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -468,8 +498,19 @@ projection layer actually delivers.
    **schema-major** Bundle exits non-zero naming the incompatibility"*. Schema
    version. Not content revision.
 
-   **Story 5.1 (Export Bundle) is the next actually-specified work**, and one of
-   its three testable consequences is ALREADY SATISFIED:
+   **Story 5.1 SHIPPED as M8.A.** What follows in this item is the measurement it
+   was built on, kept because one line of it was WRONG in an instructive way —
+   see the correction directly below it. **The next specified work is Story 5.2,
+   import**, and three things are already banked for its spec: the bundle's
+   `version` is checked by equality like `STORE_VERSION`, so 5.2's
+   "newer schema-major exits non-zero" has its mechanism; the `omitted` list is
+   already the input for 5.2's "entries requiring secrets are listed as pending
+   manual action"; and `deferred-work.md` records the one thing that will bite —
+   a normalized path keeps the separator of the machine that WROTE it, so a
+   bundle written on Windows carries `~/skills\name.ts` and import is the half
+   that has to place it on another platform.
+
+   The measurement, and its correction:
    `normalizeRegistryEntryPaths` (`contracts/src/registry.ts:339`, labelled
    "(NFR-6)" in the source) runs at WRITE time (`store.ts:123`), with a `~`
    marker, a `~~` escape for literal tildes, and a lossless round trip pinned at
@@ -480,7 +521,17 @@ projection layer actually delivers.
    its spec: entry order in the store is INSERTION order (`store.ts:130-132`
    filters and appends), so a Bundle is byte-identical for the same store read
    twice — which is what the criterion asks — but is not canonical across two
-   stores holding the same content.
+   stores holding the same content. (M8.A sorts by `${type}:${id}`, so it is
+   canonical now.)
+
+   **THE CORRECTION, and it is the reusable part:** "the store on disk is already
+   portable, so a bundle carries those bytes forward" was true about the WRITER
+   and false about the CALLER. `list()` maps `expandRegistryEntryPaths` over
+   everything it returns (`store.ts:253,267`), so `createBundle` received
+   absolute paths and the first artifact M8.A produced carried a fully
+   machine-specific one while its own frozen spec asserted NFR-6 was satisfied.
+   `createBundle` now takes a `homeDir` and normalizes. Caught by driving the
+   binary and reading the file.
 1. **Profiles (Epic 5)** — evidence bank, NOT a green light; read item 0 first.
    Story 5.4 having
    shipped as M5.D. The PRD glossary defines a Profile as a named bundle of
