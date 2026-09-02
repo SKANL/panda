@@ -4,7 +4,9 @@ import {
   REMOVABLE_ENTRY_TYPES,
   createBundle,
   deliveryFor,
+  expandRegistryEntryPaths,
   isRetiredEntryType,
+  readBundle,
   scopeDirectory,
   storeFor,
   writeBundle,
@@ -546,6 +548,83 @@ export async function runExportCommand(
     )
     return 0
   } finally {
+    await bound.store.dispose()
+  }
+}
+
+/** What an import put in place, before the projection half runs. */
+export interface ImportInstallation {
+  readonly path: string
+  readonly homeDir: string
+  readonly imported: number
+  /** Entries whose `type:id` was already registered here and has been taken over. */
+  readonly replaced: readonly { type: string; id: string }[]
+  /** What the bundle could not carry, forwarded verbatim: FR-22's manual work. */
+  readonly pending: readonly { type: string; id: string; field: string }[]
+}
+
+/**
+ * `panda import <path>` — the install half. The caller re-projects.
+ *
+ * Split there on purpose: re-projection is `initMachine`, whose result already
+ * has one reporting implementation in `run.ts`, and this file may not grow a
+ * second one. What belongs here is the part that needs `bind` — the same trust
+ * boundary add/remove/list/export share.
+ */
+export async function runImportCommand(
+  tokens: readonly string[],
+  context: RegistryCommandContext,
+): Promise<ImportInstallation | number> {
+  const { err } = context
+  const [path, ...rest] = tokens
+  if (path === undefined || path.length === 0 || path.startsWith('-')) {
+    err('usage: panda import <path>')
+    err(context.defaultUsage)
+    return 2
+  }
+  if (rest.length > 0) {
+    err(`unexpected argument '${rest[0]}'`)
+    err(context.defaultUsage)
+    return 2
+  }
+  // Read and validate BEFORE binding anything: a bundle panda cannot read must
+  // not leave a `.panda` directory behind on a machine the user was only
+  // trying an artifact on.
+  const bundle = await readBundle(path)
+  const bound = await bind('machine', undefined, context)
+  const replaced: { type: string; id: string }[] = []
+  try {
+    for (const entry of bundle.entries) {
+      // Asked BEFORE registering, because `register` replaces by `type:id` and
+      // says nothing. A user moving devices who had already run `panda add`
+      // deserves to be told which of their entries the bundle took over — the
+      // same rule as the omission record: panda never overwrites in silence.
+      if ((await bound.store.get(entry.type, entry.id, 'global')) !== undefined) {
+        replaced.push({ type: entry.type, id: entry.id })
+      }
+      // EXPANDED against this machine's home before registering, and this is not
+      // symmetry for its own sake. `register` normalizes what it is given, and a
+      // bundle is ALREADY normalized — so handing it over verbatim runs the
+      // normalizer over `~/skills/x.ts`, whose leading `~` is the reserved
+      // marker, and the escape rule turns it into `~~/skills/x.ts`: a path to a
+      // file literally named `~/skills/x.ts`. Measured by driving the binary; a
+      // machine imported that way had every path field quietly wrong.
+      //
+      // The store's surface takes REAL paths — it is what `panda add` passes and
+      // what `list()` returns — so import converts back into that vocabulary and
+      // lets the store normalize once, exactly as it does for any other write.
+      await bound.store.register(expandRegistryEntryPaths(entry, bound.homeDir), 'global')
+    }
+    return {
+      path,
+      homeDir: bound.homeDir,
+      imported: bundle.entries.length,
+      replaced,
+      pending: bundle.omitted.map((omitted) => ({ ...omitted })),
+    }
+  } finally {
+    // Released before the caller re-projects: `initMachine` binds its own store
+    // and would contend with this one for the same lock.
     await bound.store.dispose()
   }
 }

@@ -10,9 +10,9 @@
 // `~/x` rather than `/home/someone/x` — with `~~` escaping a literal tilde.
 
 import { randomUUID } from 'node:crypto'
-import { rename, unlink, writeFile } from 'node:fs/promises'
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { PandaError, PANDA_ERROR_CODES, normalizeRegistryEntryPaths } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES, normalizeRegistryEntryPaths, registryEntryIssues } from '@panda/contracts'
 import type { RegistryEntry, StoredEntryType } from '@panda/contracts'
 
 /** Bumped only when a reader of an older build could MISREAD the document. */
@@ -224,4 +224,107 @@ export async function writeBundle(path: string, bundle: RegistryBundle): Promise
     await unlink(tempPath).catch(() => {})
     throw unavailable(path, error)
   }
+}
+
+// --- Reading one back (FR-22) ----------------------------------------------
+
+function unreadable(path: string, detail: string, cause?: unknown): PandaError {
+  return new PandaError(
+    PANDA_ERROR_CODES.registryBundleUnavailable,
+    `bundle at '${path}' cannot be imported: ${detail}`,
+    cause === undefined ? undefined : { cause },
+  )
+}
+
+/**
+ * Parses and VALIDATES a bundle, or refuses by name.
+ *
+ * Nothing this returns is half-checked, and that is the point: an import that
+ * registered three entries and then refused the fourth would leave a registry
+ * in a state with no verb to get out of. Every refusal below happens before a
+ * caller has written anything.
+ *
+ * A RETIRED entry type is admitted, exactly as the store's own read path admits
+ * one. A bundle is a document written by another build, and refusing a word
+ * panda has since retired would make removing a word able to brick an import —
+ * the dead end M4.E exists to abolish.
+ */
+export function parseBundle(path: string, text: string): RegistryBundle {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    throw unreadable(path, error instanceof Error ? error.message : String(error), error)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw unreadable(path, 'the document is not an object')
+  }
+  const document = parsed as Record<string, unknown>
+  if (document['kind'] !== BUNDLE_KIND) {
+    // Before the version check: a file that is not a bundle at all has no
+    // version to be incompatible about, and telling its author about schema
+    // majors would send them looking in the wrong direction.
+    throw unreadable(path, `it is not a panda bundle (expected kind '${BUNDLE_KIND}')`)
+  }
+  const version = document['version']
+  if (version !== BUNDLE_VERSION) {
+    // Two sentences because two different things are wrong, and only one of them
+    // is the user's cue to upgrade. "Newer" is the case Story 5.2 names.
+    throw unreadable(
+      path,
+      typeof version === 'number' && Number.isInteger(version) && version > BUNDLE_VERSION
+        ? `it was written by a newer panda (bundle schema version ${version}); this build reads version ${BUNDLE_VERSION}`
+        : `its schema version ${JSON.stringify(version)} is not one this build recognises (this build reads version ${BUNDLE_VERSION})`,
+    )
+  }
+  if (document['scope'] !== 'global') {
+    throw unreadable(path, `it declares scope ${JSON.stringify(document['scope'])}; only 'global' can be imported`)
+  }
+  const rawEntries = document['entries']
+  if (!Array.isArray(rawEntries)) throw unreadable(path, "it has no 'entries' array")
+  const rawOmitted = document['omitted']
+  if (!Array.isArray(rawOmitted)) throw unreadable(path, "it has no 'omitted' array")
+
+  // EVERY issue across EVERY entry, not the first. An author fixing a bundle by
+  // hand should learn what is wrong with it in one run, which is the same rule
+  // the kernel's manifest validation was given in M7.B.
+  const issues: string[] = []
+  for (const [index, candidate] of rawEntries.entries()) {
+    for (const issue of registryEntryIssues(candidate, true)) {
+      issues.push(`entries[${index}]: ${issue.message}`)
+    }
+  }
+  for (const [index, candidate] of rawOmitted.entries()) {
+    if (!isOmittedEntry(candidate)) issues.push(`omitted[${index}]: must be {type, id, field} of strings`)
+  }
+  if (issues.length > 0) throw unreadable(path, `it holds invalid entries: ${issues.join('; ')}`)
+
+  return {
+    version: BUNDLE_VERSION,
+    kind: BUNDLE_KIND,
+    scope: 'global',
+    entries: rawEntries as readonly RegistryEntry[],
+    omitted: rawOmitted as readonly OmittedEntry[],
+  }
+}
+
+function isOmittedEntry(value: unknown): value is OmittedEntry {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record['type'] === 'string' &&
+    typeof record['id'] === 'string' &&
+    typeof record['field'] === 'string'
+  )
+}
+
+/** Reads and validates the bundle at `path`. */
+export async function readBundle(path: string): Promise<RegistryBundle> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    throw unreadable(path, error instanceof Error ? error.message : String(error), error)
+  }
+  return parseBundle(path, text)
 }

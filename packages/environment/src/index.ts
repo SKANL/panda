@@ -61,7 +61,7 @@ export type { RegistryStoreOptions } from '@panda/registry'
 // `@panda/registry` itself. `writeBundle` is here and this package still writes
 // no file — it names a capability its own guard test forbids it to PERFORM,
 // which is the whole point of a facade.
-export { BUNDLE_KIND, BUNDLE_VERSION, createBundle, isCredential, serializeBundle, writeBundle } from '@panda/registry'
+export { BUNDLE_KIND, BUNDLE_VERSION, createBundle, isCredential, parseBundle, readBundle, serializeBundle, writeBundle } from '@panda/registry'
 export type { OmittedEntry, RegistryBundle } from '@panda/registry'
 export {
   DRIFT_KINDS,
@@ -69,6 +69,11 @@ export {
   REMEDIATION_KINDS,
   REMOVABLE_ENTRY_TYPES,
   RETIRED_ENTRY_TYPES,
+  // The read-time inverse of the store's write-time normalization. A caller
+  // holding an entry in its PORTABLE form — the one a bundle carries — needs it
+  // to get back to the real paths the store's surface takes, and re-normalizing
+  // an already-normalized value corrupts it rather than being a no-op.
+  expandRegistryEntryPaths,
   isRetiredEntryType,
 } from '@panda/contracts'
 export type {

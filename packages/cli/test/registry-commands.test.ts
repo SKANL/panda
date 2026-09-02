@@ -846,3 +846,171 @@ describe('panda export scope boundary', () => {
     expect(JSON.parse(text)).toMatchObject({ scope: 'global' })
   })
 })
+
+// --- panda import (Story 5.2) ----------------------------------------------
+//
+// Every clause here runs against a THROWAWAY home, which has no executor
+// configuration in it, so `panda import` exits 2 for the same reason `panda init`
+// does on such a machine: the projection found nothing to project into. That is
+// D5 working -- one outcome, one exit code, shared with init -- and it is why
+// these clauses assert the INSTALL (the registry on disk, the reported summary)
+// rather than treating the exit as the story's verdict.
+
+describe('panda import', () => {
+  async function exportedBundle(homeDir: string): Promise<string> {
+    const target = join(await tempDir(), 'bundle.json')
+    expect(await runPanda(['export', target], { ...capture(), homeDir })).toBe(0)
+    return target
+  }
+
+  async function storedAt(homeDir: string): Promise<{ type: string; id: string; entryPath?: string }[]> {
+    const raw = await readFile(join(homeDir, '.panda', 'registry.json'), 'utf8')
+    return (JSON.parse(raw) as { entries: { type: string; id: string; entryPath?: string }[] }).entries
+  }
+
+  it('installs every entry of a bundle into the destination machine', async () => {
+    const from = await tempDir()
+    for (const argv of [
+      ['add', 'mcp-server', 'context7', '--command', 'npx', '--arg', '-y'],
+      ['add', 'mcp-server', 'linear', '--command', 'npx'],
+    ]) {
+      expect(await runPanda(argv, { ...capture(), homeDir: from })).toBe(0)
+    }
+    const bundle = await exportedBundle(from)
+
+    const to = await tempDir()
+    const io = capture()
+    await runPanda(['import', bundle], { ...io, homeDir: to })
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({ path: bundle, imported: 2, replaced: [], pending: [] })
+    expect((await storedAt(to)).map((entry) => entry.id).sort()).toEqual(['context7', 'linear'])
+  })
+
+  it('does NOT re-normalize an already-normalized path, which is the double-marker regression', async () => {
+    // Found by driving the binary: a bundle carries a value beginning with the
+    // reserved home marker, and `register` normalizes whatever it is handed.
+    // Passing the bundle's value through verbatim ran the normalizer over a
+    // value that was ALREADY normalized, and the escape rule doubled the marker
+    // -- producing a path to a file literally named with the marker in it. Every
+    // path field of every imported entry was quietly wrong, and nothing failed.
+    const from = await tempDir()
+    expect(
+      await runPanda(['add', 'skill', 'commit-lint', '--entry-path', join(from, 'skills', 'c.ts')], {
+        ...capture(),
+        homeDir: from,
+      }),
+    ).toBe(0)
+    const bundle = await exportedBundle(from)
+
+    const to = await tempDir()
+    await runPanda(['import', bundle], { ...capture(), homeDir: to })
+    const stored = await storedAt(to)
+    expect(stored[0]?.entryPath).toBe('~/skills/c.ts')
+    expect(stored[0]?.entryPath).not.toContain('~~')
+  })
+
+  it('round-trips: what the destination exports carries the same entries the source did', async () => {
+    const from = await tempDir()
+    for (const argv of [
+      ['add', 'mcp-server', 'context7', '--command', 'npx', '--arg', '-y'],
+      ['add', 'skill', 'commit-lint', '--entry-path', join(from, 'skills', 'c.ts')],
+    ]) {
+      expect(await runPanda(argv, { ...capture(), homeDir: from })).toBe(0)
+    }
+    const first = await exportedBundle(from)
+
+    const to = await tempDir()
+    await runPanda(['import', first], { ...capture(), homeDir: to })
+    const second = await exportedBundle(to)
+
+    const a = JSON.parse(await readFile(first, 'utf8')) as { entries: unknown[] }
+    const b = JSON.parse(await readFile(second, 'utf8')) as { entries: unknown[] }
+    expect(a.entries).toHaveLength(2) // CONTROL: the comparison below has something to compare
+    expect(b.entries).toEqual(a.entries)
+  })
+
+  it('names what it took over instead of overwriting in silence', async () => {
+    const from = await tempDir()
+    expect(
+      await runPanda(['add', 'mcp-server', 'context7', '--command', 'npx'], { ...capture(), homeDir: from }),
+    ).toBe(0)
+    const bundle = await exportedBundle(from)
+
+    const to = await tempDir()
+    // The destination already has an entry with that id, registered differently.
+    expect(
+      await runPanda(['add', 'mcp-server', 'context7', '--command', 'mine'], { ...capture(), homeDir: to }),
+    ).toBe(0)
+    const io = capture()
+    await runPanda(['import', bundle], { ...io, homeDir: to })
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({
+      replaced: [{ type: 'mcp-server', id: 'context7' }],
+    })
+    expect(io.err.join('\n')).toContain('replaced: mcp-server')
+    // And it really was taken over, rather than merely reported.
+    expect(await storedAt(to)).toMatchObject([{ id: 'context7', command: 'npx' }])
+  })
+
+  it('leaves entries the bundle does not mention alone', async () => {
+    const from = await tempDir()
+    expect(await runPanda(['add', 'mcp-server', 'a', '--command', 'npx'], { ...capture(), homeDir: from })).toBe(0)
+    const bundle = await exportedBundle(from)
+
+    const to = await tempDir()
+    expect(await runPanda(['add', 'mcp-server', 'mine', '--command', 'npx'], { ...capture(), homeDir: to })).toBe(0)
+    await runPanda(['import', bundle], { ...capture(), homeDir: to })
+    expect((await storedAt(to)).map((entry) => entry.id).sort()).toEqual(['a', 'mine'])
+  })
+
+  it('forwards what the bundle could not carry as work left for the user', async () => {
+    const from = await tempDir()
+    // Assembled, not a literal: see the note in the registry package's bundle
+    // suite. GitHub push protection scans these files.
+    const token = 'sk-' + 'proj-Ab3dEfGh1jKlMn0pQrStUvWxYz123456'
+    expect(
+      await runPanda(['add', 'mcp-server', 'leaky', '--command', 'npx', '--arg', '--api-key', '--arg', token], {
+        ...capture(),
+        homeDir: from,
+      }),
+    ).toBe(0)
+    const bundle = await exportedBundle(from)
+
+    const to = await tempDir()
+    const io = capture()
+    await runPanda(['import', bundle], { ...io, homeDir: to })
+    expect(JSON.parse(io.out.join('\n'))).toMatchObject({
+      imported: 0,
+      pending: [{ type: 'mcp-server', id: 'leaky', field: 'args' }],
+    })
+    expect(io.err.join('\n')).toContain('pending: mcp-server')
+  })
+
+  it('refuses a bundle from a newer build, by name, writing nothing', async () => {
+    const from = await tempDir()
+    const bundle = await exportedBundle(from)
+    await writeFile(bundle, JSON.stringify({ ...JSON.parse(await readFile(bundle, 'utf8')), version: 2 }))
+
+    const to = await tempDir()
+    const io = capture()
+    expect(await runPanda(['import', bundle], { ...io, homeDir: to })).toBe(2)
+    expect(io.err.join('\n')).toContain('written by a newer panda')
+    expect(io.out).toHaveLength(0)
+    // Nothing at all: not even panda's own directory, on a machine where the
+    // user was only trying an artifact out.
+    await expect(readFile(join(to, '.panda', 'registry.json'), 'utf8')).rejects.toBeDefined()
+  })
+
+  it('needs a path, and refuses a second one', async () => {
+    const io = capture()
+    expect(await runPanda(['import'], { ...io, homeDir: await tempDir() })).toBe(2)
+    expect(io.err.join('\n')).toContain('usage: panda import <path>')
+    const second = capture()
+    expect(await runPanda(['import', 'a', 'b'], { ...second, homeDir: await tempDir() })).toBe(2)
+    expect(second.err.join('\n')).toContain("unexpected argument 'b'")
+  })
+
+  it('prints usage and exits 0 on --help, importing nothing', async () => {
+    const io = capture()
+    expect(await runPanda(['import', '--help'], { ...io, homeDir: await tempDir() })).toBe(0)
+    expect(io.out.join('\n')).toContain('usage: panda run')
+  })
+})

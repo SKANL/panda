@@ -26,6 +26,7 @@ import {
 import {
   isRegistryVerb,
   runExportCommand,
+  runImportCommand,
   runRegistryCommand,
   type RegistryVerb,
 } from './registry-commands.ts'
@@ -78,6 +79,7 @@ export const USAGE = [
   '       panda list',
   '       panda project list [directory]',
   '       panda export <path>',
+  '       panda import <path>',
   '       panda init',
   '       panda project init [directory]',
   '       panda doctor',
@@ -117,6 +119,11 @@ export const USAGE = [
   '              An entry carrying anything that looks like a credential is LEFT OUT rather than',
   '              redacted, and each one is named in the output with the field that stopped it, so what',
   '              did not travel is a task you can see instead of a gap you discover later.',
+  'import        Installs a bundle from <path> into this machine and re-projects into every detected',
+  '              executor, so a new device is set up by one command. An entry whose type and id are',
+  '              already registered here is TAKEN OVER and said out loud; entries the bundle could not',
+  '              carry are listed as work left for you. A bundle written by a newer panda is refused',
+  '              by name, and nothing is written until the whole document has been read and checked.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
@@ -209,6 +216,13 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       return 0
     }
     return await runExport(argv.slice(1), out, err, options)
+  }
+  if (argv[0] === 'import') {
+    if (isHelp(argv[1])) {
+      out(USAGE)
+      return 0
+    }
+    return await runImport(argv.slice(1), out, err, options)
   }
   if (argv[0] === 'init') {
     return await runInit(argv.slice(1), out, err, 0, options.homeDir, (homeDir) => initMachine({ homeDir }))
@@ -721,6 +735,50 @@ async function runRemediate(
  * question.
  */
 /**
+ * The import verb: install, then RE-PROJECT, in that order.
+ *
+ * FR-22 is one sentence with two verbs and the order is not free — projecting
+ * before the entries are in place would project the registry the machine had a
+ * moment ago. The projection half is `initMachine`, the same capability `init`
+ * runs, reported through the same `reportInitOutcome`.
+ *
+ * One JSON object on stdout, with the projection nested. Two would be two
+ * documents for a consumer that reasonably calls JSON.parse on the whole stream.
+ */
+async function runImport(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  options: RunCommandOptions,
+): Promise<number> {
+  try {
+    const installed = await runImportCommand(tokens, {
+      out,
+      err,
+      defaultUsage: DEFAULT_USAGE,
+      homeDir: options.homeDir,
+      cwd: options.cwd,
+    })
+    if (typeof installed === 'number') return installed
+    const projection = await initMachine({ homeDir: installed.homeDir })
+    out(JSON.stringify({ ...installed, projection }, null, 2))
+    // Said on stderr too, because a user who ran a command wants the manual work
+    // without parsing JSON for it. An entry that could not travel is absent,
+    // named, and theirs to re-add — panda does not guess at what the secret was.
+    for (const entry of installed.pending) {
+      err(`pending: ${entry.type} '${entry.id}' was not exported (its ${entry.field} carried a credential)`)
+    }
+    for (const entry of installed.replaced) {
+      err(`replaced: ${entry.type} '${entry.id}' was already registered here`)
+    }
+    return reportInitOutcome(projection, err)
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/**
  * The export verb. Its own wrapper rather than a RegistryVerb: it takes no
  * entry, no type and no directory, so the registry grammar has nothing to parse
  * for it, and there is no project-scoped spelling to offer — a project's
@@ -824,30 +882,43 @@ async function runInit(
   try {
     const result = await capability(homeDir, tokens[0])
     out(JSON.stringify(result, null, 2))
-    reportDiagnostics(result, err)
-    if (noExecutorsDetected(result)) {
-      // The JSON above already lists every executor and every path consulted;
-      // these lines are the same facts for a human reading stderr — including
-      // the paths panda could NOT check, because "nothing is installed" and
-      // "panda could not look" are different claims and only one is true here.
-      const evidence = result.detected.flatMap((detection) => detection.evidence)
-      err(
-        `no executor configuration was found under any of: ${evidence
-          .filter((item) => item.exists === false)
-          .map((item) => item.path)
-          .join(', ')}`,
-      )
-      const undetermined = undeterminedEvidence(result.detected)
-      if (undetermined !== undefined) err(undetermined)
-      return 2
-    }
-    const failed = [...result.targets, ...result.skills].filter((target) => target.error !== undefined)
-    for (const target of failed) err(`${target.executorId}: ${target.error?.code}: ${target.error?.message}`)
-    return failed.length > 0 ? 1 : 0
+    return reportInitOutcome(result, err)
   } catch (error) {
     err(describe(error))
     return 2
   }
+}
+
+/**
+ * The stderr and the exit code an `InitResult` implies, SHARED by `init` and by
+ * `import`.
+ *
+ * Import re-projects (FR-22), so it produces the same result object from the
+ * same capability — and a second copy of this mapping is how two commands come
+ * to disagree about one outcome. A script branching on `panda import` must not
+ * have to learn a second meaning for exit 1.
+ */
+function reportInitOutcome(result: InitResult, err: (line: string) => void): number {
+  reportDiagnostics(result, err)
+  if (noExecutorsDetected(result)) {
+    // The JSON already lists every executor and every path consulted; these
+    // lines are the same facts for a human reading stderr — including the paths
+    // panda could NOT check, because "nothing is installed" and "panda could not
+    // look" are different claims and only one is true here.
+    const evidence = result.detected.flatMap((detection) => detection.evidence)
+    err(
+      `no executor configuration was found under any of: ${evidence
+        .filter((item) => item.exists === false)
+        .map((item) => item.path)
+        .join(', ')}`,
+    )
+    const undetermined = undeterminedEvidence(result.detected)
+    if (undetermined !== undefined) err(undetermined)
+    return 2
+  }
+  const failed = [...result.targets, ...result.skills].filter((target) => target.error !== undefined)
+  for (const target of failed) err(`${target.executorId}: ${target.error?.code}: ${target.error?.message}`)
+  return failed.length > 0 ? 1 : 0
 }
 
 /**

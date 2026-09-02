@@ -168,7 +168,37 @@ describe('write-time path normalization (declared path fields only)', () => {
     const arg = join(home, 'config', 'server.json')
     const entry: RegistryEntry = { type: 'mcp-server', id: 'demo', command: 'serve', args: ['--config', arg] }
     const normalized = normalizeRegistryEntryPaths(entry, home)
-    expect(normalized.args).toEqual(['--config', `~/${join('config', 'server.json')}`])
+    // `/` on EVERY platform, not the separator this machine happens to use.
+    // This clause expected `join('config', 'server.json')` until M8.B, which is
+    // the spelling that made a Registry normalized on Windows unusable on POSIX:
+    // the expander's `join` reads a backslash there as part of the filename.
+    expect(normalized.args).toEqual(['--config', '~/config/server.json'])
+    expect(expandRegistryEntryPaths(normalized, home)).toEqual(entry)
+  })
+
+  it('emits a separator-neutral value, so a Registry can cross platforms (M8.B)', () => {
+    // NFR-6 says no MACHINE-SPECIFIC absolute path persists. A separator is
+    // machine-specific too, and it was the half nobody had closed: a value
+    // normalized on Windows kept its backslashes, and on POSIX the expander's
+    // join treats a backslash as part of the filename rather than as a
+    // separator, so the path pointed at a file that does not exist. Asserted as
+    // the portable
+    // property rather than as one platform's spelling, so this clause means the
+    // same thing on both.
+    const entry: RegistryEntry = {
+      type: 'skill',
+      id: 'deep',
+      entryPath: join(home, 'a', 'b', 'c', 'SKILL.md'),
+    }
+    const normalized = normalizeRegistryEntryPaths(entry, home)
+    expect(normalized.entryPath).toBe('~/a/b/c/SKILL.md')
+    expect(normalized.entryPath).not.toContain(String.fromCharCode(92))
+    // CONTROL: the input really did carry this platform's separator, so on
+    // win32 the assertion above is not passing by accident.
+    expect(entry.entryPath).toContain(sep)
+    // And it still round-trips, which is what makes the change safe rather than
+    // merely portable: join accepts a forward slash on win32 and returns the
+    // native path, measured identical to a native three-segment join.
     expect(expandRegistryEntryPaths(normalized, home)).toEqual(entry)
   })
 
@@ -277,7 +307,7 @@ describe('a retired entry type stays readable without weakening the envelope', (
     const home = homedir()
     const entry = { type: 'tool', id: 'localfmt', command: join(home, 'bin', 'fmt.exe') } as RegistryEntry
     const normalized = normalizeRegistryEntryPaths(entry, home)
-    expect(normalized.command).toBe(`~/${join('bin', 'fmt.exe')}`)
+    expect(normalized.command).toBe('~/bin/fmt.exe')
     expect(expandRegistryEntryPaths(normalized, home)).toEqual(entry)
   })
 

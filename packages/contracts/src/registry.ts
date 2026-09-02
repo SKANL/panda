@@ -302,7 +302,20 @@ function normalizePathValue(value: unknown, homeDir: string): unknown {
   if (typeof value === 'string') {
     if (caseFold(value) === caseFold(homeDir)) return '~'
     const prefix = homeDir.endsWith(sep) ? homeDir : homeDir + sep
-    if (caseFold(value).startsWith(caseFold(prefix))) return '~/' + value.slice(prefix.length)
+    // The remainder is emitted with `/` SEPARATORS, not the ones the writing
+    // machine happened to use. Without this a value normalized on Windows is
+    // `~/skills\name.ts`, and on POSIX the expander's `join` reads that
+    // backslash as part of the filename — so a Registry could not cross
+    // platforms, which is the whole of NFR-6's reason to exist.
+    //
+    // Lossless in both directions and not by assumption: `join` accepts `/` on
+    // win32 and returns the native path, measured as identical to a native
+    // `join(home, 'skills', 'name.ts')`. And a store written by an older build
+    // still reads correctly, because `join` treats `\` as a separator on the
+    // platform that wrote it.
+    if (caseFold(value).startsWith(caseFold(prefix))) {
+      return '~/' + value.slice(prefix.length).split(sep).join('/')
+    }
     if (value.startsWith('~')) return '~' + value
     return value
   }

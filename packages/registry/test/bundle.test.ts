@@ -2,7 +2,15 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { BUNDLE_KIND, BUNDLE_VERSION, createBundle, isCredential, serializeBundle, writeBundle } from '../src'
+import {
+  BUNDLE_KIND,
+  BUNDLE_VERSION,
+  createBundle,
+  isCredential,
+  parseBundle,
+  serializeBundle,
+  writeBundle,
+} from '../src'
 import type { RegistryEntry } from '@panda/contracts'
 
 const HOME = join('/home', 'dev')
@@ -246,5 +254,105 @@ describe('writeBundle', () => {
     await writeFile(join(dir, 'blocker'), 'x')
     await expect(writeBundle(join(dir, 'blocker', 'x.json'), createBundle([], HOME))).rejects.toBeDefined()
     expect(await readFile(target, 'utf8')).toBe(before)
+  })
+})
+
+// --- Reading one back (Spec M8.B) ------------------------------------------
+//
+// Every refusal asserts the MESSAGE, not only the code. "exits non-zero naming
+// the incompatibility" is the acceptance criterion, and a coded error whose
+// sentence says nothing satisfies half of it.
+
+describe('parseBundle', () => {
+  const good = serializeBundle(createBundle([mcp('context7', ['-y'])], HOME))
+
+  function refusal(text: string): { code?: string; message: string } {
+    try {
+      parseBundle('/tmp/b.json', text)
+    } catch (error) {
+      return error as { code?: string; message: string }
+    }
+    throw new Error('parseBundle accepted a document it should have refused')
+  }
+
+  it('accepts what createBundle produced, which is the only thing that makes the rest meaningful', () => {
+    const parsed = parseBundle('/tmp/b.json', good)
+    expect(parsed.kind).toBe(BUNDLE_KIND)
+    expect(parsed.version).toBe(BUNDLE_VERSION)
+    expect(parsed.entries.map((entry) => entry.id)).toEqual(['context7'])
+  })
+
+  it('names a NEWER schema as newer, and says both versions', () => {
+    // Story 5.2's criterion verbatim: "importing a newer-schema-major Bundle
+    // exits non-zero naming the incompatibility".
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), version: 2 }))
+    expect(error.code).toBe('PANDA_REGISTRY_BUNDLE_UNAVAILABLE')
+    expect(error.message).toContain('written by a newer panda')
+    expect(error.message).toContain('version 2')
+    expect(error.message).toContain(`version ${BUNDLE_VERSION}`)
+  })
+
+  it.each([
+    ['a version that is a string', { version: '1' }],
+    ['a version that is absent', { version: undefined }],
+    ['a version that is fractional', { version: 1.5 }],
+  ])('refuses %s as unrecognised rather than as newer', (_label, patch) => {
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), ...patch }))
+    expect(error.message).toContain('not one this build recognises')
+    expect(error.message).not.toContain('newer panda')
+  })
+
+  it('refuses a document that is not a bundle BEFORE it talks about versions', () => {
+    // A file that is not a bundle has no version to be incompatible about, and
+    // sending its author to look at schema majors points the wrong way.
+    const error = refusal(JSON.stringify({ hello: 'world' }))
+    expect(error.message).toContain('not a panda bundle')
+    expect(error.message).not.toContain('version')
+  })
+
+  it('refuses a scope it cannot install', () => {
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), scope: 'project' }))
+    expect(error.message).toContain('"project"')
+    expect(error.message).toContain("only 'global'")
+  })
+
+  it.each([
+    ['not JSON at all', 'nope'],
+    ['an array at the root', '[]'],
+  ])('refuses %s, naming the file', (_label, text) => {
+    expect(refusal(text).message).toContain('/tmp/b.json')
+  })
+
+  it.each([
+    ["no 'entries' array", { entries: undefined }],
+    ["no 'omitted' array", { omitted: undefined }],
+  ])('refuses a bundle with %s', (label, patch) => {
+    expect(refusal(JSON.stringify({ ...JSON.parse(good), ...patch })).message).toContain(label.slice(3))
+  })
+
+  it('lists EVERY invalid entry, not the first, with its index', () => {
+    // Same rule the kernel's manifest validation was given in M7.B: an author
+    // fixing a document by hand learns everything wrong with it in one run.
+    const error = refusal(
+      JSON.stringify({ ...JSON.parse(good), entries: [{ type: 'mcp-server' }, { type: 'nope', id: 'x' }] }),
+    )
+    expect(error.message).toContain('entries[0]')
+    expect(error.message).toContain('entries[1]')
+  })
+
+  it('refuses a malformed omission record too, because it is part of the artifact', () => {
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), omitted: [{ type: 'mcp-server' }] }))
+    expect(error.message).toContain('omitted[0]')
+  })
+
+  it('admits a RETIRED entry type, exactly as the store read path does', () => {
+    // A bundle is a document written by another build. Refusing a word panda
+    // has since retired would make removing a word able to brick an import --
+    // the dead end M4.E exists to abolish.
+    const withRetired = JSON.stringify({
+      ...JSON.parse(good),
+      entries: [{ type: 'tool', id: 'rg', command: 'rg' }],
+    })
+    expect(parseBundle('/tmp/b.json', withRetired).entries[0]).toMatchObject({ type: 'tool', id: 'rg' })
   })
 })
