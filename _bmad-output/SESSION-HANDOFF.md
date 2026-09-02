@@ -449,6 +449,49 @@ nearly every review — and finally inside the mechanism built to prevent it.
   `import` was reported as exiting 0 when it exits 2; the 0 belonged to `head`.
   Capture the code before piping, or run the binary from a script.
 
+- **A capability written in code that no product surface reaches is the same
+  defect as a guarantee written in prose.** `ingest.ts` was 375 finished lines —
+  two phases, coded errors, the store untouched on a phase-1 failure — with ZERO
+  production callers across two milestones, while `deferred-work.md` re-homed it
+  twice saying "home moves to whichever story first gives ingestion a command"
+  and no story gave it one. The tell was a NUMBER, not a reading: `panda list`
+  returned `[]` on a machine carrying 40 skills.
+- **A feature that reads where another feature writes will accuse itself.**
+  Ingest reads the roots projection writes into, so an ingested skill arrived
+  already sitting at its own destination and was reported `foreign-collision`:
+  `ingest` then `init` then `doctor` FAILED on a completely correct environment.
+  The verdict was also factually false — the file panda copies FROM and the file
+  it copies TO were the same file, so the bytes could not differ. **The fix that
+  looks obvious is the wrong one**: adopting the path into the ledger would make
+  `remediate release` an authority to delete a user's own skill. Found by driving
+  the binary, invisible to 1,346 green tests.
+- **Check whether the "edge case" is the main case before designing for it.**
+  A skill id offered by two roots was frozen as a reported refusal. Measured:
+  22 of 40 ids sit in ALL THREE roots, because the user has been keeping three
+  roots in sync by hand — which is precisely the person panda exists for. As
+  frozen the feature delivered 16 of 40. Splitting on real content (11 identical
+  → collapse, 13 divergent → keep refusing) took it to 27. **The refusal was
+  still right for the 13**; the mistake was applying it to the case with no
+  decision in it.
+- **A change token is not a content hash.** mtime+size answers "did this path
+  change", never "are these the same bytes" — two identical trees copied at
+  different times carry different tokens. Reusing the cheap token for identity
+  would have silently answered a question it cannot.
+- **A discarded promise is a test that bets.** `void writeHolder(...)` inside a
+  seam declared `=> void | Promise<void>` that release AWAITS: the ordering was
+  always forceable and the test wagered on it instead. Green on Node 26, red on
+  Node 24, and it flipped only because the previous commit added two test files
+  to that package and changed the load. **The expensive half is not the red one**
+  — the same wager could have been WON on a build where the restore was broken,
+  and reported green. Falsified after fixing: dropping the token check from
+  release turns it red.
+- **A spec can name a file that does not exist.** Mine told the implementer to
+  read `packages/registry/test/guard.test.ts` and `packages/cli/test/guard.test.ts`.
+  Neither exists (control: both `test/` directories do). Filing that as a
+  renegotiation rather than implementing past it uncovered the real gap:
+  **AD-2 is enforced by a guard test in 5 of 10 packages**, and `registry` and
+  `cli` are among the five with none.
+
 **Process rules that earned their place:**
 
 - An implementer that FILES a renegotiation instead of implementing past a
@@ -461,10 +504,18 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`a2170db`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`5743438`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean. (This document's own commit
 sits one above it — check `git log`, do not trust this line alone. It has been
 stale about its own state twice.)
+
+**`gh run list --commit <sha>` returns EMPTY for a commit that HAS a run.** It
+returned nothing for `6083243` and equally nothing for `100ed99`, which is known
+green — a false zero from the instrument, not from CI. Use
+`gh run list --limit 5 --json headSha,name,status,conclusion` and match the SHA
+yourself. This was caught only because the zero was controlled against a commit
+known to be green; taken at face value it reads as "CI has not started yet",
+and `6083243` was RED.
 
 Stories closed, each with CI verified against its exact SHA:
 
@@ -487,6 +538,8 @@ Stories closed, each with CI verified against its exact SHA:
 | `2d4230e` | M7.E — a malformed vendor config is REFUSED with its `line:column`, not spliced into a recovered parse tree; the old build exited 0 having destroyed a user's own server definition |
 | `7884e3e` | M8.A — `panda export`, implementing Story 5.1 / FR-21 / NFR-5 / NFR-6; a credential-bearing entry is left out AND named, so nothing goes missing quietly |
 | `a2170db` | M8.B — `panda import` (Story 5.2 / FR-22 / FR-25), and the separator fix that lets a Registry cross platforms at all; found a double-marker corruption of every imported path by driving the binary |
+| `6083243` | M9.A — `panda ingest`; `ingestProviders` gets its first production caller after two milestones with none, and the seam defect that gave a correct environment a `foreign-collision` is fixed at the one place a plan is obtained |
+| `5743438` | forced the successor-lock race instead of betting on it — a discarded promise made a test that could fail when it should not AND pass when it should not |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -530,11 +583,55 @@ projection layer actually delivers.
    round-trips losslessly between machines, and the separator that made a
    Windows-written Registry unusable on POSIX is fixed at the contract.
 
-   **The next specified work is Story 5.5 (full diagnostics) or 5.6
-   (environment status with read-only quota surfacing)** — the last two Epic 5
-   stories that are neither shipped nor superseded. Re-derive which from
-   `epics.md` rather than from this line; the lesson below about "next step" in a
-   handoff applies to this sentence as much as to the one it replaced.
+   **RECOUNTED 2026-09-02, and the board was lying twice.** The real backlog is
+   **7 stories**, not the 11 this document claimed and not the 8 it claimed after
+   the first recount: 2-6 liveness (needs re-spec onto native hooks) · 3-1
+   MemoryProvider port · 3-2 filesystem+sqlite providers · 4-2 concurrent
+   sessions · 4-3 crash-safe disposal · 5-5 full diagnostics · 5-6 status+quota.
+   `2-10` was `backlog` while SHIPPED — `unprojectable` has been a live
+   `DiagnosisFindingKind` since 2.7b with 17 assertions and the binary printing
+   it — and is now closed with its evidence in the row. **Recount by running the
+   binary, not by reading the file.**
+
+   What the two Epic 5 candidates actually need, measured rather than assumed:
+   - **5.5 is ~5/6 shipped.** Drift, executor detection, and a remediation per
+     finding are done, and `FINDING_EXITS` is a `Record` over the closed union so
+     a kind without an exit does not compile. "Direct plugin writes to
+     panda-owned files" is ALSO done — `DRIFT_KINDS`' `edited` and
+     `foreign-collision` (`contracts/src/projection.ts:98-105`), asserted at
+     `environment/test/doctor.test.ts:159`. **A grep for `FR-26` returns 0 and
+     that means nothing**: a grep for an FR LABEL is not a grep for the
+     BEHAVIOUR. Its two real gaps are a "pending secret" state panda does not
+     have (adding one invents vocabulary) and adapter AVAILABILITY — "is the
+     executor runnable", where today panda only detects that a config file
+     exists.
+   - **5.6 has no substrate.** `quota|Quota` across `**/*.ts` → **2 hits**, both
+     a regex classifying an executor's ERROR TEXT in a live test. Control:
+     `drift` → 198 hits / 47 files. No vendor read-only usage surface is read
+     anywhere. Its own AC permits "unsupported executors show no quota row", so a
+     compliant 5.6 can ship showing nothing; anything more is the screen-scraping
+     2.6 forbids under a different name. **Wait for a vendor to publish a
+     documented usage surface**; then it becomes native rendering, which is what
+     panda is for.
+
+   **The strongest candidate that is NOT in the backlog**, recorded with its
+   evidence and deliberately not acted on: all 10 packages carry
+   `"private": true` at `"version": "0.0.0"`, while
+   `m3a-distribution-and-a-falsifiable-sdk-proof: done`. The FR-29 proof spends a
+   CI job proving a packed tarball imports cleanly — a tarball nobody can obtain.
+   A distribution story marked done that a user cannot execute. If the answer is
+   "panda is not meant to be consumed yet", that is a legitimate decision and
+   `private: true` is correct; it just is not what the board says.
+
+   **And a chore that is actively harmful, not merely missing:** `AGENTS.md` is
+   BYTE-IDENTICAL to `CLAUDE.md` (`diff` → identical, both 44 lines, both
+   `<!-- gitnexus:start -->`) and contains **zero** panda rules — grep
+   `AD-1|AD-5|AD-7|correction-01|PandaError|guard\.test` over it → 0, control:
+   the same pattern over this document hits. Every rule in §5 and §7 lives ONLY
+   here, in a file nothing auto-loads, while the file agents DO load orders them
+   to route through GitNexus MCP calls — the exact class of tool §3 documents as
+   answering about a DIFFERENT repository. An hour of writing, and it is the
+   project's own defect class pointed at itself.
 
    What follows in this item is the measurement M8.A was built on, kept because
    one line of it was WRONG in an instructive way — see the correction directly
