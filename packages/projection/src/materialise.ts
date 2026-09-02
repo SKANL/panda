@@ -5,6 +5,7 @@ import type {
   DriftEntry,
   ProjectionClaim,
   ProjectionLedgerRecord,
+  ProjectionMaterialisePlan,
   ProjectionMaterialiseTarget,
   ProjectionOwnedPath,
   ProjectionResult,
@@ -253,6 +254,72 @@ export interface MaterialiseOutcome {
   readonly records: readonly ProjectionLedgerRecord[]
 }
 
+/** A plan with the entries that are ALREADY where they would be written taken out. */
+interface PlannedMaterialisation {
+  readonly plan: ProjectionMaterialisePlan
+  /** Entry ids whose every source path IS the path panda would write it to. */
+  readonly satisfied: ReadonlySet<string>
+}
+
+/**
+ * The ONE place a materialisation plan is obtained, and the one place the
+ * SOURCE-IS-THE-DESTINATION verdict is reached (spec M9.A amendment 3).
+ *
+ * `panda ingest` reads the same roots the projection writes into, so an ingested
+ * skill arrives already sitting at one of its own destinations. Panda's ledger
+ * does not claim it — panda did not write it — and the plain reading of that was
+ * `foreign-collision`, so using the feature immediately reported a broken
+ * environment. The verdict was also factually wrong: the bytes that should be
+ * there ARE there, byte for byte, because the file panda would copy FROM and the
+ * file panda would copy TO are the same file.
+ *
+ * So the entry is ALREADY SATISFIED: nothing to write, nothing to claim, no
+ * drift. It stays in `presentEntryIds`, which is what keeps it out of the
+ * removal path, and it is deliberately NOT reported as `skipped` — a skipped
+ * entry is one a target could not express (C5), and this one is expressed
+ * perfectly. Reporting it would be reporting a problem that is not there.
+ *
+ * NOT ADOPTED, and that is the load-bearing half: panda did not write these
+ * bytes, so claiming them would make `panda remediate release` an authority to
+ * delete a skill the user owns. The ledger keeps telling the truth.
+ *
+ * Both consumers of a plan route through here — the engine below and
+ * {@link claimMaterialised} — so the rule is stated once rather than guarded at
+ * each decision that would otherwise have to re-derive it.
+ */
+async function planFor(
+  target: ProjectionMaterialiseTarget,
+  entries: RegistryEntriesByKind,
+  claimed: readonly ProjectionLedgerRecord[],
+  root: string,
+): Promise<PlannedMaterialisation> {
+  const plan = await target.plan({ entries, records: claimed, rootPath: root })
+  const satisfied = new Set<string>()
+  for (const entry of plan.entries) {
+    // CANONICAL comparison, never string equality: a target's `sourcePath` and
+    // the destination panda builds from the root are two spellings arrived at by
+    // different routes, and on win32 they can differ in drive-letter and
+    // directory casing while naming one file. `pathKey` is the same spelling the
+    // removal path keys ownership on.
+    const same = entry.files.every((file) => {
+      let destination: string
+      try {
+        destination = absolutePathOf(root, file.relativePath, entry.entryId)
+      } catch {
+        // Outside the root: not satisfied, and the ordinary path reports it.
+        return false
+      }
+      return pathKey(destination) === pathKey(file.sourcePath)
+    })
+    if (same && entry.files.length > 0) satisfied.add(entry.entryId)
+  }
+  if (satisfied.size === 0) return { plan, satisfied }
+  return {
+    plan: { ...plan, entries: plan.entries.filter((entry) => !satisfied.has(entry.entryId)) },
+    satisfied,
+  }
+}
+
 /**
  * The ledger record that would claim the tree currently at one entry's location
  * — the materialisation half of `adopt`, and the exit from every reported state
@@ -300,7 +367,7 @@ export async function claimMaterialised(
   entryId: string,
 ): Promise<ProjectionClaim> {
   const root = resolveOwnedPath(target.rootPath)
-  const plan = await target.plan({ entries, records: claimed, rootPath: root })
+  const { plan, satisfied } = await planFor(target, entries, claimed, root)
   const planned = plan.entries.find((candidate) => candidate.entryId === entryId)
   const held = claimed.find(
     (record) =>
@@ -312,6 +379,14 @@ export async function claimMaterialised(
   const location = planned?.location ?? held?.nativeLocation ?? entryId
   const refuse = (refusal: string): ProjectionClaim => ({ location, byteLength: 0, refusal })
   if (planned === undefined && held === undefined) {
+    if (satisfied.has(entryId)) {
+      // Already satisfied, so there is nothing to adopt — and adopting is the
+      // one thing that must not happen here: panda did not write these bytes,
+      // and a claim over them is an authority to DELETE them on a later run.
+      return refuse(
+        `'${entryId}' under '${root}' is the very source panda would copy from, so it is already exactly what panda would write; panda did not put it there and will not claim a file it did not write`,
+      )
+    }
     const skipped = (plan.skipped ?? []).find((candidate) => candidate.entryId === entryId)
     return refuse(
       skipped?.reason ??
@@ -416,7 +491,7 @@ export async function materialiseTarget(
   apply: boolean,
 ): Promise<MaterialiseOutcome> {
   const root = resolveOwnedPath(target.rootPath)
-  const plan = await target.plan({ entries, records: claimed, rootPath: root })
+  const { plan } = await planFor(target, entries, claimed, root)
 
   const drift: DriftEntry[] = []
   const records: ProjectionLedgerRecord[] = []

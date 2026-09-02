@@ -81,7 +81,7 @@ development_status:
   m3c-the-token-budget-stops-being-a-boolean: done
   m4b-skills-materialise-where-executors-find-them: done           # implements 2.9
   2-9-filesystem-materialisation-targets: superseded  # re-specified as m4b onto verified locations
-  2-10-unprojectable-entries-reported-not-faked: backlog  # folds into 2.7b
+  2-10-unprojectable-entries-reported-not-faked: done  # shipped inside 2.7b: `unprojectable` is a live DiagnosisFindingKind (environment/src/doctor.ts:88) citing correction-01 C5, with 17 assertions in doctor.test.ts and a per-entry finding printed by the binary. Its AC's worked example (a shell-command Tool) is dead vocabulary since M4.E, but the BEHAVIOUR survived onto a live case: project-scope skills, unprojectable by construction (environment/src/executors.ts:103-106). Recounted 2026-09-02 by running `panda doctor`; the row had been lying while the code was green.
   m4c-every-state-panda-reports-has-a-way-out: done  # implements 2.11 + the 2.2-era drift-resolution gap
   2-11-remediate-blocks-written-by-a-previous-build: superseded  # folded into m4c, which covers correction-01 C6 and the four terminal states
   m4d-nothing-panda-prints-is-a-command-panda-does-not-have: done            # closes FR-11's surface; story 2.1 built the store, never a verb
@@ -99,6 +99,7 @@ development_status:
   m8a-the-environment-travels-without-the-secrets: done          # implements 5.1/FR-21/NFR-5/NFR-6; `panda export`, and an omitted entry leaves a record so FR-22 can list it
   m8b-the-environment-arrives-and-says-what-it-could-not-bring: done          # implements 5.2/FR-22/FR-25; and fixes the separator that made a Windows bundle unusable on POSIX
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
+  m9a-the-registry-can-fill-itself: done   # `panda ingest [--dry-run]` + the first `SkillSource`; gives `ingestProviders` its first production caller. Found and fixed the seam defect it exposed: ingest reads the roots projection WRITES into, so an ingested skill was reported `foreign-collision` at its own source and `doctor` failed on a working environment. Source == destination is now `already satisfied` -- reported as nothing, and deliberately NOT adopted into the ledger.
   epic-2-retrospective: optional
 
   epic-3: backlog

@@ -27,6 +27,7 @@ import {
   isRegistryVerb,
   runExportCommand,
   runImportCommand,
+  runIngestCommand,
   runRegistryCommand,
   type RegistryVerb,
 } from './registry-commands.ts'
@@ -80,6 +81,7 @@ export const USAGE = [
   '       panda project list [directory]',
   '       panda export <path>',
   '       panda import <path>',
+  '       panda ingest [--dry-run]',
   '       panda init',
   '       panda project init [directory]',
   '       panda doctor',
@@ -124,6 +126,13 @@ export const USAGE = [
   '              already registered here is TAKEN OVER and said out loud; entries the bundle could not',
   '              carry are listed as work left for you. A bundle written by a newer panda is refused',
   '              by name, and nothing is written until the whole document has been read and checked.',
+  'ingest        Puts the skills already on this machine into the registry, so it holds something without',
+  '              one command per skill. It reads only the skills roots panda has VERIFIED each executor',
+  '              reads, and never a directory panda materialised itself — re-ingesting panda\'s own output',
+  '              would make the registry a copy of its own projection. Purely ADDITIVE: an entry whose',
+  '              source is gone is left exactly where it is, and nothing is ever removed. A directory that',
+  '              holds no skill, or whose name cannot be a registry id, is named and skipped, never renamed.',
+  '  --dry-run   Report exactly what would be ingested and write nothing. Same call, same answer.',
   "init          Prepares this machine and projects the registry into every detected executor's own config.",
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
@@ -223,6 +232,9 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       return 0
     }
     return await runImport(argv.slice(1), out, err, options)
+  }
+  if (argv[0] === 'ingest') {
+    return await runIngest(argv.slice(1), out, err, options)
   }
   if (argv[0] === 'init') {
     return await runInit(argv.slice(1), out, err, 0, options.homeDir, (homeDir) => initMachine({ homeDir }))
@@ -792,6 +804,38 @@ async function runExport(
 ): Promise<number> {
   try {
     return await runExportCommand(tokens, {
+      out,
+      err,
+      defaultUsage: DEFAULT_USAGE,
+      homeDir: options.homeDir,
+      cwd: options.cwd,
+    })
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/**
+ * `panda ingest` — the registry filling itself from what is already installed.
+ *
+ * The same wrapper shape as `runExport`: help, then one capability call, then
+ * the coded failure as exit 2. `--help` ANYWHERE, like `panda remediate`, so
+ * `panda ingest --dry-run --help` and `--help --dry-run` cannot be two answers
+ * to one question.
+ */
+async function runIngest(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  options: RunCommandOptions,
+): Promise<number> {
+  if (tokens.some((token) => isHelp(token))) {
+    out(USAGE)
+    return 0
+  }
+  try {
+    return await runIngestCommand(tokens, {
       out,
       err,
       defaultUsage: DEFAULT_USAGE,

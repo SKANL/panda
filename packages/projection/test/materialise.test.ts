@@ -354,6 +354,26 @@ describe('panda writes only where it can prove the location is free', () => {
     expect(await treeOf(at.root)).toEqual({ 'alpha/': '', 'alpha/THEIRS.txt': 'mine\n' })
   })
 
+  it("reports nothing at all when the entry's SOURCE is the destination panda would write", async () => {
+    // Spec M9.A amendment 3. `panda ingest` reads the very roots the projection
+    // writes into, so an ingested skill arrives ALREADY at one of its
+    // destinations. The bytes that should be there are there — nothing to write,
+    // nothing to claim, and nothing wrong to report.
+    const at = await fixture()
+    await mkdir(join(at.root, 'alpha'), { recursive: true })
+    await writeFile(join(at.root, 'alpha', 'SKILL.md'), SKILL_BODY, 'utf8')
+
+    const run = await project(at, [skill('alpha', join(at.root, 'alpha'))])
+
+    expect(run.results[0]?.drift).toEqual([])
+    expect(run.results[0]).toMatchObject({ written: false, skippedEntryIds: [] })
+    expect(await treeOf(at.root)).toEqual({ 'alpha/': '', 'alpha/SKILL.md': SKILL_BODY })
+    // The ledger keeps telling the truth: panda did not write this file, so
+    // panda claims nothing — `panda remediate release` must never be able to
+    // reach a skill the user owns.
+    expect((await at.ledger.read()).records).toEqual([])
+  })
+
   it('reports an edited tree rather than overwriting it', async () => {
     const at = await fixture()
     const source = await writeSource(at, 'alpha.md')

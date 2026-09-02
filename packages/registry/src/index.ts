@@ -8,3 +8,5 @@ export { BUNDLE_KIND, BUNDLE_VERSION, createBundle, isCredential, parseBundle, r
 export type { OmittedEntry, RegistryBundle } from './bundle.ts'
 export { createRegistryPlugin } from './plugin.ts'
 export type { RegistryPlugin, RegistryPluginOptions } from './plugin.ts'
+export { MACHINE_SKILLS_SOURCE_ID, createMachineSkillsSource } from './skills-source.ts'
+export type { MachineSkillsSource, SkillsSourceOptions, SkillsSourceWarning } from './skills-source.ts'

@@ -54,6 +54,17 @@ const SKILL_SOURCE_TYPES: readonly RegistryEntryType[] = ['skill']
 export interface IngestProvidersOptions {
   readonly toolProviders?: readonly ToolProvider[]
   readonly skillSources?: readonly SkillSource[]
+  /**
+   * Collect, validate and decide EXACTLY as a writing run does, then skip only
+   * the store write.
+   *
+   * It is one option on the one call rather than a second entry point on
+   * purpose: a preview produced by different code than the write is a preview
+   * that can lie, which is the divergence a `--dry-run` flag exists to remove.
+   * Everything a caller reads back — what would be registered, what is already
+   * unchanged, every warning — is therefore computed by the code that writes.
+   */
+  readonly dryRun?: boolean
 }
 
 /** Raised when a phase-2 store write fails, carrying what already landed. */
@@ -358,6 +369,14 @@ export async function ingestProviders(
   for (const contribution of collected.values()) {
     if (!contribution.changed) {
       unchanged.push(contribution.key)
+      continue
+    }
+    if (options.dryRun === true) {
+      // The ONLY branch dry-run takes. Everything above it — every list(), every
+      // validation, the ownership gate and the change comparison — has already
+      // run against the real store, so this row is reported for exactly the
+      // reason a writing run would have written it.
+      registered.push(contribution.key)
       continue
     }
     try {

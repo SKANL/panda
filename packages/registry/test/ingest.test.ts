@@ -640,4 +640,28 @@ describe('ingestProviders', () => {
     })
     await expectStoreUntouched(harness)
   })
+
+  /**
+   * `--dry-run` is THIS option and not a second pass over the same inputs. A
+   * preview computed by different code than the write is a preview that can lie,
+   * which is the whole reason the flag exists — so the outcome is asserted
+   * IDENTICAL to the writing run's, on the same inputs, rather than merely
+   * plausible.
+   */
+  it('reports the identical outcome and writes nothing under dryRun', async () => {
+    const options = {
+      toolProviders: [toolProvider('catalog', [{ type: 'mcp-server', id: 'ripgrep', command: 'rg' }])],
+      skillSources: [skillSource('skills-dir', [sourcedSkill('commit-lint', 'h1')])],
+    }
+    const previewed = await makeHarness()
+    const written = await makeHarness()
+
+    const preview = await ingestProviders(previewed.store, { ...options, dryRun: true })
+    const real = await ingestProviders(written.store, options)
+
+    expect(preview).toEqual(real)
+    expect(preview.registered).toEqual(['mcp-server:ripgrep', 'skill:commit-lint'])
+    await expectStoreUntouched(previewed)
+    expect(written.writes).toHaveLength(2)
+  })
 })

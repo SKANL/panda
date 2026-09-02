@@ -5,6 +5,7 @@ import {
   createBundle,
   deliveryFor,
   expandRegistryEntryPaths,
+  ingestMachineSkills,
   isRetiredEntryType,
   readBundle,
   scopeDirectory,
@@ -70,6 +71,9 @@ const FIELD_FLAGS: Readonly<Record<string, 'command' | 'entryPath'>> = {
 
 /** Repeatable, and order-preserving: `args` is a command line, not a set. */
 const ARG_FLAG = '--arg'
+
+/** The only option `panda ingest` has; every other one is a usage error. */
+const DRY_RUN_FLAG = '--dry-run'
 
 interface ParsedTokens {
   readonly positionals: readonly string[]
@@ -627,4 +631,78 @@ export async function runImportCommand(
     // and would contend with this one for the same lock.
     await bound.store.dispose()
   }
+}
+
+/**
+ * `panda ingest [--dry-run]` — the machine's own skills, into the registry.
+ *
+ * The binding's whole job, and the reason it is this short: argv in, one
+ * capability call, the outcome rendered, exit 0. Which roots are read, what the
+ * ownership ledger excludes and what counts as a skill are `ingestMachineSkills`'
+ * answers — a second opinion here would be a rule that drifts from the one the
+ * capability enforces, and the CLI may not touch the filesystem at all.
+ *
+ * A run that wrote nothing because there was nothing to write exits 0. That is
+ * the same answer `panda list` gives for an empty registry: it is a result, not
+ * a failure, and a script must be able to tell it apart from a run that broke.
+ */
+export async function runIngestCommand(
+  tokens: readonly string[],
+  context: RegistryCommandContext,
+): Promise<number> {
+  const { out, err } = context
+  const flag = tokens.find((token) => token.startsWith('-'))
+  if (flag !== undefined && flag !== DRY_RUN_FLAG) {
+    err(`unrecognized option '${flag}'`)
+    err(context.defaultUsage)
+    return 2
+  }
+  const positional = tokens.find((token) => !token.startsWith('-'))
+  if (positional !== undefined) {
+    // Machine scope only: `ingestMachineSkills` reads the roots panda has
+    // verified for this machine, and there is no directory to name.
+    err(`unexpected argument '${positional}'`)
+    err(context.defaultUsage)
+    return 2
+  }
+  const report = await ingestMachineSkills({
+    homeDir: context.homeDir,
+    dryRun: tokens.includes(DRY_RUN_FLAG),
+  })
+  out(
+    JSON.stringify(
+      {
+        scope: 'global',
+        registryPath: report.registryPath,
+        dryRun: report.dryRun,
+        roots: report.roots,
+        registered: report.outcome.registered,
+        unchanged: report.outcome.unchanged,
+        ownedByPanda: report.ownedByPanda,
+        skipped: report.skipped,
+        warnings: report.outcome.warnings,
+      },
+      null,
+      2,
+    ),
+  )
+  // Each fact on its own line, because a user who ran a command wants the work
+  // left for them without parsing JSON for it.
+  for (const skip of report.skipped) err(`skipped: ${skip.detail}`)
+  for (const warning of report.outcome.warnings) err(warning.detail)
+  if (report.ownedByPanda.length > 0) {
+    err(
+      `${report.ownedByPanda.length} director(ies) in those roots were written by panda itself and were left alone`,
+    )
+  }
+  const written = report.outcome.registered.length
+  err(
+    report.dryRun
+      ? `${written} entr(ies) would be ingested into '${report.registryPath}'; nothing was written`
+      : `${written} entr(ies) ingested into '${report.registryPath}'`,
+  )
+  if (report.outcome.unchanged.length > 0) {
+    err(`${report.outcome.unchanged.length} entr(ies) were already registered and unchanged`)
+  }
+  return 0
 }
