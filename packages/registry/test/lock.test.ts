@@ -171,8 +171,16 @@ describe('lockfile protocol', () => {
     const successor = holderFor({ token: 'successor-token' })
     let hookRan = false
     const lock = await acquireLock(path, {
-      beforeReleaseVerify: (renamedPath) => {
-        void writeHolder(renamedPath, successor)
+      // AWAITED, not fired and forgotten. The seam is declared
+      // `=> void | Promise<void>` and release AWAITS it, so returning the
+      // promise FORCES the successor's write to land before release re-reads
+      // the renamed file. `void`-ing it instead made this test BET on that
+      // write winning a race against release's own read: it lost on Node 24
+      // in CI while passing on Node 26, and it would equally have PASSED on a
+      // build where the restore was broken. A test that bets fails when it
+      // should not and passes when it should not.
+      beforeReleaseVerify: async (renamedPath) => {
+        await writeHolder(renamedPath, successor)
         hookRan = true
       },
     })
