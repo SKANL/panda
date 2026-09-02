@@ -423,6 +423,32 @@ nearly every review — and finally inside the mechanism built to prevent it.
   which is what makes it safe to tune the detector toward catching credentials
   rather than toward never annoying anyone.
 
+- **Read the call site, not the callee — THREE stories running now, and it has
+  never once been found by reading.** M7.C: a schema's strict branch was
+  unreachable because its caller pre-filtered the input. M8.A: `list()` expanded
+  the paths the writer had normalized. M8.B: `register` normalized a value the
+  caller had ALREADY normalized, and the escape rule doubled the `~` marker —
+  every path field of every imported entry silently wrong, nothing failing. All
+  three surfaced by running the binary and reading the output file. **When you
+  hand a value to a function that transforms values, ask what shape the value is
+  ALREADY in.**
+- **Two of my own measurements were false this session, both from shell
+  quoting.** A `diff` reported two bundles "BYTE-IDENTICAL" while comparing two
+  EMPTY outputs (both `require()` calls had failed on an MSYS path); a loop over
+  five malformed fixtures printed five identical ENOENT lines because `$f` never
+  interpolated. Both looked like passes. The corollary the older lesson needed:
+  **when shell quoting has eaten a measurement twice, stop quoting and write the
+  driver as a script.** That is why `.scratch/drive-*.mjs` exists.
+- **A test can pin a DEFECT as an expectation.** Two contracts clauses asserted
+  the normalized value contained `join('config', 'server.json')` — the platform's
+  own separator — which is exactly the thing that made a Windows-written Registry
+  unusable on POSIX. Updating them was the fix, not a concession. **A red pin is
+  a question ("was this deliberate?"), not automatically a verdict against the
+  change.**
+- **`$?` after a pipe is the LAST command's exit code, not the binary's.** An
+  `import` was reported as exiting 0 when it exits 2; the 0 belonged to `head`.
+  Capture the code before piping, or run the binary from a script.
+
 **Process rules that earned their place:**
 
 - An implementer that FILES a renegotiation instead of implementing past a
@@ -435,7 +461,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
 
 ## 8. State at handoff
 
-`main` is at **`7884e3e`**, CI green on both jobs (`gates (24)` and `gates (26)`)
+`main` is at **`a2170db`**, CI green on both jobs (`gates (24)` and `gates (26)`)
 verified against that exact SHA, working tree clean. (This document's own commit
 sits one above it — check `git log`, do not trust this line alone. It has been
 stale about its own state twice.)
@@ -460,6 +486,7 @@ Stories closed, each with CI verified against its exact SHA:
 | `b498b9c` | M7.D — `panda run --trace`; the binary finally holds a sink, and `lostRecordCount` is measured UNREACHABLE from the CLI rather than surfaced wrong |
 | `2d4230e` | M7.E — a malformed vendor config is REFUSED with its `line:column`, not spliced into a recovered parse tree; the old build exited 0 having destroyed a user's own server definition |
 | `7884e3e` | M8.A — `panda export`, implementing Story 5.1 / FR-21 / NFR-5 / NFR-6; a credential-bearing entry is left out AND named, so nothing goes missing quietly |
+| `a2170db` | M8.B — `panda import` (Story 5.2 / FR-22 / FR-25), and the separator fix that lets a Registry cross platforms at all; found a double-marker corruption of every imported path by driving the binary |
 
 **A known local-only red:** `packages/projection/test/skills-discovery.live.test.ts`
 fails 2 tests on Windows at HEAD and passes in CI. Measured with the working
@@ -498,17 +525,20 @@ projection layer actually delivers.
    **schema-major** Bundle exits non-zero naming the incompatibility"*. Schema
    version. Not content revision.
 
-   **Story 5.1 SHIPPED as M8.A.** What follows in this item is the measurement it
-   was built on, kept because one line of it was WRONG in an instructive way —
-   see the correction directly below it. **The next specified work is Story 5.2,
-   import**, and three things are already banked for its spec: the bundle's
-   `version` is checked by equality like `STORE_VERSION`, so 5.2's
-   "newer schema-major exits non-zero" has its mechanism; the `omitted` list is
-   already the input for 5.2's "entries requiring secrets are listed as pending
-   manual action"; and `deferred-work.md` records the one thing that will bite —
-   a normalized path keeps the separator of the machine that WROTE it, so a
-   bundle written on Windows carries `~/skills\name.ts` and import is the half
-   that has to place it on another platform.
+   **Stories 5.1 and 5.2 both SHIPPED (M8.A, M8.B), and Epic 5's portability
+   half is closed.** `panda export` and `panda import` exist, a bundle
+   round-trips losslessly between machines, and the separator that made a
+   Windows-written Registry unusable on POSIX is fixed at the contract.
+
+   **The next specified work is Story 5.5 (full diagnostics) or 5.6
+   (environment status with read-only quota surfacing)** — the last two Epic 5
+   stories that are neither shipped nor superseded. Re-derive which from
+   `epics.md` rather than from this line; the lesson below about "next step" in a
+   handoff applies to this sentence as much as to the one it replaced.
+
+   What follows in this item is the measurement M8.A was built on, kept because
+   one line of it was WRONG in an instructive way — see the correction directly
+   below it.
 
    The measurement, and its correction:
    `normalizeRegistryEntryPaths` (`contracts/src/registry.ts:339`, labelled
