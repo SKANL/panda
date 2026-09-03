@@ -119,5 +119,15 @@ development_status:
   5-3-methodplugin-contract-published: superseded  # shipped as m5a (the contract) + m5b (the two rules m5a stated but did not enforce)
   5-4-methodology-hot-swap: superseded  # re-specified as m5d onto the measured answer: a method is a selection panda mounts, not an entry it projects
   5-5-full-diagnostics: backlog
-  5-6-environment-status-with-read-only-quota-surfacing: backlog
+  5-6-environment-status-with-read-only-quota-surfacing: backlog  # DO NOT SCHEDULE. Blocked on the industry, not on panda, and measured twice on 2026-09-02. In panda: `quota|x-ratelimit|rate.limit` -> 0 hits across `packages/**/src`; the only `usage` hits are per-run token accounting on the executor envelopes (adapter-cli/src/executors/claude-code.ts:64-69, codex.ts:83-86, opencode.ts:71-72), which is M3.C's budget, not a subscription balance. Controls: `doctor` -> 10 files, `drift` -> 198 hits. In the prior art: DeepSeek Harness, a shipped ~50-package agent harness, reads NO `x-ratelimit-*` header anywhere (control: `x-request-id` -> 6 files), calls no usage or billing endpoint (the only provider fetch is POST /chat/completions), and classifies quota against rate-limit by REGEX OVER PROVIDER ERROR PROSE (packages/llm/llm/src/error.ts:94-100). There is no documented surface to read. The AC permits "unsupported executors show no quota row rather than erroring", so with three executors and no surface a compliant implementation ships three empty rows, green criteria, and a `panda status` verb saying nothing `panda doctor` does not -- which is the glossary-line-to-requirement mistake this project has paid for most. REOPEN the day a vendor publishes a documented usage endpoint, and only then; anything sooner is the screen-scraping 2.6 forbids under a different name. Evidence: _bmad-output/planning-artifacts/research/deepseek-harness-the-product-layer-2026-09-02/research.md
+  # NEXT: 4-2 is the measured next story. `packages/workspace-git-worktree/` is a
+  # finished, contract-conformant, 13-test package the product cannot reach:
+  # `@panda/workspace-git-worktree` appears exactly ONCE in packages/ -- the
+  # `name` field of its own manifest -- while `@panda/workspace-local` appears in
+  # nine files including session/src/run-session.ts:22, which hardcodes
+  # createWorkspacePlugin() at :381. m6a's own ledger entry named 4.2 as its
+  # home. Ship it only when a test DRIVES THE BINARY against a real
+  # `git worktree list` entry, and when the package appears in the exact-equality
+  # dependency assertion of packages/session/test/guard.test.ts -- a criterion a
+  # finished-but-unreached implementation cannot meet, which is the point.
   epic-5-retrospective: optional
