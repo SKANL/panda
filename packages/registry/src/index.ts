@@ -10,3 +10,15 @@ export { createRegistryPlugin } from './plugin.ts'
 export type { RegistryPlugin, RegistryPluginOptions } from './plugin.ts'
 export { MACHINE_SKILLS_SOURCE_ID, createMachineSkillsSource } from './skills-source.ts'
 export type { MachineSkillsSource, SkillsSourceOptions, SkillsSourceWarning } from './skills-source.ts'
+export { MACHINE_MCP_SOURCE_ID, createMachineMcpSource } from './mcp-source.ts'
+// Exactly what `@panda/environment` names when it wires and reports this
+// source. `McpSourceEntry`, `McpSourceOptions` and `McpSourceReading` are
+// satisfied structurally at the call site and need no export.
+export type {
+  MachineMcpSource,
+  McpSourceDropped,
+  McpSourceExclusion,
+  McpSourceLocation,
+  McpSourceOwnedEntry,
+  McpSourceWarning,
+} from './mcp-source.ts'

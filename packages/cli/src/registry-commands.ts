@@ -5,7 +5,7 @@ import {
   createBundle,
   deliveryFor,
   expandRegistryEntryPaths,
-  ingestMachineSkills,
+  ingestMachine,
   isRetiredEntryType,
   readBundle,
   scopeDirectory,
@@ -634,13 +634,15 @@ export async function runImportCommand(
 }
 
 /**
- * `panda ingest [--dry-run]` — the machine's own skills, into the registry.
+ * `panda ingest [--dry-run]` — the machine's own skills AND MCP servers, into
+ * the registry.
  *
  * The binding's whole job, and the reason it is this short: argv in, one
- * capability call, the outcome rendered, exit 0. Which roots are read, what the
- * ownership ledger excludes and what counts as a skill are `ingestMachineSkills`'
- * answers — a second opinion here would be a rule that drifts from the one the
- * capability enforces, and the CLI may not touch the filesystem at all.
+ * capability call, the outcome rendered, exit 0. Which skills roots and which
+ * executor configs are read, what the ownership ledger excludes, and what counts
+ * as a skill or a server are `ingestMachine`'s answers — a second opinion here
+ * would be a rule that drifts from the one the capability enforces, and the CLI
+ * may not touch the filesystem at all.
  *
  * A run that wrote nothing because there was nothing to write exits 0. That is
  * the same answer `panda list` gives for an empty registry: it is a result, not
@@ -659,13 +661,14 @@ export async function runIngestCommand(
   }
   const positional = tokens.find((token) => !token.startsWith('-'))
   if (positional !== undefined) {
-    // Machine scope only: `ingestMachineSkills` reads the roots panda has
-    // verified for this machine, and there is no directory to name.
+    // Machine scope only: `ingestMachine` reads the skills roots and the
+    // executor configs panda has verified for this machine, and there is no
+    // directory to name.
     err(`unexpected argument '${positional}'`)
     err(context.defaultUsage)
     return 2
   }
-  const report = await ingestMachineSkills({
+  const report = await ingestMachine({
     homeDir: context.homeDir,
     dryRun: tokens.includes(DRY_RUN_FLAG),
   })
@@ -676,10 +679,20 @@ export async function runIngestCommand(
         registryPath: report.registryPath,
         dryRun: report.dryRun,
         roots: report.roots,
+        // Both halves, side by side. The mcp-server half under its own key
+        // rather than merged into the skills fields: a user reading `skipped`
+        // has to be able to tell a directory that is not a skill from a server
+        // panda could not read, and one flat list answers neither question.
+        configPaths: report.mcpServers.configPaths,
         registered: report.outcome.registered,
         unchanged: report.outcome.unchanged,
         ownedByPanda: report.ownedByPanda,
         skipped: report.skipped,
+        mcpServers: {
+          ownedByPanda: report.mcpServers.ownedByPanda,
+          skipped: report.mcpServers.skipped,
+          dropped: report.mcpServers.dropped,
+        },
         warnings: report.outcome.warnings,
       },
       null,
@@ -689,10 +702,29 @@ export async function runIngestCommand(
   // Each fact on its own line, because a user who ran a command wants the work
   // left for them without parsing JSON for it.
   for (const skip of report.skipped) err(`skipped: ${skip.detail}`)
+  for (const skip of report.mcpServers.skipped) {
+    // A config panda could not open is not a candidate it skipped: the servers
+    // in it were never seen at all, and calling that "skipped" would understate
+    // it. Every other kind is one entry panda looked at and declined.
+    err(skip.kind === 'unreadable-config' ? `not read: ${skip.detail}` : `skipped: ${skip.detail}`)
+  }
+  // What did NOT travel, named with the file it stayed in. A key panda cannot
+  // carry is still in the vendor's document doing its job; saying nothing would
+  // let a user believe the registry holds the whole server.
+  for (const drop of report.mcpServers.dropped) {
+    err(
+      `'${drop.entryId}' was ingested for its command and arguments only; '${drop.keys.join("', '")}' stayed in '${drop.filePath}' because a registry mcp-server entry has nowhere to put them`,
+    )
+  }
   for (const warning of report.outcome.warnings) err(warning.detail)
   if (report.ownedByPanda.length > 0) {
     err(
       `${report.ownedByPanda.length} director(ies) in those roots were written by panda itself and were left alone`,
+    )
+  }
+  if (report.mcpServers.ownedByPanda.length > 0) {
+    err(
+      `${report.mcpServers.ownedByPanda.length} server(s) in those configs were written by panda itself and were left alone`,
     )
   }
   const written = report.outcome.registered.length

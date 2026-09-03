@@ -173,12 +173,29 @@ describe('a missing or unreadable ledger', () => {
     const run = await runProjection({ entries: ENTRIES, targets: [target], ledger })
 
     expect(run.warnings[0]!.code).toBe(PANDA_ERROR_CODES.projectionLedgerUnavailable)
-    expect(run.results[0]!.drift[0]).toMatchObject({ kind: 'foreign-collision', entryId: 'context7' })
+    // NOT a `foreign-collision` any more, and that is M11.A D4 case (ii): with
+    // the ledger unreadable panda claims nothing, but the bytes at the location
+    // are still exactly the bytes panda would write, so the honest verdict is
+    // `already satisfied` rather than a conflict against its own output. What
+    // this clause actually guarantees is unchanged and is asserted below: the
+    // config is not rewritten, the torn ledger is not overwritten, and repairing
+    // it restores every claim.
+    expect(run.results[0]).toMatchObject({ written: false, drift: [] })
     // The user's config is untouched AND the damaged ledger is left alone, so
     // repairing it restores every claim. Overwriting it would be terminal.
     expect(await readFile(filePath, 'utf8')).toBe(projected)
     expect(await readFile(ledger.filePath, 'utf8')).toBe('{ torn')
 
+    // CONTROL, in the same run, against the same torn ledger: change the bytes
+    // to something panda would NOT have written and the collision comes back.
+    // Without it the silence above would equally prove a run that stopped
+    // looking at the file, and a comparison that answers `satisfied` for
+    // everything is not a comparison.
+    await writeFile(filePath, projected.replace('@upstash/context7-mcp', 'somebody-elses-server'), 'utf8')
+    const edited = await runProjection({ entries: ENTRIES, targets: [target], ledger })
+    expect(edited.results[0]!.drift[0]).toMatchObject({ kind: 'foreign-collision', entryId: 'context7' })
+
+    await writeFile(filePath, projected, 'utf8')
     await writeFile(ledger.filePath, claims, 'utf8')
     const recovered = await runProjection({ entries: ENTRIES, targets: [target], ledger })
     expect(recovered.results[0]).toMatchObject({ written: false, drift: [] })

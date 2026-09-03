@@ -1,8 +1,12 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProjectionConfigTarget, ProjectionMaterialiseTarget } from '@panda/contracts'
-import type { FileFormat } from '@panda/projection'
+import type { FileFormat, NativeMcpRead } from '@panda/projection'
 import {
+  CLAUDE_MCP_TRAITS,
+  CODEX_CONFIG_TRAITS,
+  OPENCODE_CONFIG_TRAITS,
+  readNativeMcpEntries,
   CLAUDE_MCP_TARGET_ID,
   CLAUDE_SKILLS_TARGET_ID,
   CODEX_CONFIG_TARGET_ID,
@@ -96,6 +100,16 @@ export interface ExecutorProfile {
   readonly projectConfig: ((projectDir: string) => string) | undefined
   readonly createTarget: (filePath: string) => ProjectionConfigTarget
   /**
+   * The READ direction of the same file `createTarget` writes into (M11.A D2).
+   *
+   * A closure over this executor's own trait record, exactly like `createTarget`
+   * above, rather than the trait record itself: `panda ingest` needs the entries
+   * a vendor's document declares and nothing else about the format, and the
+   * document's format, container key and entry shape all stay where D1 put them.
+   * `undefined` from it means the file is absent, which is not an error (AD-5).
+   */
+  readonly readMcpEntries: (filePath: string) => Promise<NativeMcpRead | undefined>
+  /**
    * The skills root panda has VERIFIED this executor reads, or `undefined`.
    *
    * Undefined is the honest answer, not a gap: an executor whose skills
@@ -140,6 +154,7 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineConfig: (homeDir) => join(homeDir, '.claude.json'),
     projectConfig: (projectDir) => join(projectDir, '.mcp.json'),
     createTarget: (filePath) => createClaudeMcpTarget({ filePath }),
+    readMcpEntries: async (filePath) => await readNativeMcpEntries(CLAUDE_MCP_TRAITS, { filePath }),
     machineSkills: (homeDir) => join(homeDir, '.claude', 'skills'),
     skillsTargetId: CLAUDE_SKILLS_TARGET_ID,
     createSkillsTarget: (rootPath) => createClaudeSkillsTarget({ rootPath }),
@@ -165,6 +180,7 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineConfig: (homeDir) => join(homeDir, '.codex', 'config.toml'),
     projectConfig: undefined,
     createTarget: (filePath) => createCodexConfigTarget({ filePath }),
+    readMcpEntries: async (filePath) => await readNativeMcpEntries(CODEX_CONFIG_TRAITS, { filePath }),
     machineSkills: (homeDir) => join(homeDir, '.codex', 'skills'),
     skillsTargetId: CODEX_SKILLS_TARGET_ID,
     createSkillsTarget: (rootPath) => createCodexSkillsTarget({ rootPath }),
@@ -186,6 +202,7 @@ export const EXECUTOR_PROFILES: readonly ExecutorProfile[] = [
     machineConfig: (homeDir) => join(homeDir, '.config', 'opencode', 'opencode.json'),
     projectConfig: (projectDir) => join(projectDir, 'opencode.json'),
     createTarget: (filePath) => createOpenCodeConfigTarget({ filePath }),
+    readMcpEntries: async (filePath) => await readNativeMcpEntries(OPENCODE_CONFIG_TRAITS, { filePath }),
     machineSkills: (homeDir) => join(homeDir, '.config', 'opencode', 'skills'),
     skillsTargetId: OPENCODE_SKILLS_TARGET_ID,
     createSkillsTarget: (rootPath) => createOpenCodeSkillsTarget({ rootPath }),

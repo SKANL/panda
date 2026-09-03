@@ -10,12 +10,26 @@ import { runProjectionClauseSuite } from './clause-suite.ts'
 // turns each one into a working target that passes the SAME shared clause
 // suite as the shipped targets.
 
+/**
+ * The stub vocabulary's own inverse: `run`/`argv` where the vendors say
+ * command/args. Exercised by the shared clause suite through the already-
+ * satisfied comparison, which reads a located entry back before deciding.
+ */
+const readStubEntry: ProjectionTargetTraits['readMcpEntry'] = (native) => {
+  const run = native['run']
+  const argv = native['argv']
+  return typeof run === 'string' && run !== ''
+    ? { ok: true, command: run, args: typeof argv === 'string' ? [] : (argv ?? []) }
+    : { ok: false, detail: "it declares no 'run', so there is nothing for panda to run" }
+}
+
 const STUB_JSONC_TRAITS: ProjectionTargetTraits = {
   targetId: 'stub-jsonc-target',
   fileFormat: 'jsonc',
   defaultPath: '/unused/stub.json',
   mcpContainerKey: 'servers',
   renderMcpEntry: (entry) => ({ run: entry.command, argv: entry.args }),
+  readMcpEntry: readStubEntry,
 }
 
 const STUB_TOML_TRAITS: ProjectionTargetTraits = {
@@ -24,6 +38,7 @@ const STUB_TOML_TRAITS: ProjectionTargetTraits = {
   defaultPath: '/unused/stub.toml',
   mcpContainerKey: 'servers',
   renderMcpEntry: (entry) => ({ run: entry.command, argv: entry.args }),
+  readMcpEntry: readStubEntry,
 }
 
 const JSONC_SAMPLE = `{

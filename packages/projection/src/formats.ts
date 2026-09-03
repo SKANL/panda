@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import {
   PandaError,
   PANDA_ERROR_CODES,
@@ -66,6 +67,15 @@ export type FileFormat = 'jsonc' | 'toml'
 /** A vendor-native entry: keys and values in the vendor's own vocabulary. */
 export type NativeEntryShape = Readonly<Record<string, string | readonly string[]>>
 
+/**
+ * What ONE vendor entry means in panda's vocabulary, or why it means nothing
+ * panda can hold — a typed absence rather than a bare `undefined` (AD-5), so a
+ * caller has to say what it does about an entry it cannot represent.
+ */
+export type ReadMcpEntry =
+  | { readonly ok: true; readonly command: string; readonly args: readonly string[] }
+  | { readonly ok: false; readonly detail: string }
+
 /** The data that fully describes a projection target (FR-8). */
 export interface ProjectionTargetTraits {
   readonly targetId: string
@@ -76,8 +86,71 @@ export interface ProjectionTargetTraits {
   readonly mcpContainerKey: string
   /** The vendor's OWN entry shape. Its keys are the only keys panda writes. */
   readonly renderMcpEntry: (entry: ProjectionMcpEntry) => NativeEntryShape
+  /**
+   * The exact inverse of {@link renderMcpEntry}, and REQUIRED for the same
+   * reason it sits here rather than in a reader module: the three vendors
+   * disagree about the shape, and OpenCode's `command` IS the argv, so the
+   * un-join belongs beside the join and nowhere else. Optional, it would permit
+   * a target that can be projected into and never read back — precisely the
+   * asymmetry M11.A exists to remove — so the type system carries the rule and
+   * a fourth trait record cannot forget it.
+   */
+  readonly readMcpEntry: (native: NativeEntryShape) => ReadMcpEntry
   /** JSON family only: treat comments/trailing commas as malformed native input. */
   readonly strictJson?: boolean
+}
+
+/**
+ * The keys THIS vendor's renderer emits, which are exactly the keys its reader
+ * consumes — asked of the renderer rather than written down beside it.
+ *
+ * A hand-written list here was a THIRD spelling of the same fact, and a key
+ * added to a renderer and forgotten in that list would be reported to the user
+ * as `dropped` while panda was writing it. The sample is arbitrary: every
+ * renderer emits a fixed key set, which `vendor-conformance.test.ts` pins.
+ */
+export function renderedKeys(traits: ProjectionTargetTraits): readonly string[] {
+  return Object.keys(traits.renderMcpEntry({ id: 'sample', command: 'sample', args: ['sample'] }))
+}
+
+/**
+ * The native keys the renderer does not emit, sorted so two runs report the same
+ * list. `REGISTRY_PATH_FIELDS` gives an `mcp-server` a command and its arguments
+ * and nothing else, so a vendor's `env` table or a `url` has no root field to
+ * land in — and D10 says those are REPORTED, never silently lost.
+ */
+function droppedNativeKeys(native: NativeEntryShape, rendered: readonly string[]): readonly string[] {
+  return Object.keys(native)
+    .filter((key) => !rendered.includes(key))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+}
+
+/**
+ * The reading Claude Code and Codex SHARE: a `command` string beside an optional
+ * `args` array of strings.
+ *
+ * OpenCode deliberately does NOT use it. Its `command` is the whole argv, and
+ * D1 keeps that un-join in `opencode-config.ts` alone; what is shared here is
+ * only the vocabulary the other two already spell identically, so the sentence a
+ * user reads for a missing command cannot differ between two vendors that failed
+ * the same way.
+ */
+export function readNativeCommand(native: NativeEntryShape): ReadMcpEntry {
+  const command = native['command']
+  if (typeof command !== 'string' || command === '') {
+    return {
+      ok: false,
+      detail:
+        command === undefined
+          ? "it declares no 'command', so there is nothing for panda to run"
+          : "'command' is not a non-empty string, so there is nothing for panda to run",
+    }
+  }
+  const args = native['args']
+  if (args !== undefined && typeof args === 'string') {
+    return { ok: false, detail: "'args' is a string rather than an array, and panda will not guess how to split it" }
+  }
+  return { ok: true, command, args: args ?? [] }
 }
 
 export interface TraitTargetOptions {
@@ -102,6 +175,26 @@ interface DocStyle {
   readonly unit: string
 }
 
+/** One id present in a vendor's MCP container, as that document spells it. */
+interface NativeContainerEntry {
+  readonly id: string
+  /** The members whose value is a string or an array of strings. */
+  readonly native: NativeEntryShape
+  /**
+   * Member names whose value is NEITHER — a vendor's `env` table, a numeric
+   * timeout, a nested `[<container>.<id>.<sub>]` table. `NativeEntryShape`
+   * cannot carry them at all, so they are named here instead of vanishing
+   * before the trait's reader ever sees the entry.
+   */
+  readonly foreignKeys: readonly string[]
+}
+
+interface NativeContainerListing {
+  readonly entries: readonly NativeContainerEntry[]
+  /** Ids that are present and shaped so that no entry can be read out of them. */
+  readonly unreadable: readonly UnreadableNativeMcpEntry[]
+}
+
 interface FormatStrategy {
   /** Rejects native text this strategy cannot merge into, with a coded error. */
   validate(body: string, filePath: string, traits: ProjectionTargetTraits): void
@@ -111,6 +204,13 @@ interface FormatStrategy {
   entryConflict(body: string, traits: ProjectionTargetTraits, id: string): string | undefined
   /** The region an entry's native location occupies, or undefined when free. */
   locate(body: string, traits: ProjectionTargetTraits, id: string): Region | undefined
+  /**
+   * Every id the vendor's container holds, with its native entry — the read
+   * direction of the same location `locate` writes at, so a document this
+   * strategy would refuse to merge into is refused here too rather than read
+   * through a second, more forgiving door.
+   */
+  listEntries(body: string, traits: ProjectionTargetTraits): NativeContainerListing
   /** Formatting-independent form of an owned region; what actually gets hashed. */
   canonical(ownedText: string): string
   upsert(
@@ -383,6 +483,23 @@ function jsonRemovalSpan(body: string, existing: Region): Region {
   return { start, end }
 }
 
+/**
+ * A JSON node as a {@link NativeEntryShape} value, or `undefined` when it is
+ * neither a string nor an array of them.
+ *
+ * `undefined` is NOT "absent": it is "panda has no way to carry this", which the
+ * caller turns into a reported foreign key. A number, a boolean, a nested object
+ * and a mixed array all land here.
+ */
+function nativeValueOf(node: Node | undefined): string | readonly string[] | undefined {
+  if (node === undefined) return undefined
+  if (node.type === 'string') return node.value as string
+  if (node.type !== 'array') return undefined
+  const items = node.children ?? []
+  if (!items.every((item) => item.type === 'string')) return undefined
+  return items.map((item) => item.value as string)
+}
+
 const JSONC_STRATEGY: FormatStrategy = {
   validate(body, filePath, traits) {
     const root = objectRootOf(body, filePath, traits.strictJson ?? false)
@@ -426,6 +543,39 @@ const JSONC_STRATEGY: FormatStrategy = {
     if (container === undefined || container.type !== 'object') return undefined
     const member = memberProperties(container, id)[0]
     return member === undefined ? undefined : { start: member.offset, end: member.offset + member.length }
+  },
+
+  listEntries(body, traits) {
+    const root = parseTree(body)
+    const container = root === undefined || root.type !== 'object' ? undefined : memberValue(root, traits.mcpContainerKey)
+    // An absent container is E2 — a config panda writes into that holds no
+    // servers yet — and is no more an error on the way in than on the way out.
+    if (container === undefined || container.type !== 'object') return { entries: [], unreadable: [] }
+    const entries: NativeContainerEntry[] = []
+    const unreadable: UnreadableNativeMcpEntry[] = []
+    for (const property of container.children ?? []) {
+      const id = property.children?.[0]?.value
+      if (typeof id !== 'string') continue
+      const value = property.children?.[1]
+      if (value === undefined || value.type !== 'object') {
+        unreadable.push({
+          id,
+          detail: `'${traits.mcpContainerKey}.${id}' holds a ${value?.type ?? 'nothing'} rather than an object, so panda cannot read a command out of it`,
+        })
+        continue
+      }
+      const native: Record<string, string | readonly string[]> = {}
+      const foreignKeys: string[] = []
+      for (const member of value.children ?? []) {
+        const key = member.children?.[0]?.value
+        if (typeof key !== 'string') continue
+        const read = nativeValueOf(member.children?.[1])
+        if (read === undefined) foreignKeys.push(key)
+        else native[key] = read
+      }
+      entries.push({ id, native, foreignKeys })
+    }
+    return { entries, unreadable }
   },
 
   canonical(ownedText) {
@@ -651,6 +801,84 @@ const TOML_STRATEGY: FormatStrategy = {
     return { start: lines[headerIndex]!.start, end }
   },
 
+  /**
+   * ponytail: LINE-ORIENTED, exactly like `locate` above and for the same
+   * reason — this is not a TOML parser and does not become one to read. Panda
+   * renders every value on one line with `JSON.stringify`, so `JSON.parse` on
+   * the value text is that renderer's exact inverse, and anything it cannot
+   * parse is REPORTED as unreadable rather than guessed at: a TOML literal
+   * string (`command = 'uvx'`), a multi-line array, a trailing comment. Ceiling:
+   * panda ingests only entries spelled the way panda writes them. Upgrade path:
+   * a real TOML parser, worth it the first time a user reports a legitimate
+   * server panda declined to read.
+   */
+  listEntries(body, traits) {
+    const lines = splitLines(body)
+    const byId = new Map<string, { native: Record<string, string | readonly string[]>; foreignKeys: string[] }>()
+    const unreadable: UnreadableNativeMcpEntry[] = []
+    const order: string[] = []
+
+    lines.forEach((line, index) => {
+      const path = tomlHeaderPath(line.text)
+      if (path === undefined || path.length !== 2 || path[0] !== traits.mcpContainerKey) return
+      const id = path[1]!
+      // A second `[<container>.<id>]` is the document's own ambiguity, and
+      // `entryConflict` is what names it; reading either copy would be picking.
+      if (byId.has(id)) return
+      const entry = { native: {} as Record<string, string | readonly string[]>, foreignKeys: [] as string[] }
+      byId.set(id, entry)
+      order.push(id)
+      for (let scan = index + 1; scan < lines.length; scan += 1) {
+        const text = lines[scan]!.text
+        if (startsTable(text)) break
+        const trimmed = text.trim()
+        if (trimmed === '' || trimmed.startsWith('#')) continue
+        const key = tomlAssignmentPath(text)
+        const equals = text.indexOf('=')
+        if (key === undefined || key.length !== 1 || equals < 0) {
+          unreadable.push({
+            id,
+            detail: `'${traits.mcpContainerKey}.${id}' holds a line panda cannot read as one 'key = value' assignment: ${trimmed}`,
+          })
+          byId.delete(id)
+          order.splice(order.indexOf(id), 1)
+          break
+        }
+        const raw = text.slice(equals + 1).trim()
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(raw)
+        } catch {
+          unreadable.push({
+            id,
+            detail: `'${traits.mcpContainerKey}.${id}.${key[0]!}' is spelled '${raw}', which is not how panda renders a value; panda reports it rather than guessing what it means`,
+          })
+          byId.delete(id)
+          order.splice(order.indexOf(id), 1)
+          break
+        }
+        if (typeof parsed === 'string') entry.native[key[0]!] = parsed
+        else if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+          entry.native[key[0]!] = parsed as readonly string[]
+        } else entry.foreignKeys.push(key[0]!)
+      }
+    })
+
+    // A `[<container>.<id>.<sub>]` table ends the region scan above, so its keys
+    // would otherwise disappear in silence. It is one of the keys panda cannot
+    // represent, and D10 says those are reported.
+    for (const line of lines) {
+      const path = tomlHeaderPath(line.text)
+      if (path === undefined || path.length < 3 || path[0] !== traits.mcpContainerKey) continue
+      byId.get(path[1]!)?.foreignKeys.push(path.slice(2).join('.'))
+    }
+
+    return {
+      entries: order.map((id) => ({ id, native: byId.get(id)!.native, foreignKeys: byId.get(id)!.foreignKeys })),
+      unreadable,
+    }
+  },
+
   canonical(ownedText) {
     return ownedText
       .split('\n')
@@ -693,6 +921,126 @@ const TOML_STRATEGY: FormatStrategy = {
 const FORMAT_STRATEGIES: Readonly<Record<FileFormat, FormatStrategy>> = {
   jsonc: JSONC_STRATEGY,
   toml: TOML_STRATEGY,
+}
+
+// --- native -> registry entries (M11.A) --------------------------------------
+//
+// The read direction, and it goes through the SAME strategy the writer does —
+// `validate`, `containerConflict`, `entryConflict` — so a document `parseTree`
+// recovers from is refused with its `line:column` by machinery that already
+// exists. A second, lenient parse for ingestion would re-open the exact defect
+// M7.E closed: panda spliced its own block inside a user's server definition
+// because a recovering parser had guessed a tree out of a broken document.
+
+/** One vendor MCP entry, read back into the vocabulary the registry stores. */
+export interface NativeMcpEntry {
+  readonly id: string
+  readonly command: string
+  readonly args: readonly string[]
+  /** Vendor keys the registry envelope cannot carry; reported, never lost (D10). */
+  readonly dropped: readonly string[]
+}
+
+/** An id that is present and out of which panda can read no entry, and why. */
+export interface UnreadableNativeMcpEntry {
+  readonly id: string
+  readonly detail: string
+}
+
+export interface NativeMcpRead {
+  /** The document these were read from — the same path every detail names. */
+  readonly filePath: string
+  readonly entries: readonly NativeMcpEntry[]
+  readonly unreadable: readonly UnreadableNativeMcpEntry[]
+  /**
+   * The file is THERE and panda could not read it, in the OS's own errno.
+   *
+   * Distinct from `undefined` (absent, AD-5) and from a throw (malformed, D8):
+   * an `EACCES` on one vendor's config is neither "this executor is not
+   * installed" nor "this document is broken", and collapsing it into either
+   * makes one unreadable file either invisible or fatal to the whole run —
+   * including the skills half, which has nothing to do with it.
+   */
+  readonly unreadableFile?: string
+}
+
+/**
+ * Every MCP server one vendor's own config file declares, or `undefined` when
+ * there is no such file.
+ *
+ * ABSENCE IS NOT FAILURE (AD-5): an executor is allowed not to be installed, so
+ * a missing `~/.codex/config.toml` contributes nothing and is not an error.
+ * Everything else is coded and names the path — a malformed document, a
+ * container holding something panda cannot address, a file panda may not read.
+ */
+export async function readNativeMcpEntries(
+  traits: ProjectionTargetTraits,
+  options: TraitTargetOptions = {},
+): Promise<NativeMcpRead | undefined> {
+  const filePath = options.filePath ?? traits.defaultPath
+  let nativeText: string
+  try {
+    nativeText = await readFile(filePath, 'utf8')
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR') return undefined
+    // Reported, not thrown. D2/AD-5 let an executor be unusable, and a file
+    // panda may not open is closer to absent than to malformed — but it is not
+    // absent either, and silence would tell a user their servers were considered
+    // when they never were.
+    return { filePath, entries: [], unreadable: [], unreadableFile: code ?? String(error) }
+  }
+  const strategy = FORMAT_STRATEGIES[traits.fileFormat]
+  const body = nativeText.startsWith(BYTE_ORDER_MARK) ? nativeText.slice(1) : nativeText
+  // The merge SEEDS a whitespace-only JSON document to `{}` so entries can be
+  // added to it. There is nothing in one to read, and validating it would call
+  // an empty file malformed — which it is not.
+  if (traits.fileFormat === 'jsonc' && body.trim() === '') {
+    return { filePath, entries: [], unreadable: [] }
+  }
+  strategy.validate(body, filePath, traits)
+  const conflict = strategy.containerConflict(body, traits)
+  if (conflict !== undefined) throw nativeUnclaimable(filePath, conflict)
+
+  const rendered = renderedKeys(traits)
+  const listing = strategy.listEntries(body, traits)
+  const entries: NativeMcpEntry[] = []
+  const unreadable: UnreadableNativeMcpEntry[] = [...listing.unreadable]
+  for (const candidate of listing.entries) {
+    const ambiguous = strategy.entryConflict(body, traits, candidate.id)
+    if (ambiguous !== undefined) {
+      unreadable.push({ id: candidate.id, detail: ambiguous })
+      continue
+    }
+    // A key the renderer DOES emit, holding a value no `NativeEntryShape` can
+    // carry (`args: ['ok', 7]`), is a value panda cannot READ — not a key panda
+    // cannot hold. Reporting it as dropped would silently lose the arguments of
+    // a server panda then went on to project, and would blame the wrong thing.
+    const unreadableValues = candidate.foreignKeys.filter((key) => rendered.includes(key))
+    if (unreadableValues.length > 0) {
+      unreadable.push({
+        id: candidate.id,
+        detail: `'${unreadableValues.join("', '")}' holds a value panda cannot read as a string or a list of strings, and panda will not project a server it read only half of`,
+      })
+      continue
+    }
+    const read = traits.readMcpEntry(candidate.native)
+    if (!read.ok) {
+      unreadable.push({ id: candidate.id, detail: read.detail })
+      continue
+    }
+    entries.push({
+      id: candidate.id,
+      command: read.command,
+      args: read.args,
+      // Everything the renderer does not emit, whatever its value type: a user
+      // reading this wants what did not travel, not which layer noticed.
+      dropped: [...new Set([...droppedNativeKeys(candidate.native, rendered), ...candidate.foreignKeys])].sort(
+        (a, b) => (a < b ? -1 : a > b ? 1 : 0),
+      ),
+    })
+  }
+  return { filePath, entries, unreadable }
 }
 
 // --- correction-01 C6: panda's own prior output ------------------------------
@@ -1089,12 +1437,61 @@ function mergeNative(
     const existing = strategy.locate(body, traits, entry.id)
     if (record === undefined) {
       if (existing !== undefined) {
+        // M11.A D4 case (ii): the CONFIG half of the SOURCE-IS-THE-DESTINATION
+        // verdict `materialise.ts` already reaches for a tree.
+        //
+        // Deciding `foreign-collision` from EXISTENCE alone made panda report a
+        // conflict against a server that already does exactly what the registry
+        // asks, and M4.C's "every state has a way out" then offered two bad
+        // exits: adopt bytes panda did not write, or delete the user's entry.
+        //
+        // THE QUESTION HERE IS ABOUT MEANING, NOT BYTES, and that is why this
+        // does NOT reuse `stillPandas`. `stillPandas` asks "are these the bytes
+        // panda WROTE?", where a hash is the right instrument. This asks "does
+        // this FOREIGN entry already deliver what the registry says?", and a
+        // hash answers that only when the user happened to spell panda's exact
+        // key set — measured by driving the binary: `{"command":"npx"}`, a
+        // missing `type`, and an entry carrying `env` each reported a collision
+        // while running precisely the right server. So the comparison is the
+        // trait's own INVERSE: read the native entry back and compare what runs.
+        // Keys panda cannot represent are ignored rather than counted against
+        // it, which is the same answer the reader gives when it ingests such an
+        // entry and reports the key dropped — the two halves of the story now
+        // agree. Being value-based it is also format-independent by
+        // construction, so key order, spacing and comments stop mattering
+        // without a second canonicaliser to keep in step.
+        //
+        // ponytail: `listEntries` walks the whole container to answer about one
+        // id, so a merge is O(entries^2) in the container size. Vendor configs
+        // hold a handful of servers; upgrade path is a `readEntry(body, id)` on
+        // the strategy if a container ever grows big enough to measure.
+        const native = strategy.listEntries(body, traits).entries.find((item) => item.id === entry.id)
+        const read = native === undefined ? undefined : traits.readMcpEntry(native.native)
+        if (
+          read?.ok === true &&
+          read.command === entry.command &&
+          read.args.length === entry.args.length &&
+          read.args.every((argument, index) => argument === entry.args[index])
+        ) {
+          // ALREADY SATISFIED: nothing written, nothing claimed, no drift.
+          //
+          // NOT ADOPTED, and that is the load-bearing half — the reason
+          // `materialise.ts` gives for its twin holds verbatim here: panda did
+          // not write these bytes, so claiming them would hand the release
+          // remediation an authority to delete a server the user owns. An
+          // unclaimed entry is also never in the removal path above, which
+          // needs a ledger record to reach.
+          //
+          // Degrades correctly in both directions: change what the entry RUNS
+          // and it is a foreign collision again, which is true.
+          continue
+        }
         drift.push(
           drifted(
             'foreign-collision',
             traits,
             entry.id,
-            `'${entry.id}' already exists in '${filePath}' and panda's ledger does not claim it; panda will not resolve the collision`,
+            `'${entry.id}' already exists in '${filePath}' and does not run what the registry says it should, and panda's ledger does not claim it; panda will not resolve the collision`,
           ),
         )
         continue

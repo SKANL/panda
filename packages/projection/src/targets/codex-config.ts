@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ProjectionConfigTarget } from '@panda/contracts'
-import { createProjectionTargetFromTraits } from '../formats.ts'
+import { createProjectionTargetFromTraits, readNativeCommand } from '../formats.ts'
 import type { ProjectionTargetTraits, TraitTargetOptions } from '../formats.ts'
 
 // Codex config.toml target.
@@ -21,6 +21,11 @@ export const CODEX_CONFIG_TRAITS: ProjectionTargetTraits = {
   defaultPath: join(homedir(), '.codex', 'config.toml'),
   mcpContainerKey: 'mcp_servers',
   renderMcpEntry: (entry) => ({ command: entry.command, args: entry.args }),
+  // The inverse, beside the renderer it inverts. Codex's table carries no
+  // discriminator, so the reading is the shared one; anything else a user put in
+  // the table (`env`, `startup_timeout_sec`) is reported as dropped rather than
+  // silently discarded, against the key set the renderer above emits.
+  readMcpEntry: (native) => readNativeCommand(native),
 }
 
 export type CodexConfigTargetOptions = TraitTargetOptions

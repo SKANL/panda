@@ -107,10 +107,13 @@ export {
   type ConfigWriteResult,
   type WritableConfigKey,
 } from '@panda/projection'
-export { ingestMachineSkills } from './ingest.ts'
+export { ingestMachine } from './ingest.ts'
 export type {
-  IngestMachineSkillsOptions,
-  MachineSkillsIngest,
+  IngestMachineOptions,
+  MachineIngest,
+  MachineMcpIngest,
+  MachineMcpSkip,
   MachineSkillsSkip,
+  OwnedMcpEntry,
 } from './ingest.ts'
 export type { IngestOutcome, IngestWarning } from '@panda/contracts'

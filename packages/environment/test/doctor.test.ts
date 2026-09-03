@@ -762,10 +762,21 @@ describe('every finding names what it is about', () => {
     const bare = await fixture()
     await writeFile(join(bare.homeDir, '.panda-not-a-dir'), 'x', 'utf8')
     const ledgerFixture = await fixture()
-    await withClaude(ledgerFixture.homeDir)
+    const ledgerClaudeJson = await withClaude(ledgerFixture.homeDir)
     await register(ledgerFixture.homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
     await initMachine({ homeDir: ledgerFixture.homeDir })
     await writeFile(join(ledgerFixture.homeDir, '.panda', 'projection-ledger.json'), '{ broken', 'utf8')
+    // A broken ledger ALONE no longer produces a `foreign-collision` (M11.A D4
+    // case (ii)): with the bytes at the location still exactly the bytes panda
+    // would write, the honest verdict is that the entry is already satisfied.
+    // Content panda would NOT have written is what makes it a collision, so the
+    // fixture produces that instead of relying on a verdict that was wrong.
+    const ledgerProjected = JSON.parse(await readFile(ledgerClaudeJson, 'utf8')) as {
+      mcpServers: Record<string, { command: string }>
+    }
+    ledgerProjected.mcpServers['ctx']!.command = 'somebody-elses-server'
+    await writeFile(ledgerClaudeJson, `${JSON.stringify(ledgerProjected, null, 2)}
+`, 'utf8')
 
     const findings = [
       ...(await diagnose({ homeDir })).findings,

@@ -35,12 +35,16 @@ export type {
   ProjectionLedgerScope,
   ProjectionLedgerState,
 } from './ledger.ts'
-export { createProjectionTargetFromTraits, scanLegacyPandaBlock } from './formats.ts'
+export { createProjectionTargetFromTraits, readNativeMcpEntries, scanLegacyPandaBlock } from './formats.ts'
+// `readNativeCommand`, `renderedKeys` and the entry-level result types are
+// deliberately NOT here: the targets that use them live in this package, and an
+// export with no consumer outside it is surface the FR-29 proof pays for.
 export type {
   FileFormat,
   LegacyPandaBlock,
   LegacyPandaScan,
   NativeEntryShape,
+  NativeMcpRead,
   ProjectionTargetTraits,
   TraitTargetOptions,
 } from './formats.ts'

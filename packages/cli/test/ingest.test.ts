@@ -42,6 +42,16 @@ async function fixture(): Promise<string> {
   return homeDir
 }
 
+/** A server in the file Claude Code was measured to read, in its own shape. */
+async function plantServer(homeDir: string, id: string, args: readonly string[] = ['-y']): Promise<void> {
+  const filePath = join(homeDir, '.claude.json')
+  const current = JSON.parse(await readFile(filePath, 'utf8').catch(() => '{}')) as {
+    mcpServers?: Record<string, unknown>
+  }
+  const servers = { ...current.mcpServers, [id]: { type: 'stdio', command: 'uvx', args } }
+  await writeFile(filePath, `${JSON.stringify({ ...current, mcpServers: servers }, null, 2)}\n`, 'utf8')
+}
+
 /** A skill in the root Claude Code was measured to read, under an injected home. */
 async function plantSkill(homeDir: string, id: string, body = '# planted'): Promise<string> {
   const directory = join(homeDir, '.claude', 'skills', id)
@@ -171,10 +181,142 @@ describe('panda ingest', () => {
     expect(positional.err).toContain("unexpected argument 'skills'")
   })
 
+  it('AC1: registers the MCP servers a vendor config already declares, and list shows them', async () => {
+    const homeDir = await fixture()
+    await plantServer(homeDir, 'fetch', ['mcp-server-fetch'])
+    await plantSkill(homeDir, 'a-skill')
+
+    const run = await panda(['ingest'], homeDir)
+
+    expect(run.code).toBe(0)
+    const payload = JSON.parse(run.out) as { registered: string[]; configPaths: string[] }
+    // BOTH halves in one run, through one call.
+    expect(payload.registered.sort()).toEqual(['mcp-server:fetch', 'skill:a-skill'])
+    expect(payload.configPaths).toContain(join(homeDir, '.claude.json'))
+    const listed = await panda(['list'], homeDir)
+    const entries = (JSON.parse(listed.out) as { entries: { type: string; id: string; command?: string }[] }).entries
+    expect(entries.find((entry) => entry.type === 'mcp-server')).toMatchObject({ id: 'fetch', command: 'uvx' })
+  })
+
+  it('E14: --dry-run previews the mcp half too and writes zero bytes', async () => {
+    const homeDir = await fixture()
+    await plantServer(homeDir, 'previewed')
+
+    const before = await bytesAt(registryPath(homeDir))
+    const preview = await panda(['ingest', '--dry-run'], homeDir)
+    const afterPreview = await bytesAt(registryPath(homeDir))
+    const real = await panda(['ingest'], homeDir)
+
+    expect(afterPreview).toBe(before)
+    const previewed = JSON.parse(preview.out) as Record<string, unknown>
+    const written = JSON.parse(real.out) as Record<string, unknown>
+    expect(previewed['registered']).toEqual(['mcp-server:previewed'])
+    // Every fact but the flag itself: the preview is the same computation.
+    expect({ ...previewed, dryRun: false }).toEqual(written)
+  })
+
+  it('E15: a second run over an unchanged machine leaves the registry BYTE-IDENTICAL', async () => {
+    const homeDir = await fixture()
+    await plantServer(homeDir, 'stable')
+
+    await panda(['ingest'], homeDir)
+    const afterFirst = await bytesAt(registryPath(homeDir))
+    const second = await panda(['ingest'], homeDir)
+    const afterSecond = await bytesAt(registryPath(homeDir))
+
+    expect(second.code).toBe(0)
+    // CONTROL: the first run really wrote the server, so the equality below is
+    // a stable ingest rather than two runs that both wrote nothing.
+    expect(afterFirst).toContain('stable')
+    expect(afterSecond).toBe(afterFirst)
+  })
+
+  it('E12: names the keys that stayed in the vendor file, on stderr and in the report', async () => {
+    const homeDir = await fixture()
+    const rich = { type: 'stdio', command: 'uvx', args: [], env: { T: '1' } }
+    await writeFile(join(homeDir, '.claude.json'), `${JSON.stringify({ mcpServers: { rich } }, null, 2)}\n`, 'utf8')
+
+    const run = await panda(['ingest'], homeDir)
+
+    expect(run.code).toBe(0)
+    expect(JSON.parse(run.out)).toMatchObject({ mcpServers: { dropped: [{ entryId: 'rich', keys: ['env'] }] } })
+    expect(run.err).toContain("'env' stayed in")
+  })
+
+  it('E13: a server with no command to run is named and skipped, and the rest proceeds', async () => {
+    const homeDir = await fixture()
+    await mkdir(join(homeDir, '.config', 'opencode'), { recursive: true })
+    const mcp = { empty: { type: 'local', command: [] }, fine: { type: 'local', command: ['uvx'] } }
+    await writeFile(
+      join(homeDir, '.config', 'opencode', 'opencode.json'),
+      `${JSON.stringify({ mcp }, null, 2)}\n`,
+      'utf8',
+    )
+
+    const run = await panda(['ingest'], homeDir)
+
+    expect(run.code).toBe(0)
+    const payload = JSON.parse(run.out) as { registered: string[]; mcpServers: { skipped: { kind: string }[] } }
+    // CONTROL: the sibling landed, so the skip is that entry rather than a file
+    // that was never read.
+    expect(payload.registered).toEqual(['mcp-server:fine'])
+    expect(payload.mcpServers.skipped.map((item) => item.kind)).toEqual(['unreadable-entry'])
+    expect(run.err).toContain('empty array')
+  })
+
+  it('E7: refuses coded and exits 2 on a malformed vendor document, writing nothing', async () => {
+    const homeDir = await fixture()
+    await plantSkill(homeDir, 'would-have-been-ingested')
+    await writeFile(join(homeDir, '.claude.json'), '{"mcpServers": {"a": {"command": "x"},,}}', 'utf8')
+
+    const run = await panda(['ingest'], homeDir)
+
+    expect(run.code).toBe(2)
+    expect(run.err).toMatch(/line \d+ column \d+/)
+    // Phase 1 validates every origin before phase 2 writes, so the skill that
+    // WOULD have landed did not.
+    expect(await bytesAt(registryPath(homeDir))).toBe('<absent>')
+  })
+
+  it('AC6: a hand-written server plus an add of the same id leaves doctor clean', async () => {
+    // The D4 widening, proven where it bites: NO ingest anywhere in this run.
+    const homeDir = await fixture()
+    await plantServer(homeDir, 'ctx', ['-y', 'x'])
+    const fixtureBytes = await bytesAt(join(homeDir, '.claude.json'))
+
+    await panda(['add', 'mcp-server', 'ctx', '--command', 'uvx', '--arg', '-y', '--arg', 'x'], homeDir)
+    const init = await panda(['init'], homeDir)
+    const doctor = await panda(['doctor'], homeDir)
+
+    expect(doctor.code).toBe(0)
+    expect(init.err + doctor.err).not.toContain('foreign-collision')
+    expect(await bytesAt(join(homeDir, '.claude.json'))).toBe(fixtureBytes)
+    // NOT ADOPTED: panda wrote none of those bytes, so it claims none of them.
+    expect(await bytesAt(join(homeDir, '.panda', 'projection-ledger.json'))).toContain('"records": []')
+  })
+
+  it('AC6 CONTROL: one argument different and it is STILL a foreign collision', async () => {
+    const homeDir = await fixture()
+    await plantServer(homeDir, 'ctx', ['-y', 'x'])
+    const fixtureBytes = await bytesAt(join(homeDir, '.claude.json'))
+
+    await panda(['add', 'mcp-server', 'ctx', '--command', 'uvx', '--arg', '-y', '--arg', 'somebody-else'], homeDir)
+    await panda(['init'], homeDir)
+    const doctor = await panda(['doctor'], homeDir)
+
+    // A comparison that answers "satisfied" for everything is not a comparison.
+    expect(doctor.code).toBe(1)
+    expect(doctor.err).toContain('foreign-collision')
+    expect(await bytesAt(join(homeDir, '.claude.json'))).toBe(fixtureBytes)
+    expect(await bytesAt(join(homeDir, '.panda', 'projection-ledger.json'))).toContain('"records": []')
+  })
+
   it('is advertised in the usage block, dry run included', async () => {
     const homeDir = await fixture()
     const help = await panda(['--help'], homeDir)
     expect(help.out).toContain('panda ingest')
     expect(help.out).toContain('--dry-run')
+    // Both halves are advertised, or the command goes on describing one.
+    expect(help.out).toContain('MCP servers')
   })
 })

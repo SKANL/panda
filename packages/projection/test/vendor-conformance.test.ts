@@ -1,12 +1,39 @@
 import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { isRecord } from '@panda/contracts'
 import type { ProjectionMcpEntry, RegistryEntriesByKind } from '@panda/contracts'
 import * as projection from '../src/index.ts'
 import type { ProjectionTargetTraits } from '../src/formats.ts'
-import { createProjectionTargetFromTraits } from '../src/formats.ts'
+import { createProjectionTargetFromTraits, readNativeMcpEntries } from '../src/formats.ts'
+
+const roundTripRoots: string[] = []
+afterAll(() => Promise.all(roundTripRoots.map((dir) => rm(dir, { recursive: true, force: true }))))
+
+/**
+ * Projects ONE entry through a trait record and reads the resulting document
+ * back through the SAME trait record.
+ *
+ * A real round trip, through the file, because the obvious version is a
+ * tautology: rendering both sides of an equality from values already asserted
+ * equal, against a pure function, cannot fail. This one goes render -> merge ->
+ * bytes on disk -> strategy -> `readMcpEntry`, so an inverse that disagrees with
+ * its renderer — a missed key, a `type` the reader refuses, an argv joined one
+ * way and split another — reddens here.
+ */
+async function roundTrip(traits: ProjectionTargetTraits): Promise<projection.NativeMcpRead> {
+  const root = await mkdtemp(join(tmpdir(), 'panda-round-trip-'))
+  roundTripRoots.push(root)
+  const filePath = join(root, traits.fileFormat === 'toml' ? 'config.toml' : 'config.json')
+  const target = createProjectionTargetFromTraits(traits, { filePath })
+  const outcome = await target.merge({ entries: SAMPLE_REGISTRY, records: [], nativeText: '' })
+  await writeFile(filePath, outcome.text, 'utf8')
+  const read = await readNativeMcpEntries(traits, { filePath })
+  expect(read, 'the projected document exists, so the reader must not report absence').toBeDefined()
+  return read!
+}
 
 // VENDOR SCHEMA CONFORMANCE — the assertion this whole story exists for.
 //
@@ -218,6 +245,20 @@ describe.each(SHIPPED_TRAITS)('vendor conformance — $targetId', (traits) => {
     ).toEqual([])
   })
 
+  it('reads back EXACTLY what it wrote, dropping nothing', async () => {
+    // D1's guarantee, as a gate rather than a sentence: the inverse is declared
+    // beside the renderer so the two cannot drift, and this is what notices if
+    // they do. `dropped: []` is half the clause — a renderer key the reader does
+    // not consume would be reported to a user as a key panda cannot hold, about
+    // a key panda itself just wrote.
+    const read = await roundTrip(traits)
+
+    expect(read.unreadable).toEqual([])
+    expect(read.entries).toEqual([
+      { id: SAMPLE_ENTRY.id, command: SAMPLE_ENTRY.command, args: SAMPLE_ENTRY.args, dropped: [] },
+    ])
+  })
+
   it('writes them at the container key the vendor reads', () => {
     expect(traits.mcpContainerKey).toBe(schema.containerKey)
   })
@@ -275,6 +316,38 @@ describe('the conformance assertion is mechanical', () => {
     const outcome = await target.merge({ entries: SAMPLE_REGISTRY, records: [], nativeText: '' })
     const written = writtenDocumentKeys(rogue, outcome.text, SAMPLE_ENTRY.id)
     expect(written.filter((key) => !schema.declaredKeys.includes(key))).toEqual(['panda_version'])
+  })
+
+  it('FAILS a renderer whose key the reader does not consume, by REPORTING it dropped', async () => {
+    // Negative control for the round trip above. Without it, `dropped: []` could
+    // hold because the drop list is never populated — which is exactly the
+    // mutation that survived: `droppedNativeKeys` returning `[]` unconditionally
+    // killed nothing, because no fixture carried an unconsumed key whose value
+    // panda can actually hold.
+    const rogue: ProjectionTargetTraits = {
+      ...projection.CLAUDE_MCP_TRAITS,
+      renderMcpEntry: (entry) => ({
+        ...projection.CLAUDE_MCP_TRAITS.renderMcpEntry(entry),
+        // A STRING value on purpose: a nested object or a number never reaches
+        // the drop list at all, it is refused one layer earlier as a shape no
+        // `NativeEntryShape` can carry.
+        url: 'https://example.invalid',
+      }),
+    }
+
+    const read = await roundTrip(rogue)
+
+    // Consumed by the rogue RENDERER, so not dropped; and read back correctly,
+    // so the entry still lands. The shipped records above report `[]` because
+    // their readers consume every key they write, not because nothing looks.
+    expect(read.entries[0]?.dropped).toEqual([])
+    // And with the reader's own trait record, which does NOT emit `url`, the
+    // very same document reports it — the assertion that fails when the drop
+    // list stops being populated.
+    const readByShipped = await readNativeMcpEntries(projection.CLAUDE_MCP_TRAITS, {
+      filePath: join(roundTripRoots[roundTripRoots.length - 1]!, 'config.json'),
+    })
+    expect(readByShipped?.entries[0]?.dropped).toEqual(['url'])
   })
 
   it('FAILS a target whose default path drifts to a plausible wrong directory', () => {
