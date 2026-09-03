@@ -584,6 +584,13 @@ describe('createSessionKernel is the only composition surface', () => {
     // thing `SessionOptions.log` was ever for, from the one package that cannot
     // import the kernel: `packages/cli` depends on `@panda/environment` and
     // `@panda/session` and nothing else.
+    //
+    // WIDENED AGAIN BY M10.A, by one: `selectWorkspaceProvider`. Same rule,
+    // same shape as `resolveExecutor` beside it — it reads a composed
+    // `LayeredConfig` and hands back a plain record of id, layer and catalogue.
+    // Its sibling `createSelectedWorkspacePlugin` is the one that turns that id
+    // into a plugin, and that one is deliberately NOT here: it is precisely the
+    // kind of factory the five withdrawn exports were withdrawn for.
     expect(values.sort()).toEqual([
       'SESSION_ACTION_COST',
       'SESSION_ACTION_ID',
@@ -594,6 +601,7 @@ describe('createSessionKernel is the only composition surface', () => {
       'resolveExecutor',
       'resolveMethod',
       'runSession',
+      'selectWorkspaceProvider',
       'swapMethod',
     ])
   })

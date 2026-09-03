@@ -7,6 +7,7 @@ import type { ExecutorAdapter, ResultEnvelope, WorkspaceHandle, WorkspaceProvide
 import {
   createKernel,
   createMemoryLogSink,
+  deepMerge,
   type ActionPolicy,
   type BusEvent,
   type LogEntry,
@@ -14,7 +15,6 @@ import {
   type PandaKernel,
 } from '@panda/kernel'
 import {
-  createWorkspacePlugin,
   WORKSPACE_CONFIG_KEY,
   WORKSPACE_CONFIG_WARNING_EVENT,
   WORKSPACE_SERVICE,
@@ -26,6 +26,12 @@ import {
   type ExecutorConfigLayers,
   type ExecutorSelection,
 } from './executors.ts'
+import {
+  DEFAULT_WORKSPACE_PROVIDER_ID,
+  WORKSPACE_PROVIDER_CONFIG_KEY,
+  createSelectedWorkspacePlugin,
+  selectWorkspaceProvider,
+} from './workspaces.ts'
 import { resolveMethod, selectMethod, swapMethod } from './methods.ts'
 
 /**
@@ -354,13 +360,34 @@ export function createSessionKernel(options: SessionKernelOptions = {}): PandaKe
     // option — `invocation` when the caller named a cwd, `defaults` when it did
     // not — so a `workspace.rootDir` in the project document decides in exactly
     // the case a layered configuration says it should.
-    const workspaceRoot = { [WORKSPACE_CONFIG_KEY]: { rootDir: join(cwd ?? process.cwd(), '.panda', 'workspaces') } }
-    const invocation: Record<string, unknown> = { ...(configLayers?.invocation as object | undefined) }
+    const projectRoot = cwd ?? process.cwd()
+    const workspaceRoot = { [WORKSPACE_CONFIG_KEY]: { rootDir: join(projectRoot, '.panda', 'workspaces') } }
+    // Panda's built-in workspace provider is a LAYER too, and the same layer the
+    // executor's default lives in — which is what makes "nothing configured" a
+    // reportable provenance (`defaults`) rather than an invisible branch, and
+    // what lets `selectWorkspaceProvider` take value and layer from one entry.
+    // Composed OVER a caller's `defaults` exactly as `seedExecutorConfig` does
+    // with the executor default: a caller that wants another provider says so in
+    // a narrower layer.
+    const workspaceProvider = {
+      [WORKSPACE_CONFIG_KEY]: { [WORKSPACE_PROVIDER_CONFIG_KEY]: DEFAULT_WORKSPACE_PROVIDER_ID },
+    }
+    let invocation: Record<string, unknown> = { ...(configLayers?.invocation as object | undefined) }
     if (executorId !== undefined) invocation[EXECUTOR_CONFIG_KEY] = executorId.trim()
-    if (cwd !== undefined) Object.assign(invocation, workspaceRoot)
+    // `deepMerge`, not `Object.assign`. The assign is SHALLOW, so it replaced the
+    // caller's whole `workspace` subtree with panda's `{ rootDir }` — invisible
+    // while the subtree had one key, and a silently dropped `workspace.provider`
+    // the moment it had two: a host naming both a `cwd` and a provider in the
+    // narrowest layer would have run in a workspace it did not ask for. `rootDir`
+    // still wins, because a named `cwd` is this invocation's answer.
+    if (cwd !== undefined) invocation = deepMerge(invocation, workspaceRoot) as Record<string, unknown>
+
     seedExecutorConfig(kernel.config, {
       ...configLayers,
-      defaults: cwd === undefined ? workspaceRoot : configLayers?.defaults,
+      defaults: deepMerge(
+        (cwd === undefined ? workspaceRoot : configLayers?.defaults) ?? {},
+        workspaceProvider,
+      ),
       ...(Object.keys(invocation).length === 0 ? {} : { invocation }),
     })
 
@@ -378,7 +405,15 @@ export function createSessionKernel(options: SessionKernelOptions = {}): PandaKe
     }
 
     const executor = createExecutorPlugin({ createAdapter, adapterOptions, cost: SESSION_ACTION_COST })
-    const workspace = createWorkspacePlugin()
+    // The MOUNT. Selected from the same composed document the executor was
+    // selected from, one entry, value and layer together — so the plugin that
+    // gets registered and the provider the document names cannot diverge. The
+    // package is otherwise unreachable from the product: this line is the whole
+    // of Story 4.2's reachability claim, and `packages/session/test/guard.test.ts`
+    // is red until it exists.
+    const workspace = createSelectedWorkspacePlugin(selectWorkspaceProvider(kernel.config).providerId, {
+      repoPath: projectRoot,
+    })
     kernel.register(executor.manifest, executor.factory)
     kernel.register(workspace.manifest, workspace.factory)
 

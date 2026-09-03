@@ -24,6 +24,7 @@
     "@panda/adapter-cli": "workspace:*",
     "@panda/contracts": "workspace:*",
     "@panda/kernel": "workspace:*",
+    "@panda/workspace-git-worktree": "workspace:*",
     "@panda/workspace-local": "workspace:*"
   },
   "devDependencies": {

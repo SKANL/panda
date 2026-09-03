@@ -100,6 +100,23 @@ export const WORKSPACE_CLAUSES: readonly Clause<WorkspaceProvider>[] = [
       ),
   },
   {
+    // AD-7 at the port's own edge: an id that is not a string has to leave
+    // through the SAME coded door as one that names nothing. The cast is
+    // deliberate and is the point of the clause — this port is reachable from
+    // untyped JavaScript and from a parsed document, where `null` is a value
+    // rather than a type error, and a provider that lets it reach `path.join`
+    // throws an UNCODED `TypeError [ERR_INVALID_ARG_TYPE]` out of an API whose
+    // entire contract is coded refusals. A regex is not the guard: `/^[A-Za-z0-9]/`
+    // stringifies its argument, so `test(null)` answers `true` for "null".
+    name: 'acquire-non-string-id-rejected',
+    check: (provider) =>
+      expectRejection(
+        'acquire() of a non-string id',
+        PANDA_ERROR_CODES.contractWorkspaceUnknownId,
+        provider.acquire(null as unknown as string),
+      ),
+  },
+  {
     name: 'release-forged-handle-rejected',
     check: (provider) =>
       expectRejection(

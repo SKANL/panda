@@ -62,6 +62,7 @@ const NOT_A_COMMAND = new Map<string, string>([
   ['panda rewrites \'<value>\' holding exactly the <value> record(s) it can read; the records it cannot read are dropped and the entries behind them report as foreign collisions until they are adopted', 'what repair describes'],
   ['panda removes <value> from \'<value>\'; every other byte of the file is left exactly as it is', 'what discard describes'],
   ['panda could not resolve an \'<value>\' selection through its configuration layers', 'the session\'s selection failure'],
+  ['panda has no workspace provider named \'<value>\'; available providers: <value>', 'the workspace catalogue\'s error for an unknown provider id -- the twin of the executor entry at the top of this list'],
 ])
 
 /**

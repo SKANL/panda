@@ -99,6 +99,7 @@ development_status:
   m8a-the-environment-travels-without-the-secrets: done          # implements 5.1/FR-21/NFR-5/NFR-6; `panda export`, and an omitted entry leaves a record so FR-22 can list it
   m8b-the-environment-arrives-and-says-what-it-could-not-bring: done          # implements 5.2/FR-22/FR-25; and fixes the separator that made a Windows bundle unusable on POSIX
   m6a-parallel-work-is-infrastructure: done   # implements 4.1 + FR-18; the brief's "concurrent workspaces from day one" promise
+  m10a-a-session-can-run-in-a-worktree: done   # implements 4.2/FR-19/NFR-7; the second finished-but-unreached package this project shipped, now mounted. Found and fixed a shallow `Object.assign` that silently dropped a caller`s `workspace.provider` whenever a `cwd` was also named.
   m9a-the-registry-can-fill-itself: done   # `panda ingest [--dry-run]` + the first `SkillSource`; gives `ingestProviders` its first production caller. Found and fixed the seam defect it exposed: ingest reads the roots projection WRITES into, so an ingested skill was reported `foreign-collision` at its own source and `doctor` failed on a working environment. Source == destination is now `already satisfied` -- reported as nothing, and deliberately NOT adopted into the ledger.
   epic-2-retrospective: optional
 
@@ -109,7 +110,7 @@ development_status:
 
   epic-4: in-progress
   4-1-managed-git-worktrees-with-durable-ownership: superseded  # implemented as m6a onto the measured AD-2 split
-  4-2-concurrent-sessions-across-worktrees: backlog
+  4-2-concurrent-sessions-across-worktrees: done  # shipped as m10a. Mounts the finished-but-unreachable @panda/workspace-git-worktree: selection at `workspace.provider`, read from ONE dump entry with its layer, mirroring selectExecutor. Verified by driving the binary -- a real `git worktree list --porcelain` entry, with "no config" as its control. Its second AC clause (mixed CLI+SDK contention) was already shipped as PANDA_REGISTRY_CONTENTION; its "Registry writes remain consistent" clause is measured VACUOUS on the run path (RegistryStore: 0 files under packages/cli/src, control 8 under packages/*/src) and recorded in the ledger rather than faked. Mirror + `worktree` entry type deliberately OUT with three measured blockers.
   4-3-crash-safe-disposal: backlog
   epic-4-retrospective: optional
 

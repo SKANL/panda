@@ -33,7 +33,12 @@ export interface WorkspaceConfigWarning {
   readonly detail: string
 }
 
-const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set(['rootDir'])
+// `provider` is not read here — `selectWorkspaceProvider` in `@panda/session`
+// decides WHICH workspace plugin gets mounted, and by the time this factory runs
+// that decision is already made. It is listed anyway because the warning below
+// fires on anything unlisted, and panda warning the user about panda's own
+// vocabulary would be the plugin complaining about the key that chose it.
+const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set(['provider', 'rootDir'])
 
 /**
  * The declared schema for this plugin's subtree.

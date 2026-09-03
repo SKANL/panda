@@ -64,7 +64,15 @@ export class LocalWorkspaceProvider implements WorkspaceProvider {
 
   async acquire(id: string): Promise<WorkspaceHandle> {
     this.#assertActive()
-    if (!WORKSPACE_ID_PATTERN.test(id) || WINDOWS_RESERVED_IDS.test(id)) this.#failUnknownId(id)
+    // `typeof id !== 'string'` FIRST, and it is not redundant with the pattern:
+    // `RegExp.prototype.test` stringifies its argument, so `test(null)` matches
+    // "null" and answers true. Without this the value reached `join()` below and
+    // left as an uncoded `TypeError [ERR_INVALID_ARG_TYPE]` out of a port whose
+    // whole contract is coded refusals (AD-7). Pinned by the shared
+    // `acquire-non-string-id-rejected` clause, so both providers answer alike.
+    if (typeof id !== 'string' || !WORKSPACE_ID_PATTERN.test(id) || WINDOWS_RESERVED_IDS.test(id)) {
+      this.#failUnknownId(id)
+    }
     const rootPath = join(this.#rootDir, id)
     // lstat (not stat): symlinks under rootDir are classified unknown, never followed.
     let info: Awaited<ReturnType<typeof lstat>>
@@ -122,8 +130,14 @@ export class LocalWorkspaceProvider implements WorkspaceProvider {
     }
   }
 
-  #failUnknownId(id: string): never {
-    throw new PandaError(PANDA_ERROR_CODES.contractWorkspaceUnknownId, `unknown workspace id '${id}'`)
+  // `unknown`, matching GitWorktreeWorkspaceProvider: the guard above admits a
+  // non-string here on purpose, and a template literal over it would be a second
+  // implicit coercion where the first one was the defect.
+  #failUnknownId(id: unknown): never {
+    throw new PandaError(
+      PANDA_ERROR_CODES.contractWorkspaceUnknownId,
+      `unknown workspace id '${String(id)}'`,
+    )
   }
 
   #wrapIoFailure(operation: string, error: unknown): PandaError {

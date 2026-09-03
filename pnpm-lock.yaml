@@ -181,6 +181,9 @@ importers:
       '@panda/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@panda/workspace-git-worktree':
+        specifier: workspace:*
+        version: link:../workspace-git-worktree
       '@panda/workspace-local':
         specifier: workspace:*
         version: link:../workspace-local

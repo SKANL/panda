@@ -61,7 +61,7 @@ const PACKAGE_DIRS = [
 ] as const
 
 /**
- * The four packages `@panda/session` pulls in. Every one is declared as a DIRECT
+ * The five packages `@panda/session` pulls in. Every one is declared as a DIRECT
  * `file:` dependency of the consumer project, exactly as a third party handed a
  * set of tarballs would have to declare them: the packed manifest says
  * `"@panda/contracts": "0.0.0"`, a version no registry has, and npm satisfies
@@ -72,7 +72,13 @@ const PACKAGE_DIRS = [
  * the behaviour wanted; the failure this file exists to prevent is a SILENT
  * resolution through the workspace, and a tarball cannot reach one.
  */
-const SESSION_DEPENDENCIES = ['adapter-cli', 'contracts', 'kernel', 'workspace-local'] as const
+const SESSION_DEPENDENCIES = [
+  'adapter-cli',
+  'contracts',
+  'kernel',
+  'workspace-git-worktree',
+  'workspace-local',
+] as const
 
 /**
  * The one skip, and it announces itself. `process.stderr.write`, not
@@ -560,6 +566,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       '@panda/adapter-cli': '0.0.0',
       '@panda/contracts': '0.0.0',
       '@panda/kernel': '0.0.0',
+      '@panda/workspace-git-worktree': '0.0.0',
       '@panda/workspace-local': '0.0.0',
     })
   })

@@ -28,6 +28,18 @@ export {
 // first"): a host with a long-lived kernel. Unexported, the guarantee this story
 // exists to provide would be reachable only from this package's own tests.
 export { resolveMethod, swapMethod } from './methods.ts'
+// The workspace selection, beside the executor one and for the same FR-29
+// reason: a consumer that imports only this package can ask which provider a
+// composed configuration names, without `@panda/cli`.
+//
+// ONE value, and the trimming is the same call `resolveExecutor`'s block above
+// records: `WorkspaceProviderSelection.available` carries the closed catalogue,
+// so `availableWorkspaceProviderIds` and the id constants would be surface
+// nothing outside consumes. `createSelectedWorkspacePlugin` stays unexported for
+// the harder reason — it hands back a `PluginFactory`, and a factory a caller
+// can invoke with an `ActivationContext` of its own is exactly the bypass
+// surface the block below records five withdrawn exports for.
+export { selectWorkspaceProvider, type WorkspaceProviderSelection } from './workspaces.ts'
 // `SessionOptions.adapterOptions` is on the surface, so its vocabulary has to be
 // too — the same rule the block below states: under pnpm's strict layout a
 // consumer that installed only `@panda/session` cannot resolve

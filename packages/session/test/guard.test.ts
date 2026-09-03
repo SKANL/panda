@@ -52,6 +52,7 @@ describe('@panda/session dependency direction (AD-2)', () => {
       '@panda/adapter-cli',
       '@panda/contracts',
       '@panda/kernel',
+      '@panda/workspace-git-worktree',
       '@panda/workspace-local',
     ])
   })
