@@ -34,6 +34,14 @@ and are not pretending otherwise.
   declares `@panda/projection` and its guard test still refuses the import,
   permitting only `access`, `constants`, `mkdir`, `stat` from the filesystem and
   forbidding the literal string `atomicWriteText` in its source.
+- **A plugin's `manifest.id` IS the key its configuration lives under.** The
+  kernel validates `composed[manifest.id]` against the manifest's own
+  `configSchema` and hands the result to the factory as `context.settings`, so a
+  plugin registered under anything else is handed `undefined` forever and its
+  schema is never applied to one real value. *Gate:
+  `packages/session/test/plugin-config-key.test.ts`, which drives a real kernel
+  and reads what the kernel actually validated — a gate comparing two constants
+  would pass for a plugin whose factory read a third key.*
 - **Source bytes** — no literal NUL, no stray control characters, however they
   got there. *Gate: `node scripts/check-source-bytes.mjs`, first step of
   `pnpm check`.*

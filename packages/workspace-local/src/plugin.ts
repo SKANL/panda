@@ -54,13 +54,18 @@ const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set(['provider', 'rootDir'])
  * typo is still visible without being fatal.
  *
  * NOTE, because the field's name promises more than the kernel delivers: the
- * kernel only PROBES `manifest.configSchema` for shape (Standard Schema v1,
- * synchronous, non-throwing) and never applies it to the plugin's subtree. The
- * enforcement point is the factory below, which calls this schema itself — the
- * arrangement `@panda/registry`'s plugin has had since Story 1.2. Replacing this
- * constant with a no-op that accepts anything leaves every suite green; that
- * measurement, and a proposal to make the kernel apply it, are in
- * `deferred-work.md`.
+ * kernel PROBES `manifest.configSchema` for shape (Standard Schema v1,
+ * synchronous, non-throwing) at registration AND — since M7.C — applies it to
+ * `composed[manifest.id]` before this factory runs. That sentence used to end at
+ * "never applies it to the plugin's subtree", which M7.C made false and which
+ * survived two milestones as prose nothing could contradict; the gate that now
+ * makes it contradictable is `packages/session/test/plugin-config-key.test.ts`.
+ *
+ * The factory below STILL calls this schema, and that is not the old
+ * hand-rolling: it merges `fallbackRootDir` into the namespace, so only the
+ * MERGED value exists to be checked and only this plugin holds it — the same
+ * reason `@panda/registry` states for its own second call. The kernel checks the
+ * document; this checks the result.
  */
 const WORKSPACE_CONFIG_SCHEMA = defineStandardSchema((value): StandardSchemaResult<unknown> => {
   if (value === undefined) return { value: {} }

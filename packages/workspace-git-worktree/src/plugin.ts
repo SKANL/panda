@@ -22,11 +22,33 @@ import { GitWorktreeWorkspaceProvider } from './git-worktree-provider.ts'
 /** The service name this plugin provides. */
 export const WORKSPACE_SERVICE = 'workspace'
 
-/** The plugin id this plugin registers under. */
-export const GIT_WORKTREE_PLUGIN_ID = 'workspace-git-worktree'
-
-/** The subtree of the kernel's composed configuration this plugin reads. */
+/**
+ * The subtree of the kernel's composed configuration this plugin reads.
+ *
+ * Declared BEFORE the plugin id because the id is derived from it: since M7.C
+ * the kernel validates `composed[manifest.id]` against the manifest's own
+ * `configSchema` (`@panda/kernel`'s `lifecycle.ts`), so a plugin that registers
+ * under anything other than the key it reads is handed `undefined` and its
+ * schema is never applied to a single real value.
+ */
 export const WORKSPACE_CONFIG_KEY = 'workspace'
+
+/**
+ * The plugin id this plugin registers under: its config key, and nothing else.
+ *
+ * It used to be `workspace-git-worktree`, which read as the honest name for the
+ * implementation and made the kernel's M7.C validation a silent no-op for this
+ * plugin alone — measured against `@panda/workspace-local` as its control, which
+ * received the real subtree because its id and its key already matched. Two
+ * providers of one capability SHARE the config namespace on purpose, so the
+ * implementation is named by `workspace.provider` and by this plugin's own
+ * rejection messages, never by the id the kernel keys configuration on.
+ *
+ * Colliding with `@panda/workspace-local`'s id is not a hazard: both provide the
+ * service `workspace`, so registering the two together is already
+ * `PANDA_KERNEL_SERVICE_CONFLICT` and the selection mounts exactly one.
+ */
+export const WORKSPACE_PLUGIN_ID = WORKSPACE_CONFIG_KEY
 
 /** Bus event this plugin emits for a configuration key it read and cannot use. */
 export const WORKSPACE_CONFIG_WARNING_EVENT = 'workspace.config.ignored'
@@ -52,9 +74,13 @@ const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set(['provider', 'rootDir'])
  * `~/.panda/config.json` must not fail `panda run` in every project on the
  * machine. Unknown keys are reported on the kernel bus by the factory instead.
  *
- * NOTE: the kernel only PROBES `manifest.configSchema` for shape and never
- * applies it to the subtree; the enforcement point is the factory below, which
- * calls this schema itself.
+ * Since M7.C the KERNEL applies this to `composed[manifest.id]` before the
+ * factory runs, and this plugin's id IS its config key, so what the factory
+ * receives as `context.settings` is this schema's own validated value. The
+ * factory still reads the RAW subtree, for the warnings only: a non-record
+ * subtree is passed through as `{}` here, so a factory that warned off the
+ * validated value could not tell "no workspace configuration" from "a workspace
+ * key holding a string", which is the distinction the warning exists to make.
  */
 const WORKSPACE_CONFIG_SCHEMA = defineStandardSchema((value): StandardSchemaResult<unknown> => {
   if (value === undefined) return { value: {} }
@@ -117,7 +143,7 @@ export function createGitWorktreeWorkspacePlugin(
   const { repoPath } = options
 
   const manifest: PluginManifest = {
-    id: GIT_WORKTREE_PLUGIN_ID,
+    id: WORKSPACE_PLUGIN_ID,
     version: '0.0.0',
     provides: [WORKSPACE_SERVICE],
     consumes: [],
@@ -132,9 +158,7 @@ export function createGitWorktreeWorkspacePlugin(
       context.bus.emit<WorkspaceConfigWarning>(WORKSPACE_CONFIG_WARNING_EVENT, { key, detail })
     }
 
-    let namespace: Record<string, unknown> = {}
     if (isRecord(subtree)) {
-      namespace = subtree
       for (const key of Object.keys(subtree)) {
         if (KNOWN_CONFIG_KEYS.has(key)) continue
         warn(
@@ -146,17 +170,13 @@ export function createGitWorktreeWorkspacePlugin(
       warn(WORKSPACE_CONFIG_KEY, 'must be an object; the whole subtree was ignored')
     }
 
-    const validated = WORKSPACE_CONFIG_SCHEMA['~standard'].validate(namespace)
-    if (validated instanceof Promise) {
-      return {
-        status: 'rejected',
-        issues: ['the git-worktree workspace plugin config must validate synchronously'],
-      }
-    }
-    if (validated.issues !== undefined) {
-      return { status: 'rejected', issues: validated.issues.map((entry) => entry.message) }
-    }
-    const stateDir = (validated.value as Record<string, unknown>)['rootDir']
+    // The KERNEL already validated this exact subtree against the schema above
+    // and rejected the plugin if it had issues, so what arrives here is that
+    // schema's own value. Re-validating it would be this plugin checking the
+    // kernel's work — and unlike `@panda/registry`, which merges factory options
+    // into the namespace and therefore has a MERGED value only it can check,
+    // this plugin merges nothing: `repoPath` is a mount input, not a config key.
+    const stateDir = isRecord(context.settings) ? context.settings['rootDir'] : undefined
     if (!isNonEmptyString(stateDir)) {
       return {
         issues: [
