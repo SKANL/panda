@@ -26,9 +26,17 @@ and are not pretending otherwise.
 
 - **AD-1** — the kernel has ZERO runtime dependencies and NEVER imports
   `@panda/contracts`. *Gate: `packages/kernel/test/guard.test.ts`.*
-- **AD-2** — package topology is strictly downward. *Gate: a `test/guard.test.ts`
-  in `environment`, `kernel`, `projection`, `session` — **4 of 10 packages**.
-  `registry` and `cli` have none, which is a known gap, not a permission.*
+- **AD-2** — package topology is strictly downward. *Gate:
+  `packages/contracts/test/topology.test.ts`, which derives the ONE universal
+  clause for all ten packages — every `@panda/*` import in every
+  `packages/*/src`, against one declared role order restated from
+  `ARCHITECTURE-SPINE.md` — and fails on a package the order does not name, or
+  an order that names a package that is gone.*
+- **AD-2, the package-SPECIFIC half** — a `test/guard.test.ts` in `environment`,
+  `kernel`, `projection`, `session` — **4 of 10 packages**. `adapter-cli`,
+  `cli`, `contracts`, `registry`, `workspace-git-worktree` and `workspace-local`
+  have none, which is a known gap, not a permission. The universal clause above
+  covers all ten; what those four add is package-specific and is not derivable.
 - **Read a package's guard test before putting code in it, not only its
   `package.json`.** A manifest is not an architecture: `@panda/environment`
   declares `@panda/projection` and its guard test still refuses the import,
@@ -47,6 +55,11 @@ and are not pretending otherwise.
   `pnpm check`.*
 - **FR-29 consumer install** — a packed tarball must import cleanly.
   *Gate: `pnpm proof:consumer-install`, a separate CI step (see below).*
+- **The third-party promise** (`ARCHITECTURE-SPINE.md`, AD-2) — a port is
+  implementable installing ONLY `@panda/contracts`. *Gate: the contracts-only
+  scenario in `pnpm proof:consumer-install`, which installs that one tarball
+  into its own project, asserts nothing else arrived, imports it, and compiles a
+  `WorkspaceProvider` against the shipped declarations.*
 
 ## Architecture — stated, and worth stating
 

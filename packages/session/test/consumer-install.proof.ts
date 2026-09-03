@@ -329,6 +329,70 @@ export async function go(): Promise<ResultEnvelope> {
 export const wrong: SessionOptions = { prompt: 42 }
 `
 
+/**
+ * The OTHER promise, and the one nothing tested.
+ * `ARCHITECTURE-SPINE.md` (AD-2): "Third parties implement any port installing
+ * only `@panda/contracts`." The session arm above installs six tarballs, so it
+ * proves the session BUNDLE is installable and says nothing about this. Its
+ * control is that arm: if the harness itself were broken, both would be red.
+ *
+ * Runtime half. A port is a type, so this exercises the runtime surface a port
+ * implementation actually calls — the validator and the coded error — and the
+ * typecheck below carries the port itself.
+ */
+const CONTRACTS_ONLY_SCRIPT = `import { PANDA_ERROR_CODES, PandaError, validateWorkspaceHandle } from '@panda/contracts'
+
+const handle = validateWorkspaceHandle({ id: 'w1', rootPath: process.cwd(), capabilities: ['read', 'write'] })
+
+let rejectedCode = null
+try {
+  validateWorkspaceHandle({ id: '', rootPath: '', capabilities: [] })
+} catch (error) {
+  if (!(error instanceof PandaError)) throw error
+  rejectedCode = error.code
+}
+
+console.log('${PAYLOAD_BEGIN}')
+console.log(
+  JSON.stringify({
+    handle,
+    rejectedCode,
+    expectedCode: PANDA_ERROR_CODES.contractEnvelopeInvalid,
+    resolvedFrom: import.meta.resolve('@panda/contracts'),
+  }),
+)
+console.log('${PAYLOAD_END}')
+`
+
+/**
+ * The port itself, compiled against the SHIPPED declarations with `@panda/contracts`
+ * as the only thing installed. `implements WorkspaceProvider` is the assertion:
+ * a declaration file that failed to resolve would degrade the import to `any`,
+ * the `@ts-expect-error` below would be unused, and tsc would report THAT.
+ */
+const CONTRACTS_ONLY_TYPES = `import { PANDA_ERROR_CODES, PandaError, validateWorkspaceHandle } from '@panda/contracts'
+import type { WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
+
+export class EphemeralWorkspaces implements WorkspaceProvider {
+  async create(): Promise<WorkspaceHandle> {
+    return validateWorkspaceHandle({ id: 'w1', rootPath: '/w1', capabilities: ['read', 'write'] })
+  }
+
+  async acquire(id: string): Promise<WorkspaceHandle> {
+    return validateWorkspaceHandle({ id, rootPath: \`/\${id}\`, capabilities: ['read'] })
+  }
+
+  async release(_handle: WorkspaceHandle): Promise<void> {}
+
+  async dispose(): Promise<void> {
+    throw new PandaError(PANDA_ERROR_CODES.contractProviderDisposed, 'disposed')
+  }
+}
+
+// @ts-expect-error 'execute' is not a WorkspaceCapability, so these declarations are real types.
+export const wrong: WorkspaceHandle = { id: 'x', rootPath: '/x', capabilities: ['execute'] }
+`
+
 const CONSUMER_TSCONFIG = JSON.stringify(
   {
     compilerOptions: {
@@ -576,6 +640,66 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     const typechecked = await node([tsc, '-p', 'tsconfig.json'], projectDir, RUN_TIMEOUT_MS)
     expect(typechecked.code, `consumer typecheck failed:\n${typechecked.output}`).toBe(0)
   })
+
+  it('installs and imports @panda/contracts ALONE, and a port compiles against it', async () => {
+    // Its OWN project, beside the session one and sharing only the tarball
+    // directory `beforeAll` packed. Installing into the session consumer would
+    // prove nothing: five other packages are already there, and the claim is
+    // precisely that none of them is needed.
+    const soleDir = join(temporaryRoot, 'contracts-only')
+    await mkdir(soleDir, { recursive: true })
+    await writeFile(
+      join(soleDir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: 'panda-contracts-only-consumer',
+          version: '0.0.0',
+          private: true,
+          type: 'module',
+          dependencies: { '@panda/contracts': 'file:../project/tarballs/panda-contracts-0.0.0.tgz' },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    await writeFile(join(soleDir, 'consumer.mjs'), CONTRACTS_ONLY_SCRIPT, 'utf8')
+    await writeFile(join(soleDir, 'consumer.ts'), CONTRACTS_ONLY_TYPES, 'utf8')
+    await writeFile(join(soleDir, 'tsconfig.json'), `${CONSUMER_TSCONFIG}\n`, 'utf8')
+
+    // `--offline` is the assertion that nothing else was wanted: a runtime
+    // dependency appearing on `@panda/contracts` fails HERE, loudly, instead of
+    // quietly dialling out to a registry and passing.
+    const installed = await run('npm', ['install', '--offline'], soleDir, RUN_TIMEOUT_MS)
+    expect(installed.code, `npm install failed in the contracts-only project:\n${installed.output}`).toBe(0)
+
+    // ALONE, asserted from the installed tree rather than from the manifest that
+    // asked: one `@panda/*` package arrived, not a closure.
+    expect((await readdir(join(soleDir, 'node_modules', '@panda'))).sort()).toEqual(['contracts'])
+
+    const ran = await node(['consumer.mjs'], soleDir, RUN_TIMEOUT_MS)
+    expect(ran.code, `the contracts-only consumer script failed:\n${ran.output}`).toBe(0)
+    const payload = ran.output.split(PAYLOAD_BEGIN)[1]?.split(PAYLOAD_END)[0]
+    expect(payload, `the contracts-only consumer printed no delimited payload:\n${ran.output}`).toBeDefined()
+    const sole = JSON.parse(payload ?? '') as {
+      handle: unknown
+      rejectedCode: string | null
+      expectedCode: string
+      resolvedFrom: string
+    }
+    expect(sole.handle).toEqual({ id: 'w1', rootPath: soleDir, capabilities: ['read', 'write'] })
+    // The coded error is real, not a bare throw: a port implementation routes on
+    // the code, and this is the shipped one.
+    expect(sole.rejectedCode).toBe(sole.expectedCode)
+    expect(sole.resolvedFrom.startsWith(pathToFileURL(soleDir).href)).toBe(true)
+    expect(sole.resolvedFrom.toLowerCase()).not.toContain(
+      pathToFileURL(repoRoot).href.toLowerCase().replace(/\/$/, ''),
+    )
+
+    const tsc = join(dirname(createRequire(import.meta.url).resolve('typescript')), 'tsc.js')
+    const typechecked = await node([tsc, '-p', 'tsconfig.json'], soleDir, RUN_TIMEOUT_MS)
+    expect(typechecked.code, `the contracts-only port typecheck failed:\n${typechecked.output}`).toBe(0)
+  }, SETUP_TIMEOUT_MS)
 
   it('packs a binary that is emitted JavaScript with its shebang intact', () => {
     // Read out of the TARBALL, not out of the workspace: the claim is about what
