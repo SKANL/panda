@@ -1,6 +1,7 @@
 {
   "name": "panda",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "$comment": "The @typescript/typescript6 devDependency is load-bearing: pnpm resolves typescript-eslint's TypeScript peer to 6.0.x through it while workspace packages typecheck on TS 7 natively.",
   "packageManager": "pnpm@11.23.0",
