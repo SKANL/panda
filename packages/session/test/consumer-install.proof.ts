@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix, relative, sep } from 'node:path'
@@ -56,6 +56,7 @@ const PACKAGE_DIRS = [
   'projection',
   'registry',
   'session',
+  'workspace-git-worktree',
   'workspace-local',
 ] as const
 
@@ -469,6 +470,25 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     if (setupCompleted && !anyTestFailed && temporaryRoot !== '') {
       await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 3 }).catch(() => {})
     }
+  })
+
+  it('packs EVERY workspace package, because the list above says it does', async () => {
+    // The comment on PACKAGE_DIRS claimed "every workspace package" while the
+    // list held nine of ten: `workspace-git-worktree` shipped in M6.A and was
+    // never added, so its tarball was the only one no pack step and no
+    // module-graph walk ever inspected. A prose claim nothing checks is the
+    // defect class AGENTS.md names, and this is the check.
+    //
+    // It asserts membership only. It does NOT assert that anything imports a
+    // packed package: the install-and-import arm below is scoped to
+    // `@panda/session` and its dependency closure, so a package can be packed,
+    // proven well-formed, and still be unreachable from the binary. That gap is
+    // Story 4.2's, not this assertion's.
+    const workspacePackages = (await readdir(join(repoRoot, 'packages'), { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+    expect([...PACKAGE_DIRS].sort()).toStrictEqual(workspacePackages)
   })
 
   it('lives outside the repository, and resolves the package out of its own node_modules', () => {

@@ -113,9 +113,17 @@ node --conditions=panda-source packages/cli/bin/panda.ts <args>   # drive the bi
   generates a `<!-- gitnexus:start -->` block and will append it to this file;
   that block instructs an agent to run `impact()` before every edit and
   `detect_changes()` before every commit, through MCP tools with the same
-  session-cwd resolution. It is deliberately not committed here — delete it from
-  your diff, and confirm which repository any GitNexus answer came from before
-  acting on it.
+  session-cwd resolution. It is deliberately not committed here. Remove it with
+  `git checkout -- AGENTS.md CLAUDE.md` — **not** by cutting from the marker to
+  end-of-file, which was tried and silently deleted 34 lines of real content
+  because the generator does not strictly append. And confirm which repository
+  any GitNexus answer came from before acting on it.
+- **`gitnexus analyze` exits 0 while failing.** It left the index five commits
+  stale after throwing; re-running in the foreground reported an
+  `incrementalInProgress` flag and rebuilt. Read `gitnexus status` and match the
+  commit yourself. Separately, its MCP `query` can return an empty result with an
+  "FTS indexes missing" warning that survives `--repair-fts`, while `context`
+  answers correctly from the same index — an empty `query` here is not a zero.
 - **`rtk` silently COLLAPSES function bodies in `head` and `grep` output.** A
   `grep -n "describe("` over a file full of them returned nothing. `cat` and
   `sed -n` pass through raw; use `rtk proxy grep`, or ripgrep directly.
