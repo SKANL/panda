@@ -1,6 +1,6 @@
 import { lstat, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
   DEFAULT_EXECUTOR_ID,
   EXECUTOR_CATALOGUE,
@@ -10,7 +10,7 @@ import {
   unknownExecutor,
 } from '@panda/adapter-cli'
 import type { CliExecutorAdapterOptions, ShippedExecutor } from '@panda/adapter-cli'
-import { PANDA_ERROR_CODES, PandaError, isRecord } from '@panda/contracts'
+import { METHOD_CONFIG_KEY, PANDA_ERROR_CODES, PandaError, isRecord } from '@panda/contracts'
 import { createLayeredConfig, deepMerge } from '@panda/kernel'
 import type { ConfigLayer, LayeredConfig } from '@panda/kernel'
 
@@ -349,7 +349,31 @@ export async function readExecutorConfigLayers(
  * Since Story M3.B this is what seeds the KERNEL's configuration, so the mounted
  * plugins and the executor selection read one composed document rather than two.
  */
-export function seedExecutorConfig(config: LayeredConfig, layers: ExecutorConfigLayers = {}): void {
+/**
+ * A key panda READ off disk and refused to admit into its layer, with what it
+ * is running instead.
+ *
+ * Typed rather than logged, because AD-5 is "typed absence over silence" and its
+ * opposite of IGNORED is TYPED AND REPORTED, not FATAL. The guard this replaces
+ * read that as a binary -- "REFUSED rather than ignored, per AD-5" -- and made a
+ * cloned repository able to deny service to the machine owner's own selection.
+ * `using` is `undefined` when nothing else selects one, which is a different
+ * sentence and has to stay tellable apart.
+ */
+export interface DeclinedConfigKey {
+  readonly key: 'method'
+  /** What the project document recommended, verbatim. */
+  readonly specifier: string
+  /** The document that recommended it, so the notice can name the file. */
+  readonly filePath: string
+  /** What decides instead, taken from the COMPOSED view rather than guessed. */
+  readonly using: string | undefined
+}
+
+export function seedExecutorConfig(
+  config: LayeredConfig,
+  layers: ExecutorConfigLayers = {},
+): DeclinedConfigKey | undefined {
   // Panda's built-in default is a LAYER, never a constructor fallback. That is
   // what makes "nothing configured" a reportable provenance rather than an
   // invisible branch. Caller-supplied defaults compose UNDER it, so a document
@@ -360,6 +384,7 @@ export function seedExecutorConfig(config: LayeredConfig, layers: ExecutorConfig
   // host supplied this" — so the provenance panda reports can never be a claim
   // the caller made up. Two supplied documents compose in the same order.
   let supplied: unknown
+  let recommendation: { specifier: string; filePath: string } | undefined
   for (const layer of ['global', 'project'] as const) {
     const entry = layers[layer]
     if (entry === undefined) continue
@@ -367,8 +392,35 @@ export function seedExecutorConfig(config: LayeredConfig, layers: ExecutorConfig
       supplied = supplied === undefined ? entry.document : deepMerge(supplied, entry.document)
       continue
     }
+    // A PROJECT RECOMMENDS A METHOD; IT DOES NOT SELECT ONE, so the key never
+    // becomes part of this layer.
+    //
+    // `assertMethodMayMount` refuses a project-layer method because importing it
+    // is running a cloned repository's code. That refusal was FATAL, and driven
+    // at 220f288 it was wider than the threat: the run stopped whatever else was
+    // configured, so a clone carrying the key denied service to a method the
+    // MACHINE's owner had selected, with hand-editing JSON as the only exit --
+    // the one answer `config-write.ts:10-12` says the product exists to remove.
+    //
+    // DROPPED HERE RATHER THAN AT SELECTION, and that was measured. The obvious
+    // shape is `selectMethod` falling back through `snapshot('global')`, but
+    // `snapshot()` has ZERO production consumers outside the kernel's own
+    // definition, so that would make the method selection the product's only
+    // layer-by-layer reader. Dropping before composition costs no new resolution
+    // rule at all -- and it keeps `dump()` honest, which is the real prize: the
+    // composed view says what panda ACTED ON, and a gate pins that no entry ever
+    // reports `method` decided by `project`.
+    //
+    // Only a document READ FROM DISK reaches here; one a host supplied composes
+    // into `agent`, which is that host's own code and stays mountable.
+    let document = entry.document
+    if (layer === 'project' && isRecord(document) && typeof document[METHOD_CONFIG_KEY] === 'string') {
+      const { [METHOD_CONFIG_KEY]: recommended, ...rest } = document
+      document = rest
+      recommendation = { specifier: recommended as string, filePath: entry.filePath }
+    }
     try {
-      config.setLayer(layer, entry.document)
+      config.setLayer(layer, document)
     } catch (error) {
       throw unusable(entry.filePath, `the '${layer}' configuration layer rejected it: ${describeError(error)}`, error)
     }
@@ -385,6 +437,27 @@ export function seedExecutorConfig(config: LayeredConfig, layers: ExecutorConfig
     }
   }
   if (layers.invocation !== undefined) config.setLayer('invocation', layers.invocation)
+
+  if (recommendation === undefined) return undefined
+  // WHAT IS USED INSTEAD IS READ FROM THE COMPOSED VIEW, NOT GUESSED. Reading
+  // `layers.global` would be a second answer to "which layer decides", and two
+  // answers is how the notice ends up naming a value the run does not use -- the
+  // exact failure `selectExecutor` takes value and provenance from ONE entry to
+  // avoid.
+  const decided = config.dump().find((entry) => entry.path.length === 1 && entry.path[0] === METHOD_CONFIG_KEY)
+  const using = typeof decided?.value === 'string' ? decided.value : undefined
+  // FOLLOWING THE ADVICE HAS TO SILENCE THE NOTICE.
+  // `panda swap method ./mine.mjs` run from the project stores the RESOLVED
+  // absolute path, so a user who adopted the recommendation would otherwise be
+  // told it was declined on every run, forever. Advice that nags after being
+  // taken is the same defect class as advice that does nothing, and this
+  // milestone found that one twice.
+  //
+  // `dirname` twice because the project document is `<projectDir>/.panda/config.json`.
+  if (using !== undefined && resolve(dirname(dirname(recommendation.filePath)), recommendation.specifier) === using) {
+    return undefined
+  }
+  return { key: METHOD_CONFIG_KEY, specifier: recommendation.specifier, filePath: recommendation.filePath, using }
 }
 
 /**

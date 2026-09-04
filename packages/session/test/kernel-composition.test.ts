@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
@@ -136,6 +137,48 @@ describe('AD-4: the log sink exists before any plugin loads, and the RECORDS sho
     expect(Math.max(...validated.map((record) => record.seq))).toBeLessThan(
       firstSeq(records, 'plugin.activated'),
     )
+    await kernel.stop()
+  })
+
+  it('M30.D E7: a method a SUPPLIED kernel put in its project layer is never imported', async () => {
+    // THIS IS WHY `assertMethodMayMount` KEEPS ITS PROJECT CLAUSE AFTER M30.D
+    // MOVED THE FALLBACK TO ADMISSION. `seedExecutorConfig` is what drops the
+    // key, and a supplied kernel never reaches it — `SessionOptions` states such
+    // a kernel owns its own configuration. So this path composes a project-layer
+    // method admission never saw, and the guard is the only thing between it and
+    // an import.
+    //
+    // THE FIRST VERSION OF THIS CLAUSE ASSERTED `rejects.toMatchObject({ code:
+    // 'PANDA_CONFIGURATION_UNUSABLE' })` AND PINNED NOTHING. Falsified by
+    // deleting the guard's project clause: still 23 passed, because a relative
+    // specifier that resolves to no file raises the same code. A clause whose
+    // green survives the guard's deletion is decoration — M25.A's T3 measured
+    // exactly this shape and it reappeared here within one story.
+    //
+    // So the specifier is ABSOLUTE and real, and the assertion is the SIDE
+    // EFFECT its top level would leave behind. Only the ordering can suppress it.
+    const root = await tempRoot()
+    const marker = join(root, 'SUPPLIED-KERNEL-IMPORT-RAN.txt')
+    const module = join(root, 'arrived.mjs')
+    await writeFile(
+      module,
+      [
+        "import { writeFileSync } from 'node:fs'",
+        `writeFileSync(${JSON.stringify(marker)}, 'top-level code ran')`,
+        "export default { id: 'arrived', version: '1.0.0', phases: [], artifacts: [], commands: [] }",
+        '',
+      ].join(String.fromCharCode(10)),
+      'utf8',
+    )
+    const { kernel } = await mount()
+    kernel.config.setLayer('project', { workspace: { rootDir: await tempRoot() }, method: module })
+    kernel.start()
+
+    await expect(runSession({ prompt: 'p', kernel })).rejects.toMatchObject({
+      code: 'PANDA_CONFIGURATION_UNUSABLE',
+    })
+    expect(existsSync(marker), 'the project-layer module was imported and its top-level code ran').toBe(false)
+
     await kernel.stop()
   })
 

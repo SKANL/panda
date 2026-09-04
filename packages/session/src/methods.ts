@@ -121,17 +121,6 @@ export async function resolveMethod(specifier: string, baseDir?: string): Promis
 }
 
 /**
- * The method a composed configuration selects, with the layer that decided it —
- * the same shape and the same `dump()` read `selectExecutor` uses, so the two
- * selections cannot disagree about what a layer means.
- *
- * `undefined` is the ORDINARY state in v1 and is not a failure: PRD §6.2 places
- * methodologies post-v1, so most runs select none and must cost nothing. A
- * selection that is present but not a usable string IS a failure, because a
- * `method: 42` silently ignored is a run using a different methodology than the
- * document names.
- */
-/**
  * Refuses to MOUNT a selection the `project` layer decided.
  *
  * `panda run` used to import and EXECUTE a module named by the
@@ -149,10 +138,25 @@ export async function resolveMethod(specifier: string, baseDir?: string): Promis
  * is one a host handed over programmatically and is therefore that host's own
  * code, and `project` is the one that travels with a clone.
  *
- * REFUSED rather than ignored, per AD-5 and per `selectMethod`'s own rule right
- * below: a method silently not mounted runs a different methodology than the
- * document names, which is the failure this file already refuses for a
- * malformed value.
+ * SECOND LINE OF DEFENCE SINCE M30.D, AND STILL LOAD-BEARING. The ordinary path
+ * no longer reaches this clause: `seedExecutorConfig` drops a `method` key from
+ * a project document READ FROM DISK, so composition yields the next layer and
+ * the run says what it declined. That was the fix for a refusal wider than its
+ * threat — driven, a project key stopped the run whatever else was configured,
+ * so a clone denied service to the machine owner's own selection.
+ *
+ * But a SUPPLIED kernel owns its configuration (`run-session.ts:51`) and never
+ * reaches admission, so a host that seeds its own `project` layer arrives here.
+ * Driven, not assumed: with this clause deleted that path RESOLVES — the module
+ * is imported and the run returns ok. `kernel-composition.test.ts` pins it by
+ * the side effect, because the first version of that clause asserted only the
+ * error code and stayed green with the guard deleted.
+ *
+ * AND AD-5 DOES NOT SAY WHAT THIS COMMENT USED TO SAY IT SAID. It read "REFUSED
+ * rather than ignored, per AD-5", treating the rule as a binary. AD-5 is typed
+ * absence over silence — unavailable is not failed — so its opposite of IGNORED
+ * is TYPED AND REPORTED, not FATAL. Only the silent skip would violate it, which
+ * is why admission reports what it dropped instead of dropping it quietly.
  *
  * THE PLACEMENT IS THE GUARANTEE. This must be called between `selectMethod`
  * and `resolveMethod`. After the import there is nothing left to prevent, and a
@@ -214,6 +218,26 @@ export function assertMethodMayMount(selected: { readonly specifier: string; rea
   }
 }
 
+/**
+ * The method a composed configuration selects, with the layer that decided it —
+ * the same shape and the same `dump()` read `selectExecutor` uses, so the two
+ * selections cannot disagree about what a layer means.
+ *
+ * THIS BLOCK USED TO SIT ABOVE `assertMethodMayMount`'s OWN JSDoc, so it bound to
+ * nothing: measured on the emitted surface, `dist/methods.d.ts` declared
+ * `selectMethod` with no documentation at all, and the guard's text cited "`selectMethod`'s
+ * own rule right below" for a rule that documented nothing and did not ship.
+ *
+ * `undefined` is the ORDINARY state in v1 and is not a failure: PRD §6.2 places
+ * methodologies post-v1, so most runs select none and must cost nothing. A
+ * selection that is present but not a usable string IS a failure, because a
+ * `method: 42` silently ignored is a run using a different methodology than the
+ * document names.
+ *
+ * It never sees a `project` layer from a document panda read: `seedExecutorConfig`
+ * drops that key before composition, which is what keeps `dump()` honest about
+ * the layer panda acted on.
+ */
 export function selectMethod(config: {
   dump(): readonly { readonly path: readonly string[]; readonly value: unknown; readonly layer: string }[]
 }): { readonly specifier: string; readonly layer: string } | undefined {

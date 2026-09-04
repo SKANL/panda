@@ -382,7 +382,7 @@ export function createSessionKernel(options: SessionKernelOptions = {}): PandaKe
     // still wins, because a named `cwd` is this invocation's answer.
     if (cwd !== undefined) invocation = deepMerge(invocation, workspaceRoot) as Record<string, unknown>
 
-    seedExecutorConfig(kernel.config, {
+    const declined = seedExecutorConfig(kernel.config, {
       ...configLayers,
       defaults: deepMerge(
         (cwd === undefined ? workspaceRoot : configLayers?.defaults) ?? {},
@@ -390,6 +390,27 @@ export function createSessionKernel(options: SessionKernelOptions = {}): PandaKe
       ),
       ...(Object.keys(invocation).length === 0 ? {} : { invocation }),
     })
+    // A METHOD THE PROJECT RECOMMENDED AND PANDA DID NOT ADMIT, said out loud on
+    // the channel that already exists for exactly this. Its own comment at the
+    // CLI end settled the question this reuses: "A configuration key panda read
+    // and could not use. Reported, never fatal: one forward-looking key in
+    // `~/.panda/config.json` used to fail every run on the machine, and silence
+    // would have been the other wrong answer."
+    //
+    // NOT on the bus. `WORKSPACE_CONFIG_WARNING_EVENT` is spelled
+    // `workspace.config.ignored` and is declared twice, once in each workspace
+    // plugin; routing a METHOD through it would smear that vocabulary across a
+    // key no workspace owns, which is the divergence correction-01 exists to
+    // remove. `onWarning` is the seam; the bus is one plugin's way of reaching it.
+    if (onWarning !== undefined && declined !== undefined) {
+      onWarning(
+        `configuration ignored: '${declined.key}' — '${declined.specifier}' in '${declined.filePath}' is a recommendation, not a selection: panda never mounts a method a project directory names, because running it is running that project's code. ${
+          declined.using === undefined
+            ? 'Running with no method.'
+            : `Using '${declined.using}' instead.`
+        } To adopt it on this machine, run \`panda swap method ${declined.specifier}\` from that directory`,
+      )
+    }
 
     // Resolved BEFORE anything is constructed, beside the prompt check and for
     // the same reason: an invalid request must cost no mkdir. An `executorId`

@@ -109,7 +109,7 @@ A gate placed after `resolveMethod` would pass its test and prevent nothing.
 
 | # | Input | Expected |
 |---|---|---|
-| E1 | `run` in a project whose `.panda/config.json` names a method | exit 2, coded refusal naming the specifier, the layer and `panda swap method <spec>`; the module is NOT imported |
+| E1 | `run` in a project whose `.panda/config.json` names a method | ~~exit 2, coded refusal naming the specifier, the layer and `panda swap method <spec>`~~ **RENEGOTIATED BY M30.D — the key no longer decides the exit; it is declined at admission and reported.** The half that stands, and is what this spec was for: **the module is NOT imported.** |
 | E2 | `run` with the method in `~/.panda/config.json` | mounts exactly as today |
 | E3 | `run` with no method anywhere | unchanged; no warning, no failure (M5.D row 9) |
 | E4 | `project swap method X` | still writes the project document (M5.D row 6) |
@@ -275,6 +275,29 @@ specifier in a machine-wide document never named a file.
 - `swap-command.ts` refuses to WRITE one, because that verb validated
   `<cwd>/mine.mjs` and then stored the raw `./mine.mjs` — **the thing it
   validated was not the thing it stored.**
+
+### E1 was renegotiated by M30.D, and the reason is that this refusal was wider than its threat
+
+`exit 2` was frozen here for any project-named method. Driven at `220f288`, that
+stopped the run WHATEVER ELSE WAS CONFIGURED: with a method the machine's owner
+had selected, present and valid, a cloned repository carrying its own `method`
+key made `panda run` unusable in that directory until someone hand-edited the
+JSON. Control: the same machine method with the project key removed reaches the
+executor.
+
+So the threat — importing a module a clone named — was closed by a refusal that
+also denied service to the machine's own configuration. M30.D keeps the closed
+half and drops the rest: `seedExecutorConfig` refuses to ADMIT the key into the
+`project` layer, composition yields the next layer, and the run says on stderr
+what it declined and what it is using instead. The module is still never
+imported, which is the only thing this spec was ever about.
+
+`assertMethodMayMount`'s project clause STAYS, and is not decoration: a supplied
+kernel owns its configuration and never reaches admission. Driven — with that
+clause deleted, the supplied-kernel path imports the module and the run returns
+`ok`.
+
+See `spec-m30d-a-project-recommendation-is-not-a-command.md`.
 
 ### The reusable lesson, and it is about tests
 

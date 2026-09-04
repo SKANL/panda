@@ -61,23 +61,41 @@ async function clonedProject(document: unknown): Promise<{ readonly dir: string;
   return { dir, marker }
 }
 
+/** A valid MethodPlugin whose top-level statement proves it was imported. */
+function machineMethod(marker: string): string {
+  return [
+    "import { writeFileSync } from 'node:fs'",
+    `writeFileSync(${JSON.stringify(marker)}, 'machine method ran')`,
+    "export default { id: 'mine', version: '1.0.0', phases: [], artifacts: [], commands: [] }",
+    '',
+  ].join(String.fromCharCode(10))
+}
+
 describe('a method the project layer named is never imported', () => {
   it('refuses before the import, and the module does not run', async () => {
     const { dir, marker } = await clonedProject({ method: './arrived.mjs' })
     const io = capture()
 
-    const code = await runPanda(['run', 'hi'], { ...io, cwd: dir, createAdapter: stubAdapter })
+    const homeDir = await mkdtemp(join(tmpdir(), 'panda-declining-home-'))
+    const code = await runPanda(['run', 'hi'], { ...io, cwd: dir, homeDir, createAdapter: stubAdapter })
 
     // The assertion that matters is the SIDE EFFECT, not the exit code: a run
     // that refused after importing would exit 2 as well.
     expect(existsSync(marker), 'the project-named module was imported and its top-level code ran').toBe(false)
-    expect(code).toBe(2)
+    // M30.D CHANGED THIS LINE FROM `toBe(2)`, AND THE CHANGE IS THE POINT.
+    // M25.A froze `exit 2` here (row E1) and that refusal was wider than the
+    // threat: driven, a project `method` key stopped the run whatever else was
+    // configured, so a clone denied service to a method the MACHINE's owner had
+    // selected, with hand-editing JSON as the only exit. The key is now declined
+    // at admission and SAID out loud; what it must never do is decide the exit.
+    expect(code).toBe(0)
     // Actionable, per panda's own principle — but see the note below for what
     // "actionable" turned out to require, and why the first version of these
     // assertions did not deliver it.
     const said = io.err.join('\n')
+    expect(said).toContain('configuration ignored')
     expect(said).toContain('./arrived.mjs')
-    expect(said).toContain('project')
+    expect(said).toContain('recommendation, not a selection')
     // THIS LINE USED TO READ `toContain('panda swap method')`, AND THAT IS THE
     // FINDING. Driven end to end, the command it demanded is a CLOSED LOOP: exit
     // 0, writes the machine document, changes nothing — layer precedence keeps
@@ -90,10 +108,37 @@ describe('a method the project layer named is never imported', () => {
     // ADVICE. Nothing here can pin that the advice WORKS. It now names the two
     // facts a user can act on: which file holds the key, and that a machine
     // selection must be ABSOLUTE.
+    // The advice is ONE step now, because the project key no longer has to be
+    // deleted first: it is declined at admission, so the machine document is
+    // free to decide. The clause after next RUNS it and asserts the mount.
     expect(said).toContain('panda swap method ./arrived.mjs')
-    // And the step that command needs FIRST, which a draft of the clause below
-    // proved is not optional.
-    expect(said).toContain(".panda/config.json")
+    expect(said).toContain(join('.panda', 'config.json'))
+  })
+
+  it('E2: the machine own method mounts, and the notice names what it declined', async () => {
+    // THE DENIAL OF SERVICE THIS STORY EXISTS FOR. Before M30.D this run exited
+    // 2 with the machine method configured and untouched: a cloned repository
+    // could stop panda using a selection its owner had made for themselves.
+    const { dir, marker } = await clonedProject({ method: './arrived.mjs' })
+    const homeDir = await mkdtemp(join(tmpdir(), 'panda-machine-home-'))
+    const mine = join(homeDir, 'mine.mjs')
+    const ran = join(homeDir, 'MINE-RAN.txt')
+    await writeFile(mine, machineMethod(ran), 'utf8')
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(join(homeDir, '.panda', 'config.json'), JSON.stringify({ method: mine }), 'utf8')
+    const io = capture()
+
+    const code = await runPanda(['run', 'hi'], { ...io, cwd: dir, homeDir, createAdapter: stubAdapter })
+
+    expect(code, io.err.join(' ')).toBe(0)
+    // BOTH markers, because either one alone is satisfied by the wrong thing: a
+    // run that mounted nothing leaves both unwritten, and a run that mounted the
+    // project's leaves both written.
+    expect(existsSync(ran), 'the machine own method did not mount').toBe(true)
+    expect(existsSync(marker), 'the project-named module was imported').toBe(false)
+    const said = io.err.join(' ')
+    expect(said).toContain('configuration ignored')
+    expect(said).toContain(mine)
   })
 
   it('and the command that refusal names ACTUALLY WORKS, which no toContain can say', async () => {

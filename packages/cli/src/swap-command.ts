@@ -165,11 +165,15 @@ export async function runSwap(
   }
 
   // A METHOD IN THE PROJECT DOCUMENT IS A RECOMMENDATION, NOT A SELECTION, AND
-  // THE VERB HAS TO SAY WHICH. `assertMethodMayMount` refuses the `project`
-  // LAYER unconditionally — whatever the specifier, absolute or not — so every
-  // `project swap method` wrote a value no run would ever honour while printing
-  // `selected:`. Driven with a control: same project, key removed, the run
-  // reaches the executor.
+  // THE VERB HAS TO SAY WHICH. Every `project swap method` writes a value no run
+  // mounts, while printing `selected:`.
+  //
+  // M30.D MADE THE SENTENCE SHORTER BY MAKING THE PRODUCT BETTER. This message
+  // used to have to warn that the write BREAKS `panda run` in the directory,
+  // because the refusal was fatal and a project key stopped the run whatever else
+  // was configured. `seedExecutorConfig` now declines the key at admission and
+  // says so, so the write costs the project nothing and the adoption path is one
+  // command instead of two.
   //
   // The WRITE is not the defect and is not removed: row E4 of `spec-m25a…`
   // freezes it and M5.D row 6 designed it. Deleting a designed, frozen behaviour
@@ -181,7 +185,7 @@ export async function runSwap(
   const where = `'${selection}' in '${written.filePath}'`
   if (noun === 'method' && scope === 'project') {
     err(
-      `recommended: ${where} — a note for whoever clones this project, NOT a selection. panda refuses to mount a method a project names, so while this key is here \`panda run\` REFUSES in this project, even for a method you selected machine-wide. To use it yourself: delete the key and run \`panda swap method ${id}\` from here.`,
+      `recommended: ${where} — a note for whoever clones this project, NOT a selection. panda never mounts a method a project directory names, so runs here say they declined it and use the machine's. To select it for yourself: \`panda swap method ${id}\` from this directory.`,
     )
   } else {
     const from = resolvedFrom === undefined ? '' : ` (resolved from '${resolvedFrom}' here)`
