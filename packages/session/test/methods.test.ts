@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 import { describe, expect, it } from 'vitest'
-import { resolveMethod, swapMethod } from '../src/methods.ts'
+import { assertMethodMayMount, resolveMethod, swapMethod } from '../src/methods.ts'
 
 async function moduleDir(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'panda-method-'))
@@ -197,4 +197,48 @@ describe('M5.D rows 14 and 15: the swap is ORDERED', () => {
     await handle.deactivate()
     expect(trace).toEqual(['a:activate', 'a:deactivate'])
   })
+})
+
+describe('M25.A: a method that arrived with a clone is not a method you chose', () => {
+  /**
+   * `panda run` imported and EXECUTED a module named by the `.panda/config.json`
+   * of the directory it was run in. Driven at `b6562ef` against a temp project
+   * holding a `hostile.mjs` whose only statement is a `writeFileSync`:
+   *
+   *   panda run hi                       exit 2   module executed: YES
+   *   CONTROL, same project, no method   exit 1   module executed: no
+   *
+   * A module cannot be inspected without being loaded, so validation cannot
+   * prevent this and neither can reordering. The layer that decided the
+   * selection is the only thing available before the import, and it is enough:
+   * `global` is the machine owner's own file, `agent` is a document the host
+   * handed over programmatically, and `project` is the one that travels with a
+   * clone.
+   */
+  it('refuses a selection the PROJECT layer decided, and names the command that adopts it', () => {
+    let raised: unknown
+    try {
+      assertMethodMayMount({ specifier: './hostile.mjs', layer: 'project' })
+    } catch (error) {
+      raised = error
+    }
+    expect(raised).toBeInstanceOf(PandaError)
+    expect((raised as PandaError).code).toBe(PANDA_ERROR_CODES.configurationUnusable)
+    // The refusal has to be actionable, not merely correct: the user who wants
+    // that methodology gets the one command that adopts it into a document they
+    // own, which is the consent a cloned file cannot give.
+    expect((raised as PandaError).message).toContain('./hostile.mjs')
+    expect((raised as PandaError).message).toContain('project')
+    expect((raised as PandaError).message).toContain('panda swap method')
+  })
+
+  it.each([['global'], ['agent']] as readonly (readonly [string])[])(
+    'lets the %s layer mount, because that document is already yours',
+    (layer) => {
+      // The CONTROL for the clause above. A guard that refused every layer would
+      // satisfy it perfectly and would have removed the feature instead of the
+      // hazard.
+      expect(() => assertMethodMayMount({ specifier: './m.mjs', layer })).not.toThrow()
+    },
+  )
 })

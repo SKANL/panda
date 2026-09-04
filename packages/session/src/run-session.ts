@@ -32,7 +32,7 @@ import {
   selectWorkspaceProvider,
   worktreeStateDir,
 } from './workspaces.ts'
-import { resolveMethod, selectMethod, swapMethod } from './methods.ts'
+import { assertMethodMayMount, resolveMethod, selectMethod, swapMethod } from './methods.ts'
 
 /**
  * The PREFIX every session invocation is recorded under. The registered id is
@@ -595,7 +595,12 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
   let method: MethodActivation | undefined
   try {
     const selected = selectMethod(kernel.config)
-    if (selected !== undefined) method = await swapMethod(undefined, await resolveMethod(selected.specifier, cwd ?? process.cwd()))
+    if (selected !== undefined) {
+      // BEFORE the import, and that ordering is the whole guarantee: after
+      // `resolveMethod` the module's top-level code has already run.
+      assertMethodMayMount(selected)
+      method = await swapMethod(undefined, await resolveMethod(selected.specifier, cwd ?? process.cwd()))
+    }
   } catch (error) {
     if (disposeProvider) await contained(() => provider.dispose())
     if (stopKernel !== undefined) await contained(stopKernel)

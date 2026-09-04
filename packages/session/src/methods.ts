@@ -131,6 +131,47 @@ export async function resolveMethod(specifier: string, baseDir?: string): Promis
  * `method: 42` silently ignored is a run using a different methodology than the
  * document names.
  */
+/**
+ * Refuses to MOUNT a selection the `project` layer decided.
+ *
+ * `panda run` used to import and EXECUTE a module named by the
+ * `.panda/config.json` of the directory it was run in. Driven against a temp
+ * project holding a `hostile.mjs` whose only statement is a `writeFileSync`:
+ * the run exited 2 and the file existed, while the same project with no
+ * `method` key left it unwritten. Clone a repository, run panda inside it, and
+ * you have run its author's code.
+ *
+ * A module cannot be inspected without being LOADED, so neither validation nor
+ * reordering can prevent this — `validateMethodPlugin` already refuses the
+ * manifest, and the top-level statements have run by then. The deciding LAYER is
+ * the only fact available before the import, and it is enough to separate a
+ * choice from an arrival: `global` is the machine owner's own document, `agent`
+ * is one a host handed over programmatically and is therefore that host's own
+ * code, and `project` is the one that travels with a clone.
+ *
+ * REFUSED rather than ignored, per AD-5 and per `selectMethod`'s own rule right
+ * below: a method silently not mounted runs a different methodology than the
+ * document names, which is the failure this file already refuses for a
+ * malformed value.
+ *
+ * THE PLACEMENT IS THE GUARANTEE. This must be called between `selectMethod`
+ * and `resolveMethod`. After the import there is nothing left to prevent, and a
+ * check moved there would still pass its own test — which is why the test for
+ * it is falsified by moving it, not only by deleting it.
+ *
+ * What this does NOT do, deliberately: honour a project selection panda ITSELF
+ * wrote via `project swap method`. That needs ownership tracking on config
+ * writes, which `packages/projection/src/config-write.ts` does not have, and it
+ * is the principled shape rather than this one. Recorded in `deferred-work.md`.
+ */
+export function assertMethodMayMount(selected: { readonly specifier: string; readonly layer: string }): void {
+  if (selected.layer !== 'project') return
+  throw new PandaError(
+    PANDA_ERROR_CODES.configurationUnusable,
+    `the 'project' layer selects the method '${selected.specifier}', and panda will not import a module a project directory named: running it is running that project's code. If you want this methodology, adopt it into a document you own with \`panda swap method ${selected.specifier}\``,
+  )
+}
+
 export function selectMethod(config: {
   dump(): readonly { readonly path: readonly string[]; readonly value: unknown; readonly layer: string }[]
 }): { readonly specifier: string; readonly layer: string } | undefined {
