@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { removeWorktree } from '@panda/session'
 
@@ -7,8 +7,22 @@ import { removeWorktree } from '@panda/session'
 // action — no mock of the code under test, no injected seam, no stub of git.
 //
 // What triggers the kill is the durable artifact ITSELF: the moment the removal
-// writes its intent marker, this watcher sees the file appear and SIGKILLs its
-// own pid. SIGKILL cannot be caught, so nothing unwinds, nothing is flushed and
+// writes its intent marker, this watcher sees a COMPLETE marker and SIGKILLs its
+// own pid.
+//
+// COMPLETE, not merely present, and that word is the whole fix. This watcher
+// used to fire on `existsSync` alone, which on Linux is the `open(O_CREAT)` —
+// the instant the file exists with ZERO bytes, before the write lands. CI went
+// red on Node 26 with `held by 0@`: an empty marker, read back as the
+// synthesized "holder panda cannot identify" (`ledger.ts:203`, `pid: 0,
+// host: ''`), which `isStale` correctly holds for its full age grace rather
+// than stealing. The sweep then refused, exactly as designed.
+//
+// So the old watcher BET on inotify losing a race against the write, and won it
+// on Windows and lost it on Linux — the shape this repository already names: a
+// test that bets instead of forcing its precondition fails when it should not
+// AND passes when it should not. The premise here is "killed BETWEEN the intent
+// and the action", and an intent of zero bytes is not an intent. SIGKILL cannot be caught, so nothing unwinds, nothing is flushed and
 // no cleanup runs — which is exactly the state a machine losing power leaves.
 //
 // It also records ONE observation before dying, synchronously: whether the tree
@@ -30,8 +44,21 @@ if (stateDir === undefined || id === undefined || treePath === undefined || obse
 }
 
 const intentPath = join(stateDir, 'records', `${id}.removing.json`)
+/** A marker that parses and names a real holder — not a file that merely exists. */
+function intentIsDurable(): boolean {
+  if (!existsSync(intentPath)) return false
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(intentPath, 'utf8'))
+    const pid: unknown = (parsed as { pid?: unknown } | null)?.pid
+    return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0
+  } catch {
+    // Mid-write. Keep polling rather than killing over a partial file.
+    return false
+  }
+}
+
 const watcher = setInterval(() => {
-  if (!existsSync(intentPath)) return
+  if (!intentIsDurable()) return
   clearInterval(watcher)
   // Synchronous, and before the kill: there is no "after" for this process.
   writeFileSync(observationPath, JSON.stringify({ treeStillThere: existsSync(treePath) }), 'utf8')
