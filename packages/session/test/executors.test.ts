@@ -99,7 +99,7 @@ function recordingSpawner(stdoutFor: (command: string) => string): {
 // the payload, `envelope.data` must come out identical across all three, which
 // is a stricter shape claim than the top-level key set alone.
 const VENDOR_STDOUT: Record<string, string> = {
-  claude: `${JSON.stringify({ result: 'done', is_error: false })}\n`,
+  claude: `${JSON.stringify({ type: 'result', result: 'done', is_error: false })}\n`,
   codex: `${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } })}\n`,
   opencode: `${JSON.stringify({ type: 'text', part: { type: 'text', text: 'done' } })}\n`,
 }
@@ -475,13 +475,16 @@ describe('each selection really runs ITS vendor', () => {
     return { call, envelope }
   }
 
-  it('spawns claude with print mode and the prompt on stdin', async () => {
+  it('spawns claude with stream print mode and the prompt on stdin', async () => {
     const { call } = await runSelected('claude-code')
     expect(call.command).toBe('claude')
     expect(call.args).toEqual([
       '--print',
       '--output-format',
-      'json',
+      'stream-json',
+      // `stream-json` under `--print` exits 1 without `--verbose` (M15.A, E7),
+      // so the pair is pinned here as well as in the adapter's own suite.
+      '--verbose',
       '--no-session-persistence',
       '--dangerously-skip-permissions',
     ])
@@ -536,7 +539,7 @@ describe('each selection really runs ITS vendor', () => {
     // codex's and opencode's `error` events, the last carrying an OBJECT detail.
     // The envelope that comes out must not.
     const failing: Record<string, string> = {
-      claude: `${JSON.stringify({ result: 'nope', is_error: true, subtype: 'error_max_turns' })}\n`,
+      claude: `${JSON.stringify({ type: 'result', result: 'nope', is_error: true, subtype: 'error_max_turns' })}\n`,
       codex: `${JSON.stringify({ type: 'error', message: 'nope' })}\n`,
       opencode: `${JSON.stringify({ type: 'error', error: { message: 'nope' } })}\n`,
     }

@@ -275,7 +275,28 @@ export function runExecutorClauseSuite(cases: readonly ExecutorClauseCase[]): vo
       const envelope = await adapter.run(probeRequest())
 
       expect(envelope.status).toBe('ok')
-      expect(envelope.data).toEqual(okData)
+      // The one unparseable line of TRAILING_NOISE is skipped AND counted
+      // (M15.A, E6): the run that reached its result is not discarded, and the
+      // line panda could not read does not vanish either. `[]` and the blank
+      // lines are legal JSON or nothing at all, so neither is malformed — the
+      // count is 1 rather than 4, which is what makes it a measurement.
+      expect(envelope.data).toEqual({ ...okData, malformedStreamLines: 1 })
+    })
+
+    it.skipIf(!isJsonl)('keeps a completed run when a malformed line lands INSIDE the stream', async () => {
+      // The interesting position, and the one E6 names: not trailing noise after
+      // the answer, but garbage BEFORE it. A parser that gave up on the first
+      // unreadable line would lose a result the vendor did in fact deliver.
+      const { adapter } = adapterWith({
+        exitCode: 0,
+        stdout: `{"type":"broken"\nnot json at all\n${clauseCase.okStdout}`,
+        stderr: '',
+      })
+      const envelope = await adapter.run(probeRequest())
+
+      expect(envelope.status).toBe('ok')
+      expect(envelope.data).toEqual({ ...okData, malformedStreamLines: 2 })
+      expect(envelope.errors).toEqual([])
     })
 
     it.skipIf(!isJsonl)('fails when a declared failure is followed by more output', async () => {

@@ -1,6 +1,6 @@
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
-import { isRecord, validateRunRequest } from '@panda/contracts'
-import type { ExecutorAdapter, ResultEnvelope, RunRequest } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES, USAGE_ABSENCE_REASONS } from '@panda/contracts'
+import { isRecord, usageAbsence, usageObservation, validateRunRequest } from '@panda/contracts'
+import type { ExecutorAdapter, ResultEnvelope, RunRequest, UsageReport, UsageWindow } from '@panda/contracts'
 import { createNodeChildSpawner, routesThroughCmdShim } from './node-child-spawner.ts'
 import type { ChildProcessSpawner, SpawnedChild, SpawnOutcome } from './spawn-seam.ts'
 
@@ -30,6 +30,27 @@ export interface PathMatch {
   readonly equals: string
 }
 
+/**
+ * Where a vendor publishes its OWN per-window quota utilisation, and under which
+ * spellings (Story M15.A).
+ *
+ * Trait DATA rather than field names in the engine, for the reason the whole
+ * file exists: a fourth executor with a usage surface of its own must arrive as
+ * a record, never as an edit here. `path` resolves to the vendor's MAP of named
+ * windows — the keys of that map are the window names panda reports, so the
+ * vocabulary is the vendor's and panda names nothing.
+ */
+export interface UsageWindowTraits {
+  /** Which record carries the surface, e.g. `type == "rate_limit_event"`. */
+  readonly when: PathMatch
+  /** Path to the map of NAMED windows inside that record. */
+  readonly path: readonly string[]
+  /** The vendor's key for the utilisation figure inside one window. */
+  readonly utilizationKey: string
+  /** The vendor's key for the reset instant inside one window. */
+  readonly resetsAtKey: string
+}
+
 export interface ExecutorOutputTraits {
   readonly payload: PayloadShape
   /** Property path to the result text inside a payload record. */
@@ -40,6 +61,20 @@ export interface ExecutorOutputTraits {
    * a reasoning item and answer with chain-of-thought.
    */
   readonly resultWhen?: PathMatch
+  /**
+   * Extra condition a record must satisfy before `errorFlagPath` and
+   * `errorStatusPrefix` are read off it. Without it EVERY record in a stream is
+   * examined, which is the widening a single-object payload never had.
+   *
+   * Claude's `--output-format json` printed exactly one object, so "the record
+   * that could report failure" and "the result" were the same record by
+   * construction. Its stream prints `system`, `assistant` and `hook_*` events
+   * beside the result, all of them carrying a `subtype` of their own — so
+   * without this the `error` prefix would be tested against a vocabulary that is
+   * not the result's, and the envelope would no longer be the one the old mode
+   * produced. That equivalence is the story's own acceptance criterion.
+   */
+  readonly failureWhen?: PathMatch
   /** Path to a boolean flag that marks an executor-reported failure. */
   readonly errorFlagPath?: readonly string[]
   /** Path to a status string reported in failure messages. */
@@ -89,6 +124,16 @@ export interface ExecutorOutputTraits {
    * the pipeline already handles by keeping the estimate.
    */
   readonly usagePaths?: readonly (readonly string[])[]
+  /**
+   * The vendor's own QUOTA surface, if it publishes one. Absent means it does
+   * not, and absence is reported as absence with that reason — never as a zero.
+   *
+   * Read from the LAST matching record and reported through
+   * `CliExecutorAdapterOptions.onUsageObservation`, never through the envelope:
+   * the envelope this story switched Claude's stream mode under has to stay
+   * byte-for-byte the one the single-object mode produced.
+   */
+  readonly usageWindows?: UsageWindowTraits
 }
 
 export interface ExecutorTraits {
@@ -117,6 +162,17 @@ export interface CliExecutorAdapterOptions {
   readonly command?: string
   /** Receives per-run timing, including NFR-9 spawn-overhead instrumentation. */
   readonly onTiming?: (timing: AdapterTiming) => void
+  /**
+   * Receives the vendor's own quota reading for THIS run, when the trait record
+   * declares a surface to read it from (Story M15.A).
+   *
+   * A callback and not an envelope field, because the envelope had to stay
+   * identical across the mode switch that made the reading possible. Called at
+   * most once per run, and only on a run whose child actually printed something
+   * — a spawn that never happened has nothing to observe, which is different
+   * from an executor that ran and said nothing.
+   */
+  readonly onUsageObservation?: (report: UsageReport) => void
 }
 
 export interface AdapterTiming {
@@ -148,10 +204,23 @@ const ARGUMENT_PROMPT_MAX_LENGTH = process.platform === 'win32' ? 30_000 : 100_0
 // Keys the engine itself writes into `envelope.data`; a metadata key colliding
 // with one of them would silently overwrite the real result, hide truncation, or
 // — since M3.C — forge the figure a cost cap is enforced on.
-const RESERVED_DATA_KEYS = ['result', 'stdoutTruncated', 'stderrTruncated', 'usage']
+const RESERVED_DATA_KEYS = ['result', 'stdoutTruncated', 'stderrTruncated', 'usage', 'malformedStreamLines']
 
 /** The engine-owned `data` key a settled cost is read back from. */
 export const USAGE_DATA_KEY = 'usage'
+
+/**
+ * The engine-owned `data` key counting stream lines that were not JSON (E6).
+ *
+ * Written ONLY when the count is non-zero, exactly like `stdoutTruncated`. A bad
+ * line must never discard a run that completed — but a run whose stream panda
+ * could only partly read is not the same run as one it read whole, and silence
+ * there is the difference nobody can see afterwards.
+ */
+// Not exported, unlike `USAGE_DATA_KEY` beside it: that one has a real consumer
+// in `plugin.ts`, and this one has none. A constant on the package surface that
+// nothing outside reads is surface nobody asked for.
+const MALFORMED_LINES_DATA_KEY = 'malformedStreamLines'
 
 export function createCliExecutorAdapter(
   traits: ExecutorTraits,
@@ -204,6 +273,21 @@ function validateExecutorTraits(traits: ExecutorTraits): void {
   if (output.usageWhen !== undefined && output.usageWhen.path.length === 0) {
     reject("'output.usageWhen.path' must name at least one property")
   }
+  if (output.failureWhen !== undefined && output.failureWhen.path.length === 0) {
+    reject("'output.failureWhen.path' must name at least one property")
+  }
+  const windows = output.usageWindows
+  if (windows !== undefined) {
+    // Each rejected shape is one that would fail SILENTLY: an empty `when.path`
+    // resolves to the record itself and matches nothing, an empty `path`
+    // resolves to the whole event, and an empty key never names a field. All
+    // three produce "this executor reported no quota" forever, which is exactly
+    // the inert surface AD-5 forbids dressing up as an absence.
+    if (windows.when.path.length === 0) reject("'output.usageWindows.when.path' must name at least one property")
+    if (windows.path.length === 0) reject("'output.usageWindows.path' must name at least one property")
+    if (windows.utilizationKey.length === 0) reject("'output.usageWindows.utilizationKey' must be a non-empty string")
+    if (windows.resetsAtKey.length === 0) reject("'output.usageWindows.resetsAtKey' must be a non-empty string")
+  }
 }
 
 class TraitDrivenAdapter implements CliExecutorAdapter {
@@ -211,12 +295,14 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
   readonly #spawner: ChildProcessSpawner
   readonly #command: string
   readonly #onTiming: ((timing: AdapterTiming) => void) | undefined
+  readonly #onUsageObservation: ((report: UsageReport) => void) | undefined
 
   constructor(traits: ExecutorTraits, options: CliExecutorAdapterOptions) {
     this.#traits = traits
     this.#spawner = options.spawner ?? createNodeChildSpawner()
     this.#command = options.command ?? traits.command
     this.#onTiming = options.onTiming
+    this.#onUsageObservation = options.onUsageObservation
   }
 
   get executorId(): string {
@@ -290,7 +376,7 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
         // so the tokens it already spent are right here. Charging a cancelled run
         // its estimate while its own stdout says otherwise is a hole a caller can
         // drive through by aborting late.
-        return this.#cancelled(startedAt, spawnSetupMs, this.#unstructuredData(outcome, this.#scan(outcome.stdout).usage))
+        return this.#cancelled(startedAt, spawnSetupMs, this.#unstructuredData(outcome, this.#scan(outcome.stdout)))
       }
       return this.#fromOutcome(outcome, startedAt, spawnSetupMs)
     } finally {
@@ -338,7 +424,7 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
     // cancelled run carrying 500,000 reported tokens in captured stdout was
     // charged its estimate of 1.
     const scan = this.#scan(outcome.stdout)
-    const truncation = this.#unstructuredData(outcome, scan.usage)
+    const truncation = this.#unstructuredData(outcome, scan)
 
     if (outcome.spawnErrorMessage !== undefined) {
       // The one path with genuinely nothing to read: no child ever started.
@@ -372,12 +458,12 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
     // code and regardless of WHERE in the stream it said so: OpenCode emits
     // recoverable error events and keeps going, so a positional rule would drop
     // the reason whenever any output followed it.
-    if (scan.failure !== undefined) return finish(this.#failedFromRecord(scan.failure, outcome, scan.usage))
+    if (scan.failure !== undefined) return finish(this.#failedFromRecord(scan.failure, outcome, scan))
 
     if (outcome.exitCode !== 0) {
       // codex and opencode exit non-zero exactly when they have printed their
       // structured error, so the payload — not stderr noise — is the reason.
-      if (scan.result !== undefined) return finish(this.#failedFromRecord(scan.result, outcome, scan.usage))
+      if (scan.result !== undefined) return finish(this.#failedFromRecord(scan.result, outcome, scan))
       const detail =
         outcome.stderr.trim().length > 0
           ? outcome.stderr.trim()
@@ -396,7 +482,7 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
         ),
       )
     }
-    if (scan.result !== undefined) return finish(this.#okFromRecord(scan.result, outcome, scan.usage))
+    if (scan.result !== undefined) return finish(this.#okFromRecord(scan.result, outcome, scan))
     return finish(this.#failed(this.#noResultDetail(scan), PANDA_ERROR_CODES.executorRunFailed, truncation))
   }
 
@@ -419,7 +505,14 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
    * non-object lines, bookkeeping events) costs nothing.
    */
   #scan(stdout: string): PayloadScan {
-    const scan: MutablePayloadScan = { failure: undefined, result: undefined, usage: undefined, sawRecord: false }
+    const scan: MutablePayloadScan = {
+      failure: undefined,
+      result: undefined,
+      usage: undefined,
+      windows: undefined,
+      malformedLines: 0,
+      sawRecord: false,
+    }
     const text = stdout.startsWith(BYTE_ORDER_MARK) ? stdout.slice(BYTE_ORDER_MARK.length) : stdout
     // Accumulated across every record `usageWhen` selects, and voided outright by
     // any one of them that cannot be read — see `usagePaths`.
@@ -429,6 +522,10 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
       scan.sawRecord = true
       if (scan.failure === undefined && this.#reportsFailure(record)) scan.failure = record
       if (this.#resultText(record) !== undefined) scan.result = record
+      // LAST wins, like the result: a vendor that re-reports its quota mid-run
+      // has said something newer, and the newest reading is the true one.
+      const windows = this.#usageWindowsOf(record)
+      if (windows !== undefined) scan.windows = windows
       if (usageVoid || !this.#reportsUsage(record)) return
       const usage = this.#usageOf(record)
       if (usage === undefined) {
@@ -443,10 +540,12 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
       try {
         parsed = JSON.parse(text)
       } catch {
+        this.#reportUsage(scan)
         return scan
       }
       if (isRecord(parsed)) consider(parsed)
       scan.usage = usageVoid ? undefined : usageTotal
+      this.#reportUsage(scan)
       return scan
     }
 
@@ -457,12 +556,77 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
       try {
         parsed = JSON.parse(line)
       } catch {
+        // Skipped, and COUNTED (E6). One bad line in the middle of a stream must
+        // not throw away a run that reached its result — and it must not vanish
+        // either, or a partly-readable stream is indistinguishable from a whole one.
+        scan.malformedLines += 1
         continue
       }
       if (isRecord(parsed)) consider(parsed)
     }
     scan.usage = usageVoid ? undefined : usageTotal
+    this.#reportUsage(scan)
     return scan
+  }
+
+  /**
+   * Hands the caller what the vendor said about its own quota, once per run.
+   *
+   * Called from `#scan`, which is the one function every settled path goes
+   * through exactly once — reporting from the callers instead would be two
+   * places to forget it in.
+   *
+   * An executor whose traits declare no surface reports NOTHING here rather than
+   * a `noUsageSurface` absence: that answer is a property of the executor, not
+   * of any run, and `panda status` states it from the catalogue without needing
+   * a run to have happened at all.
+   */
+  #reportUsage(scan: PayloadScan): void {
+    const report = this.#onUsageObservation
+    const traits = this.#traits.output.usageWindows
+    if (report === undefined || traits === undefined) return
+    if (scan.windows === undefined || scan.windows.length === 0) {
+      report(
+        usageAbsence(
+          this.#traits.executorId,
+          USAGE_ABSENCE_REASONS.notReported,
+          `executor '${this.#traits.executorId}' produced no readable '${traits.path.join('.')}' in this run`,
+        ),
+      )
+      return
+    }
+    report(usageObservation(this.#traits.executorId, scan.windows, new Date().toISOString()))
+  }
+
+  /**
+   * The vendor's named windows carried by one record, or undefined when it
+   * carries none.
+   *
+   * Per WINDOW rather than fail-closed as a whole, and that asymmetry with
+   * `#usageOf` is deliberate: a usage figure is a BILL, where a missing term
+   * silently under-charges, so a term it cannot read voids the sum. These are a
+   * REPORT of what the vendor said, where each window stands on its own — a
+   * vendor that adds a third window in a shape panda does not know must not
+   * erase the two it does.
+   */
+  #usageWindowsOf(record: Record<string, unknown>): readonly UsageWindow[] | undefined {
+    const traits = this.#traits.output.usageWindows
+    if (traits === undefined || resolvePath(record, traits.when.path) !== traits.when.equals) return undefined
+    const map = resolvePath(record, traits.path)
+    if (!isRecord(map)) return undefined
+    const windows: UsageWindow[] = []
+    for (const [name, value] of Object.entries(map)) {
+      if (!isRecord(value)) continue
+      const utilization = value[traits.utilizationKey]
+      const resetsAt = value[traits.resetsAtKey]
+      // Copied across unchanged (D5): the vendor's own name, the vendor's own
+      // number, the vendor's own instant. Nothing here scales, averages, picks
+      // one window over another, or turns a reset into a countdown.
+      if (typeof utilization !== 'number' || !Number.isFinite(utilization)) continue
+      if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt)) continue
+      windows.push({ name, utilization, resetsAt })
+    }
+    return windows.length > 0 ? windows : undefined
   }
 
   /** Whether this record is one of the ones this vendor reports usage on. */
@@ -508,6 +672,8 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
   // not the exit code alone — decides the envelope status.
   #reportsFailure(record: Record<string, unknown>): boolean {
     const output = this.#traits.output
+    const when = output.failureWhen
+    if (when !== undefined && resolvePath(record, when.path) !== when.equals) return false
     if (output.errorFlagPath !== undefined && resolvePath(record, output.errorFlagPath) === true) return true
     const status = this.#status(record)
     return output.errorStatusPrefix !== undefined && status !== undefined && status.startsWith(output.errorStatusPrefix)
@@ -534,24 +700,29 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
    * `null` when there is nothing at all, which is what those paths used to return
    * unconditionally.
    */
-  #unstructuredData(outcome: SpawnOutcome, usage: number | undefined): Record<string, unknown> | null {
+  #unstructuredData(outcome: SpawnOutcome, scan: PayloadScan): Record<string, unknown> | null {
     const truncation = truncationData(outcome)
-    if (truncation === null && usage === undefined) return null
-    return { ...(truncation ?? {}), ...(usage === undefined ? {} : { [USAGE_DATA_KEY]: usage }) }
+    const skipped = malformedData(scan)
+    if (truncation === null && skipped === null && scan.usage === undefined) return null
+    return {
+      ...(truncation ?? {}),
+      ...(skipped ?? {}),
+      ...(scan.usage === undefined ? {} : { [USAGE_DATA_KEY]: scan.usage }),
+    }
   }
 
-  #data(record: Record<string, unknown>, outcome: SpawnOutcome, usage: number | undefined): Record<string, unknown> {
+  #data(record: Record<string, unknown>, outcome: SpawnOutcome, scan: PayloadScan): Record<string, unknown> {
     const result = resolvePath(record, this.#traits.output.resultPath)
     const data: Record<string, unknown> = typeof result === 'string' ? { result } : {}
     for (const [key, path] of Object.entries(this.#traits.output.metadata ?? {})) {
       const value = resolvePath(record, path)
       if (typeof value === 'string') data[key] = value
     }
-    if (usage !== undefined) data[USAGE_DATA_KEY] = usage
-    return { ...data, ...(truncationData(outcome) ?? {}) }
+    if (scan.usage !== undefined) data[USAGE_DATA_KEY] = scan.usage
+    return { ...data, ...(truncationData(outcome) ?? {}), ...(malformedData(scan) ?? {}) }
   }
 
-  #failedFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome, usage: number | undefined): ResultEnvelope {
+  #failedFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome, scan: PayloadScan): ResultEnvelope {
     const output = this.#traits.output
     const status = this.#status(record)
     const reported = stringifyDetail(resolvePath(record, output.errorMessagePath ?? output.resultPath))
@@ -560,14 +731,14 @@ class TraitDrivenAdapter implements CliExecutorAdapter {
     return this.#failed(
       detail.length > 0 ? `${reason}: ${detail}` : reason,
       PANDA_ERROR_CODES.executorRunFailed,
-      this.#data(record, outcome, usage),
+      this.#data(record, outcome, scan),
     )
   }
 
-  #okFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome, usage: number | undefined): ResultEnvelope {
+  #okFromRecord(record: Record<string, unknown>, outcome: SpawnOutcome, scan: PayloadScan): ResultEnvelope {
     return {
       status: 'ok',
-      data: this.#data(record, outcome, usage),
+      data: this.#data(record, outcome, scan),
       summary: this.#summarize(this.#resultText(record) ?? ''),
       errors: [],
     }
@@ -617,6 +788,10 @@ interface PayloadScan {
   readonly result: Record<string, unknown> | undefined
   /** The vendor's summed usage figure, from whichever record reported it. */
   readonly usage: number | undefined
+  /** The vendor's own quota windows, from the LAST record that carried them. */
+  readonly windows: readonly UsageWindow[] | undefined
+  /** Non-empty stream lines that were not JSON, skipped rather than fatal (E6). */
+  readonly malformedLines: number
   /** At least one line parsed as an object, i.e. the output was not garbage. */
   readonly sawRecord: boolean
 }
@@ -636,6 +811,17 @@ function resolvePath(record: Record<string, unknown>, path: readonly string[]): 
     current = current[segment]
   }
   return current
+}
+
+/**
+ * The skipped-line count, or null when nothing was skipped.
+ *
+ * Absent on a clean stream ON PURPOSE: the envelope this story's acceptance
+ * compares against the old single-object mode must be key-for-key the same one,
+ * and a counter that is structurally zero is a counter nobody can read anyway.
+ */
+function malformedData(scan: PayloadScan): Record<string, number> | null {
+  return scan.malformedLines > 0 ? { [MALFORMED_LINES_DATA_KEY]: scan.malformedLines } : null
 }
 
 function truncationData(outcome: SpawnOutcome): Record<string, boolean> | null {

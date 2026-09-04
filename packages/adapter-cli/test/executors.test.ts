@@ -24,23 +24,32 @@ runExecutorClauseSuite([
     command: 'claude',
     makeAdapter: (options) => createClaudeCodeAdapter(options),
     promptDelivery: 'stdin',
-    payload: 'single-object',
-    expectedArgs: ['--print', '--output-format', 'json', '--no-session-persistence', '--dangerously-skip-permissions'],
-    okStdout: JSON.stringify({
-      type: 'result',
-      subtype: 'success',
-      is_error: false,
-      result: RESULT_TEXT,
-      session_id: 's-1',
-    }),
+    payload: 'jsonl',
+    // E7: `stream-json` and `--verbose` travel together or the binary exits 1
+    // before it does anything. MEASURED, and this is the clause that pins it.
+    expectedArgs: [
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--no-session-persistence',
+      '--dangerously-skip-permissions',
+    ],
+    // The event shapes the real stream emits, in the real order: the `system`
+    // and `assistant` events are here ON PURPOSE. Each one carries a `subtype`
+    // or a `type` of its own, and `failureWhen` is what keeps the scan from
+    // reading Claude's failure vocabulary off a record that is not the result.
+    okStdout: jsonl(
+      { type: 'system', subtype: 'init', session_id: 's-1', cwd: '/somewhere' },
+      { type: 'assistant', message: { role: 'assistant' }, session_id: 's-1' },
+      { type: 'result', subtype: 'success', is_error: false, result: RESULT_TEXT, session_id: 's-1' },
+    ),
     expectedResult: RESULT_TEXT,
     expectedMetadata: { subtype: 'success', session_id: 's-1' },
-    reportedFailureStdout: JSON.stringify({
-      type: 'result',
-      subtype: 'error_max_turns',
-      is_error: false,
-      result: 'the turn limit was reached',
-    }),
+    reportedFailureStdout: jsonl(
+      { type: 'system', subtype: 'init', session_id: 's-1' },
+      { type: 'result', subtype: 'error_max_turns', is_error: false, result: 'the turn limit was reached' },
+    ),
     expectedFailureDetail: 'the turn limit was reached',
   },
   {

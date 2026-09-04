@@ -604,7 +604,10 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     expect(spawned.args).toEqual([
       '--print',
       '--output-format',
-      'json',
+      'stream-json',
+      // `stream-json` under `--print` exits 1 without `--verbose` (M15.A, E7),
+      // so the pair travelling INTO an installed tarball is part of the claim.
+      '--verbose',
       '--no-session-persistence',
       '--dangerously-skip-permissions',
     ])

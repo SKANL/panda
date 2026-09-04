@@ -40,6 +40,17 @@ export { resolveMethod, swapMethod } from './methods.ts'
 // can invoke with an `ActivationContext` of its own is exactly the bypass
 // surface the block below records five withdrawn exports for.
 export { selectWorkspaceProvider, type WorkspaceProviderSelection } from './workspaces.ts'
+// The recorded quota reading, beside the run that produces it (Story M15.A,
+// D7): `panda run` records, `panda status` reads, and nothing here invokes an
+// executor. Both halves are exported for the same FR-29 reason as the two
+// selections above — a host that installed only this package gets the whole
+// pair without `@panda/cli`.
+export {
+  readUsageReports,
+  recordUsageObservation,
+  usageObservationsPath,
+  type UsageStoreOptions,
+} from './usage.ts'
 // `SessionOptions.adapterOptions` is on the surface, so its vocabulary has to be
 // too — the same rule the block below states: under pnpm's strict layout a
 // consumer that installed only `@panda/session` cannot resolve
@@ -65,9 +76,16 @@ export type {
   ExecutorAdapter,
   ResultEnvelope,
   RunRequest,
+  UsageAbsence,
+  UsageObservation,
+  UsageReport,
+  UsageWindow,
   WorkspaceHandle,
   WorkspaceProvider,
 } from '@panda/contracts'
+// A VALUE, not a type: `UsageAbsence.reason` is routed on (AD-7), and a consumer
+// that cannot name the codes would have to compare the strings by hand.
+export { USAGE_ABSENCE_REASONS } from '@panda/contracts'
 // Two sink constructors, and neither is a factory in the sense the note below
 // withdraws. `createMemoryLogSink` retains; `createLogSink` takes the caller's
 // own write function and retains nothing — it is the bring-your-own-exporter

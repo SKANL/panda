@@ -46,8 +46,12 @@ interface SpawnCall {
  */
 function recordingSpawner(): { spawner: ChildProcessSpawner; calls: SpawnCall[] } {
   const calls: SpawnCall[] = []
-  const stdout = `${JSON.stringify({
-    result: 'done',
+  // Two lines since M15.A: Claude's stream mode discriminates its result on
+  // `type == "result"`, while codex and opencode discriminate theirs on other
+  // values of that same key, so one line can no longer serve all three. Each
+  // vendor declines the other's line.
+  const stdout = `${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'done' })}
+${JSON.stringify({
     type: 'text',
     part: { type: 'text', text: 'done' },
     item: { type: 'agent_message', text: 'done' },
@@ -107,7 +111,9 @@ describe('panda run --executor puts that vendor on the command line', () => {
    * what is asserted is the command the OS was handed.
    */
   const vendors: [string, string, string[]][] = [
-    ['claude-code', 'claude', ['--print', '--output-format', 'json', '--no-session-persistence', '--dangerously-skip-permissions']],
+    // `--verbose` is not decoration: `stream-json` under `--print` exits 1
+    // without it (M15.A, E7), so the pair is pinned wherever the argv is.
+    ['claude-code', 'claude', ['--print', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--dangerously-skip-permissions']],
     ['codex', 'codex', ['exec', '--json', '--skip-git-repo-check']],
     ['opencode', 'opencode', ['run', '--format', 'json', '--', 'list files']],
   ]

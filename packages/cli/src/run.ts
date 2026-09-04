@@ -19,9 +19,12 @@ import {
 import {
   createLogSink,
   readExecutorConfigLayers,
+  readUsageReports,
+  recordUsageObservation,
   runSession,
   type LogRecord,
   type SessionOptions,
+  type UsageReport,
 } from '@panda/session'
 import {
   isRegistryVerb,
@@ -86,6 +89,7 @@ export const USAGE = [
   '       panda project init [directory]',
   '       panda doctor',
   '       panda project doctor [directory]',
+  '       panda status',
   '       panda remediate <adopt|release|repair|discard> [--executor <id>] [--entry <id>] [--apply]',
   '       panda project remediate <adopt|release|repair|discard> [directory] [--executor <id>] [--entry <id>] [--apply]',
   `       panda swap <${SWAP_NOUNS.join('|')}> <id>`,
@@ -140,6 +144,13 @@ export const USAGE = [
   'project init  Binds a project and projects into every detected executor that has a project-scope config.',
   'doctor        Reports what init would change and every problem panda can see. Writes nothing.',
   'project doctor  The same report for a project, matching what project init would do.',
+  'status        Reports the usage each executor published the last time panda ran it: the windows',
+  '              that executor NAMES, with its own utilisation and reset values, and the instant the',
+  '              reading was taken. It invokes no executor and writes nothing — a report that spent',
+  '              the quota it reports on would be unusable on the day you most need it, so the run',
+  '              that already paid for the reading is the one that records it. An executor that',
+  '              publishes no usage surface, and one panda has not run yet, each say so with their',
+  '              own reason; neither is ever shown as a zero.',
   "swap          Writes the selection into panda's own config so later runs use it, and reports the",
   '              layer that actually decides. Writing the machine document while the project one',
   '              names something else changes nothing a run will do, and swap says so rather than',
@@ -164,6 +175,7 @@ export const USAGE = [
   'Exit codes: 0 ok · 1 failed/cancelled · 2 usage/environment error.',
   'For init, a target that failed to project exits 1; detecting no executor at all exits 2.',
   'For doctor, a finding that is a problem exits 1; a clean environment exits 0.',
+  'For status, 0 whenever a report could be produced; 2 only when none could be.',
 ].join('\n')
 
 /**
@@ -247,6 +259,9 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     return await runDoctor(argv.slice(1), out, err, 0, () =>
       diagnose({ homeDir: options.homeDir, scope: 'machine' }),
     )
+  }
+  if (argv[0] === 'status') {
+    return await runStatus(argv.slice(1), out, err, () => readUsageReports({ homeDir: options.homeDir }))
   }
   if (argv[0] === 'remediate') {
     return await runRemediate(argv.slice(1), out, err, 1, (selector) =>
@@ -343,11 +358,26 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     // CALLER supplied, so with no write there is nothing that can fail and an
     // unconditional sink would carry a counter that is structurally zero.
     const log = trace ? createLogSink((record) => err(renderLogRecord(record))) : undefined
+    // What the executor said about its own quota during THIS run (M15.A, D7).
+    // Captured rather than written from inside the adapter: the adapter has no
+    // business knowing where panda's home directory is, and the write must not
+    // happen until the run is over.
+    let observed: UsageReport | undefined
     const envelope = await runSession({
       prompt,
       log,
       configLayers,
-      adapterOptions: options.adapterOptions,
+      adapterOptions: {
+        ...options.adapterOptions,
+        // CHAINED, not replaced. `adapterOptions` is a caller-supplied seam, and
+        // a spread that overwrote one of its callbacks would silently take the
+        // reading away from a host that had asked for it — the CLI stealing a
+        // hook it does not own.
+        onUsageObservation: (report) => {
+          observed = report
+          options.adapterOptions?.onUsageObservation?.(report)
+        },
+      },
       cwd: options.cwd,
       createAdapter: options.createAdapter,
       createProvider: options.createProvider,
@@ -381,6 +411,18 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
     // thing this story removed. A cleanup timeout belongs in the session, and is
     // filed with the other AbortSignal-policy work in deferred-work.md.
     //
+    // The run that produced the reading is the one that records it, so `panda
+    // status` never has to spend quota to report on quota (D7). Best-effort by
+    // design and said out loud when it fails: a bookkeeping write that could not
+    // land must not turn a run that SUCCEEDED into a failed one, and silence
+    // would leave `status` reporting a stale reading with nothing to explain it.
+    if (observed !== undefined) {
+      try {
+        await recordUsageObservation(observed, { homeDir: options.homeDir })
+      } catch (error) {
+        err(`the usage reading from this run could not be recorded: ${describe(error)}`)
+      }
+    }
     // Inside the try on purpose: a payload that cannot be serialised is an
     // environment failure (exit 2), not an uncaught throw out of the binary.
     out(JSON.stringify(envelope, null, 2))
@@ -571,6 +613,69 @@ async function runDoctor(
     err(describe(error))
     return 2
   }
+}
+
+/**
+ * The whole of what `panda status` is: reject bad argv, call the capability,
+ * print what it read, exit 0.
+ *
+ * It takes no directory and no flag because it has no scope to narrow and no
+ * work to authorise — every fact in it is a reading some earlier RUN already
+ * paid for, and the capability neither invokes an executor nor opens a store for
+ * writing (D6/D7). `panda status` on a machine that has never run anything is
+ * therefore instant, offline, and free.
+ *
+ * The exit code follows `doctor`'s convention rather than inventing a third: 0
+ * whenever a report could be produced — an all-absence report is still a report,
+ * and absence here is an answer — and 2 only when none could be. There is no 1,
+ * because a utilisation is not a verdict panda gets to fail on.
+ *
+ * Said out loud rather than implied: with today's capability there is no input
+ * that reaches that 2. Every row is derivable from the shipped catalogue, and a
+ * stored reading panda cannot read is reported as absence rather than raised —
+ * MEASURED in `test/status.test.ts`, which drives an unreadable home directory
+ * and still gets 0. The `catch` is the same uncaught-throw guard every other
+ * binding in this file carries, kept so a future capability that CAN fail
+ * reaches the user as an exit code instead of a stack trace.
+ */
+async function runStatus(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  capability: () => Promise<readonly UsageReport[]>,
+): Promise<number> {
+  const usage = usageOutcome(tokens, 0, out, err)
+  if (usage !== undefined) return usage
+  try {
+    const reports = await capability()
+    out(JSON.stringify(reports, null, 2))
+    for (const report of reports) err(formatUsageReport(report))
+    return 0
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/**
+ * One executor per line, for a human reading stderr while stdout is piped.
+ *
+ * The vendor's own window NAMES and the vendor's own numbers, printed as they
+ * were read (D5): no averaging across windows, no "N% remaining", and no reset
+ * instant rendered as a countdown that is already wrong by the time it is on
+ * screen. `observedAt` is printed beside them because a utilisation is only
+ * true as of its reading, and a report that hides its age lies with a straight
+ * face — the reader, not panda, decides whether an hour-old reading is stale.
+ *
+ * An absence prints its CODE next to its sentence, for the same reason findings
+ * do: the code is what a script routes on (AD-7), the sentence is for the human.
+ */
+function formatUsageReport(report: UsageReport): string {
+  if (report.kind === 'absent') return `${report.executorId}: ${report.reason}: ${report.detail}`
+  const windows = report.windows
+    .map((window) => `${window.name} utilization=${window.utilization} resetsAt=${window.resetsAt}`)
+    .join(' · ')
+  return `${report.executorId}: observed at ${report.observedAt}: ${windows}`
 }
 
 /**

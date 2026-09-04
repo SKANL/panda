@@ -143,6 +143,32 @@ exits 1 with `PANDA_PROJECTION_REMEDIATION_REFUSED` and changes nothing.
 `panda doctor` names the verb for every state that has one, so the report and the
 exit are one string.
 
+## How much quota is left
+
+```sh
+pnpm panda status
+```
+
+One row per executor, reporting what that executor published about its own usage
+the last time panda ran it — the windows the vendor NAMES, with the vendor's own
+utilisation and reset values and the instant the reading was taken. Panda
+averages nothing, converts nothing, and states no "time remaining" the vendor did
+not state.
+
+`panda status` **invokes no executor and writes nothing**. A report that spent
+the quota it reports on would be unusable on exactly the day you most want it, so
+the run that already paid for a reading is the one that records it, and `status`
+reads the record. That is also why every row is honest about what it does not
+know: an executor that publishes no usage surface says so
+(`PANDA_USAGE_NO_SURFACE`), and one panda has not run yet says so and names the
+command that would produce a reading (`PANDA_USAGE_NOT_OBSERVED`). Neither is
+ever shown as `0%` — a zero for something panda never measured reads as a
+measurement that was taken.
+
+Today only `claude-code` publishes such a surface, in its own event stream. It is
+a typed field the vendor emits deliberately under a documented flag, not text
+scraped off a terminal.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -150,6 +176,10 @@ exit are one string.
 | 0 | run completed with a status `ok` envelope |
 | 1 | run returned `failed` or `cancelled` (envelope still printed) |
 | 2 | usage error, invalid request, or environment failure (message on stderr) |
+
+For `status` there are two: 0 whenever a report could be produced — an
+all-absence report is still a report — and 2 only when none could be. There is no
+1, because a utilisation is not a verdict panda gets to fail on.
 
 For `doctor` the three narrow: 0 clean, 1 at least one finding that is a problem,
 2 no diagnosis could be produced. For `remediate`: 0 described or performed, 1

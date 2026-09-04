@@ -124,3 +124,117 @@ export const RUN_REQUEST_SCHEMA: StandardSchemaV1<RunRequest> = defineStandardSc
     return issues.length > 0 ? { issues } : { value: value as RunRequest }
   },
 )
+
+// --- the vendor's own usage surface (Story M15.A) ---------------------------
+//
+// AD-5 lives here twice over: a usage figure panda could not take is ABSENCE
+// with a reason, never a zero and never a blank. A `0` utilisation for an
+// executor panda cannot measure is worse than no row at all, because it reads
+// as a measurement that was taken.
+//
+// Nothing here is derived. `utilization` and `resetsAt` are the vendor's own
+// values under the vendor's own window name, copied across unchanged: no
+// average across windows, no "remaining" figure, no conversion of a reset
+// instant into a countdown that starts drifting the moment it is printed.
+
+/**
+ * One window a vendor NAMES, carrying that vendor's own numbers verbatim.
+ *
+ * `resetsAt` is whatever the vendor emitted — for Claude Code 2.1.260, MEASURED,
+ * a Unix epoch in SECONDS — and panda neither rebases nor formats it.
+ */
+export interface UsageWindow {
+  /** The vendor's own name for the window, e.g. `five_hour`. */
+  readonly name: string
+  /** The vendor's own utilisation number, unscaled. */
+  readonly utilization: number
+  /** The vendor's own reset instant, uninterpreted. */
+  readonly resetsAt: number
+}
+
+/**
+ * Why panda has no usage figure. Routed on (AD-7), never parsed out of prose.
+ */
+export const USAGE_ABSENCE_REASONS = {
+  /** The executor publishes no usage surface panda can read. */
+  noUsageSurface: 'PANDA_USAGE_NO_SURFACE',
+  /** It does publish one, and no run has been recorded yet. */
+  notObserved: 'PANDA_USAGE_NOT_OBSERVED',
+  /** A run happened and carried no usage surface in its output. */
+  notReported: 'PANDA_USAGE_NOT_REPORTED',
+} as const
+
+export type UsageAbsenceReason = (typeof USAGE_ABSENCE_REASONS)[keyof typeof USAGE_ABSENCE_REASONS]
+
+const ABSENCE_REASONS: readonly string[] = Object.values(USAGE_ABSENCE_REASONS)
+
+/**
+ * What one executor reported, and WHEN it reported it.
+ *
+ * `observedAt` is not decoration: a utilisation is only true as of its reading,
+ * so a report that hides its age is a report that lies with a straight face.
+ */
+export interface UsageObservation {
+  readonly kind: 'observed'
+  readonly executorId: string
+  /** ISO-8601 instant at which panda read these values off the vendor. */
+  readonly observedAt: string
+  readonly windows: readonly UsageWindow[]
+}
+
+/** Typed absence with its reason (AD-5), which is never a zero and never a blank. */
+export interface UsageAbsence {
+  readonly kind: 'absent'
+  readonly executorId: string
+  readonly reason: UsageAbsenceReason
+  /** The sentence a human reads, naming the exit when there is one. */
+  readonly detail: string
+}
+
+export type UsageReport = UsageObservation | UsageAbsence
+
+/** The constructor AD-5 asks for, so nobody hands a caller a bare `null`. */
+export function usageObservation(
+  executorId: string,
+  windows: readonly UsageWindow[],
+  observedAt: string,
+): UsageObservation {
+  return { kind: 'observed', executorId, observedAt, windows }
+}
+
+/** The absence constructor. A reason is required; there is no unreasoned absence. */
+export function usageAbsence(executorId: string, reason: UsageAbsenceReason, detail: string): UsageAbsence {
+  return { kind: 'absent', executorId, reason, detail }
+}
+
+function isUsageWindow(value: unknown): value is UsageWindow {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value['name']) &&
+    typeof value['utilization'] === 'number' &&
+    Number.isFinite(value['utilization']) &&
+    typeof value['resetsAt'] === 'number' &&
+    Number.isFinite(value['resetsAt'])
+  )
+}
+
+/**
+ * Whether an arbitrary value is a usage report.
+ *
+ * A predicate rather than a throwing validator on purpose: the one caller reads
+ * a file panda itself wrote, and a record it can no longer understand is a
+ * record to report as ABSENT, not a reason to fail the command that reads it.
+ */
+export function isUsageReport(value: unknown): value is UsageReport {
+  if (!isRecord(value) || !isNonEmptyString(value['executorId'])) return false
+  if (value['kind'] === 'observed') {
+    const windows = value['windows']
+    return isNonEmptyString(value['observedAt']) && Array.isArray(windows) && windows.every(isUsageWindow)
+  }
+  return (
+    value['kind'] === 'absent' &&
+    typeof value['reason'] === 'string' &&
+    ABSENCE_REASONS.includes(value['reason']) &&
+    isNonEmptyString(value['detail'])
+  )
+}

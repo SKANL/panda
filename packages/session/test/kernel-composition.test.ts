@@ -591,18 +591,32 @@ describe('createSessionKernel is the only composition surface', () => {
     // Its sibling `createSelectedWorkspacePlugin` is the one that turns that id
     // into a plugin, and that one is deliberately NOT here: it is precisely the
     // kind of factory the five withdrawn exports were withdrawn for.
+    //
+    // WIDENED AGAIN BY M15.A, by four, and all four pass the same rule. Three
+    // are the recorded quota reading — `usageObservationsPath` names a file,
+    // `recordUsageObservation` writes one JSON document, `readUsageReports`
+    // reads it and joins it against the shipped catalogue. None of them
+    // constructs a kernel, a plugin or an adapter, and `readUsageReports`
+    // deliberately cannot INVOKE one: that is the whole point of recording. The
+    // fourth, `USAGE_ABSENCE_REASONS`, is a frozen record of codes — a
+    // `UsageAbsence.reason` is routed on (AD-7), and a consumer that could not
+    // name the codes would be comparing strings by hand.
     expect(values.sort()).toEqual([
       'SESSION_ACTION_COST',
       'SESSION_ACTION_ID',
+      'USAGE_ABSENCE_REASONS',
       'createLogSink',
       'createMemoryLogSink',
       'createSessionKernel',
       'readExecutorConfigLayers',
+      'readUsageReports',
+      'recordUsageObservation',
       'resolveExecutor',
       'resolveMethod',
       'runSession',
       'selectWorkspaceProvider',
       'swapMethod',
+      'usageObservationsPath',
     ])
   })
 

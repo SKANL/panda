@@ -32,6 +32,10 @@ export {
 export {
   RESULT_ENVELOPE_SCHEMA,
   RUN_REQUEST_SCHEMA,
+  USAGE_ABSENCE_REASONS,
+  isUsageReport,
+  usageAbsence,
+  usageObservation,
   validateEnvelope,
   validateRunRequest,
   type EnvelopeError,
@@ -39,6 +43,11 @@ export {
   type ResultEnvelope,
   type ResultStatus,
   type RunRequest,
+  type UsageAbsence,
+  type UsageAbsenceReason,
+  type UsageObservation,
+  type UsageReport,
+  type UsageWindow,
 } from './executor.ts'
 export {
   REGISTRY_ENTRY_SCHEMA,

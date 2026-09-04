@@ -8,6 +8,7 @@ export type {
   PathMatch,
   PayloadShape,
   PromptDelivery,
+  UsageWindowTraits,
 } from './traits.ts'
 export { CLAUDE_CODE_TRAITS, createClaudeCodeAdapter } from './executors/claude-code.ts'
 export { CODEX_TRAITS, createCodexAdapter } from './executors/codex.ts'

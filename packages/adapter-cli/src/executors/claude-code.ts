@@ -3,11 +3,47 @@ import type { CliExecutorAdapter, CliExecutorAdapterOptions, ExecutorTraits } fr
 
 // Claude Code trait record.
 //
-// Headless print mode: `--print --output-format json` prints ONE JSON result
-// object on stdout, and the prompt arrives via stdin (the CLI's piped-input
-// convention). Session persistence is off so no session state outlives the
-// workspace; permissions are bypassed because headless execution has no
-// interactive approver.
+// Headless print mode: `--print --output-format stream-json --verbose` prints
+// newline-delimited EVENTS on stdout, and the prompt arrives via stdin (the
+// CLI's piped-input convention). Session persistence is off so no session state
+// outlives the workspace; permissions are bypassed because headless execution
+// has no interactive approver.
+//
+// The stream, MEASURED (M15.A) on 2.1.260 by running the binary and reading its
+// own stdout, exactly as the `--output-format json` mode below was:
+//   `--verbose` is REQUIRED. Without it, `--print --output-format stream-json`
+//   exits 1 printing "Error: When using --print, --output-format=stream-json
+//   requires --verbose" and produces no output at all. Measured by running it;
+//   it costs no quota, because the refusal is argument validation.
+//   With it: exit 0, and stderr carried NOTHING.
+// The 14 events of a one-word task were, in order: four `system/hook_started`,
+// `system/hook_response` x2, `system/hook_progress`, `system/hook_response` x2,
+// `system/init`, `system/informational`, `assistant`, `rate_limit_event`, and
+// the terminal `result/success`.
+//
+// WHY THE MODE CHANGED, and what did not: `--output-format json` carries NO
+// quota surface. Its top-level keys were dumped in full and the list is the
+// control that the search saw the object: duration_api_ms, stop_reason,
+// session_id, total_cost_usd, usage, modelUsage, ... and no `rate_limit_info`.
+// The stream's terminal `result/success` event carries every one of those same
+// fields, so the ENVELOPE is fed from it rather than rebuilt, and it is
+// identical to the one the single-object mode produced. `test/stream-mode-live.test.ts`
+// proves that against the old mode by running both, rather than asserting it.
+//
+// `failureWhen` is what keeps that equivalence true. The single-object mode had
+// exactly one record, so "the record that reports failure" was the result by
+// construction; the stream's `system/*` events carry a `subtype` of their own,
+// and without the discriminator the `error` prefix would be tested against
+// nine records that are not the result.
+//
+// Quota, MEASURED in the same run (Story M15.A): the `rate_limit_event` carries
+// `rate_limit_info.unifiedWindows`, a MAP of the vendor's own window names to
+// `{utilization, resetsAt}` — `five_hour {0.13, 1788491400}` and
+// `seven_day {0.22, 1788728400}`. `resetsAt` is a Unix epoch in SECONDS, a
+// NUMBER, and `utilization` is a fraction rather than a percentage. Both are
+// reported verbatim under the vendor's own names; panda converts neither.
+// It arrives WITHOUT `--include-hook-events`, which the original measurement
+// happened to pass and which panda therefore does not.
 //
 // Failure shape: print-mode payloads carry `is_error` plus a `subtype`
 // ('success', 'error_max_turns', …). Both must surface as FAILED envelopes even
@@ -52,11 +88,22 @@ import type { CliExecutorAdapter, CliExecutorAdapterOptions, ExecutorTraits } fr
 export const CLAUDE_CODE_TRAITS: ExecutorTraits = {
   executorId: 'claude-code',
   command: 'claude',
-  args: Object.freeze(['--print', '--output-format', 'json', '--no-session-persistence', '--dangerously-skip-permissions']),
+  args: Object.freeze([
+    '--print',
+    '--output-format',
+    'stream-json',
+    // Not optional and not cosmetic: `stream-json` under `--print` exits 1
+    // without it. `test/executors.test.ts` pins the pair (E7).
+    '--verbose',
+    '--no-session-persistence',
+    '--dangerously-skip-permissions',
+  ]),
   promptDelivery: 'stdin',
   output: {
-    payload: 'single-object',
+    payload: 'jsonl',
     resultPath: ['result'],
+    resultWhen: { path: ['type'], equals: 'result' },
+    failureWhen: { path: ['type'], equals: 'result' },
     errorFlagPath: ['is_error'],
     statusPath: ['subtype'],
     errorStatusPrefix: 'error',
@@ -68,6 +115,12 @@ export const CLAUDE_CODE_TRAITS: ExecutorTraits = {
       ['usage', 'cache_creation_input_tokens'],
       ['usage', 'cache_read_input_tokens'],
     ],
+    usageWindows: {
+      when: { path: ['type'], equals: 'rate_limit_event' },
+      path: ['rate_limit_info', 'unifiedWindows'],
+      utilizationKey: 'utilization',
+      resetsAtKey: 'resetsAt',
+    },
   },
 }
 

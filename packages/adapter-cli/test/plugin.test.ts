@@ -21,10 +21,20 @@ function request(prompt = 'list files'): RunRequest {
   return { prompt, workspace: WORKSPACE }
 }
 
-// One stdout line every vendor's trait record parses as a successful result, so
-// a test can swap WHICH executor is configured without swapping its fixture too.
+// Stdout every vendor's trait record parses as a successful result, so a test
+// can swap WHICH executor is configured without swapping its fixture too.
+//
+// TWO lines since M15.A, because one can no longer serve all three: Claude's
+// stream mode discriminates its result on `type == "result"` while codex and
+// opencode discriminate theirs on values of the same `type` key. All three
+// payloads are `jsonl` now, so each vendor simply declines the other's line.
 const ANY_VENDOR_STDOUT = `${JSON.stringify({
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
   result: 'done',
+})}
+${JSON.stringify({
   type: 'text',
   part: { type: 'text', text: 'done' },
   item: { type: 'agent_message', text: 'done' },
