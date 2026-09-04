@@ -207,7 +207,14 @@ describe('panda init materialises skills where each executor reads them', () => 
     }
     // The target's OWN reason, not the registry-derived sentence that would have
     // claimed the executor has no representation for a skill at all.
-    expect(result.skills[0]?.unprojectable[0]?.reason).not.toContain('correction-01 C5')
+    //
+    // THIS USED TO DISCRIMINATE ON `correction-01 C5`, an internal spec citation
+    // the derived sentence carried. It made a good marker precisely because no
+    // target would ever write one -- and that is also why it had to go: doctor
+    // printed it verbatim to users, for whom a document name is a fact about
+    // panda's history rather than about their machine. Pinned on the derived
+    // SENTENCE now, which is the thing actually being ruled out.
+    expect(result.skills[0]?.unprojectable[0]?.reason).not.toContain('has no native representation')
   })
 })
 

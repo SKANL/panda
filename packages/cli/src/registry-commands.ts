@@ -372,6 +372,28 @@ function deliveryLines(entry: RegistryEntry, delivery: EntryDelivery): string[] 
     )
     return lines
   }
+  // A GRAMMAR FAULT IS NOT AN ENVIRONMENT FACT, AND THE OLD BLOCK SAID IT WAS.
+  //
+  // `command` is the only executable field an mcp-server has, and
+  // `collectMcpEntries` skips a command-less one unconditionally — not even an
+  // `extensions` payload rescues it. So such an entry is inert on every
+  // executor, at every scope, on every machine, forever. The block printed three
+  // sentences about SCOPE for it ("HERE", "at the machine scope", "no other
+  // scope takes it either"), which reads as a local condition another scope
+  // might not have. None of that is true of it.
+  //
+  // And the repair is ONE command, driven: `panda add` on an existing id updates
+  // it in place and exits 0, so no `panda remove` is needed. Naming it here is
+  // the difference between a diagnosis and an exit.
+  if (entry.type === 'mcp-server' && entry.command === undefined) {
+    lines.push(
+      `NOTHING TAKES IT, ANYWHERE: an mcp-server with no command renders into nothing — on every executor and at every scope, not just this one`,
+    )
+    lines.push(
+      `the entry is registered and stays listed by \`panda list\`; give it a command with \`panda add mcp-server ${entry.id} --command <c>\`, which updates this entry in place`,
+    )
+    return lines
+  }
   // The headline says only what was OBSERVED — that no target took it. It used
   // to explain WHY ("no detected executor has a machine-scope location for a
   // skill entry"), which conflated "no target exists for this surface" with

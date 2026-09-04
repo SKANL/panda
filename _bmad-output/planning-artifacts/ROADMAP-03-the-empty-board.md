@@ -129,29 +129,37 @@ rotation and location are Ask-First in spec 1.6. Do 28.A only after that
 decision, or it invents a location a user did not choose — which is
 correction-01's own rule pointed inward.
 
-### M29 — Diagnosis as fine-grained as the thing diagnosed
+### M29 — CLOSED. Diagnosis as fine-grained as the thing diagnosed
 
-*The root: `panda doctor` reports at a coarser altitude than it acts.* A user
-told "this file differs" cannot tell which entry caused it, and the remediation
-they are handed is file-shaped while the cause is entry-shaped.
+*The root was real and it was one function, not a subsystem.*
 
-- **29.A — WRONG IN BOTH HALVES, measured.** `ProjectionResult` DOES carry a
-  per-entry channel: `DriftEntry` has an `entryId` and a `location`
-  (`contracts/src/projection.ts:109-114`). And doctor DOES read it —
-  `doctor.ts:716-718` pushes one finding per drift entry carrying both, and
-  `:719-721` does the same for `unprojectable`. Asserted by tests that run:
-  `doctor.test.ts:248` expects `{ entryId: 'ctx', location: 'mcpServers.ctx' }`
-  (control: 26 clauses in that file). What remains is far narrower than this
-  entry claimed and may not be worth building: the file-level `out-of-date`
-  finding does not say which entries would change — and it is a different fact
-  from drift, since a registry change produces it with no drift at all.
-- **29.B — still open**, and it is the one a lens actually drove: `panda add
-  mcp-server nocmd` registers, prints only where it was stored, and no target
-  says why nothing takes it.
+- **29.A — CLOSED, and it was already recorded in the code.** The file-level
+  `out-of-date` finding not naming which entries would change is carried at
+  `doctor.ts:79-84` as a `ponytail:` marker with its upgrade path. A per-entry
+  answer there would be a second computation — the exact divergence this command
+  exists to not have. The user-side case is weak too: the action is `panda init`
+  whichever entries differ. Reopen the day `panda init` can partially fail,
+  because then "which entries" becomes "what is still missing".
+- **29.B — SHIPPED, and this entry stated the defect wrongly.** It said `add`
+  "prints only where it was stored, and no target says why". Driven with a
+  PRESENT executor, `add` already said nothing takes it, and `doctor` on the same
+  fixture already said exactly why. The real defect was that the verb which
+  CREATED the state sent the user to a second command for an answer in its own
+  module — `takenBy`'s merge branch collected no reason. A probe then showed BOTH
+  branches are silent for that entry, and that a naive fix prints the sentence
+  twice, because targets are per executor plus SURFACE.
+- **29.C — the wording was FALSE, and no entry here had noticed.** An mcp-server
+  with no command was reported as a local, scope-dependent condition in three
+  sentences. `command` is its only executable field and `collectMcpEntries` skips
+  a command-less one unconditionally, so it is inert everywhere, forever — and
+  the repair is one command, because `panda add` updates an existing id in place.
 
-The measured caution, if 29.B is built: `FINDING_EXITS` is a `Record` over a
-closed union, so a new finding kind cannot ship without an exit. The compiler
-is what makes widening the vocabulary safe.
+Rejected with a reopen condition: widening `ProjectionMergeOutcome` so merge
+targets carry their own reasons. The contract's own comment names that as its
+defect, but measured, the only producer of `skippedEntryIds` skips exactly the
+two shapes the derivation covers, so the field would ship byte-identical output.
+Reopen at the first merge target with a reason of its own — which is also the
+first moment the derived sentence would be wrong, so one trigger serves both.
 
 ### M30 — The trust surface, decided rather than patched
 

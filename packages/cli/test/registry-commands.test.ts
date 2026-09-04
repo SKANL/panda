@@ -191,6 +191,22 @@ async function withCodex(): Promise<{ homeDir: string; projectDir: string; entry
   return { homeDir, projectDir, entryPath }
 }
 
+/**
+ * A home where `claude-code` is DETECTED with BOTH of its surfaces: the config
+ * file and a verified skills root.
+ *
+ * That is the fixture the deduplication rows need and `withCodex` cannot be: one
+ * executor asked TWICE about the same entry, once per target. A per-executor
+ * sentence collected once per target appears twice, which is exactly what a
+ * probe of `deliveryFor` returned before the `Set`.
+ */
+async function withClaude(): Promise<{ homeDir: string }> {
+  const homeDir = await tempDir()
+  await writeFile(join(homeDir, '.claude.json'), '{}')
+  await mkdir(join(homeDir, '.claude', 'skills'), { recursive: true })
+  return { homeDir }
+}
+
 // The next step `add` reports is DERIVED from the same planner `panda init`
 // runs, never written beside the command. The bug these rows exist for: a
 // project-scope skill can reach NO executor — nothing plans a project-scope
@@ -387,16 +403,116 @@ describe('what panda add reports as the next step', () => {
     expect(stderr).not.toContain('has a machine-scope location')
   })
 
-  it('says no target gave a reason, rather than inventing one', async () => {
-    // An mcp-server with no command is skipped by every config target WITHOUT a
-    // reason — `skippedEntryIds` carries ids alone. The message says that
-    // instead of explaining on the targets' behalf.
+  it('M29: carries WHY on the MACHINE-READABLE surface, instead of an absence it never measured', async () => {
+    // THIS CLAUSE USED TO ASSERT `no target said why`, and the reasoning behind
+    // it was half right. `skippedEntryIds` really does carry ids alone, so the
+    // targets said nothing -- but panda was not out of answers, it was reading
+    // the wrong one. `panda doctor`, on the SAME fixture, printed the exact
+    // sentence, from `reasonUnprojectable` in the very module the verb runs in.
+    // So the old message reported an absence panda never measured, and pointed
+    // at a second command for something it already held.
+    //
+    // ASSERTED ON STDOUT, and that placement is the finding rather than a
+    // detail. The human line for THIS entry is the permanent-fault sentence the
+    // clause below pins, which already carries the reason in plain English;
+    // repeating it per executor on stderr would be noise. A script must never
+    // have to parse that prose, so the reason lives in `delivery.reasons`.
     const { homeDir } = await withCodex()
     const io = capture()
+
     expect(await runPanda(['add', 'mcp-server', 'm3', '--arg', 'x'], { ...io, homeDir })).toBe(0)
+
+    const delivery = (JSON.parse(io.out.join('')) as { delivery: { reasons: string[] } }).delivery
+    expect(delivery.reasons).toEqual([
+      "the mcp-server entry declares no command, so there is nothing to render into 'codex'",
+    ])
+    expect(io.err.join(String.fromCharCode(10))).not.toContain('no target said why')
+  })
+
+  it('M29: says the same reason ONCE, however many targets an executor has', async () => {
+    // MEASURED BY A PROBE, and it is why this was not a two-line change. Targets
+    // are per executor PLUS SURFACE: an executor with both a config file and a
+    // verified skills root is asked TWICE about the same entry, and the derived
+    // sentence names the EXECUTOR. A first cut collected per target and returned
+    // the identical sentence twice.
+    //
+    // Doctor's rows are per target and can legitimately carry two;
+    // `EntryDelivery.reasons` is a flat per-executor list and cannot.
+    const { homeDir } = await withClaude()
+    const io = capture()
+
+    expect(await runPanda(['add', 'mcp-server', 'twice'], { ...io, homeDir })).toBe(0)
+
+    const delivery = (JSON.parse(io.out.join('')) as { delivery: { reasons: string[] } }).delivery
+    expect(delivery.reasons).toEqual([
+      "the mcp-server entry declares no command, so there is nothing to render into 'claude-code'",
+    ])
+  })
+
+  it('CONTROL: `no target said why` still fires where no target was ASKED', async () => {
+    // The fallback must not be deleted along with the defect. At the project
+    // scope codex has no configuration at all, so no target is planned and none
+    // is asked -- an absence panda DID measure, which is the sentence AD-5
+    // wants. Without this clause the change above is satisfied by removing the
+    // line entirely.
+    const { homeDir, projectDir, entryPath } = await withCodex()
+    const io = capture()
+
+    expect(
+      await runPanda(['project', 'add', 'skill', 'unasked', '--entry-path', entryPath, projectDir], {
+        ...io,
+        homeDir,
+      }),
+    ).toBe(0)
+
+    expect(io.err.join(String.fromCharCode(10))).toContain('no target said why')
+  })
+
+
+  it('M29: an mcp-server with no command is inert EVERYWHERE, and the message stops talking about scope', async () => {
+    // THE WORDING WAS NOT MERELY INCOMPLETE, IT WAS FALSE. The block said
+    // "NOTHING TAKES IT HERE ... at the machine scope ... no other scope takes
+    // it either" — three sentences about SCOPE, for a fault that has nothing to
+    // do with scope and that no scope change can fix. `command` is the only
+    // executable field an mcp-server has (`contracts/src/registry.ts`), and
+    // `collectMcpEntries` skips a command-less one unconditionally, so it is
+    // inert on every executor, at every scope, forever.
+    //
+    // And the repair is ONE command, driven: `panda add` on an existing id
+    // UPDATES it in place and exits 0, so the user never needs `panda remove`.
+    // A message that describes a permanent fault as a local one, and omits the
+    // one-step exit it knows about, is the defect class this milestone keeps
+    // finding — an exit that reads like an exit and is not one.
+    const { homeDir } = await withCodex()
+    const io = capture()
+
+    expect(await runPanda(['add', 'mcp-server', 'inert'], { ...io, homeDir })).toBe(0)
+
+    const stderr = io.err.join(String.fromCharCode(10))
+    expect(stderr).toContain('NOTHING TAKES IT, ANYWHERE')
+    expect(stderr).toContain('panda add mcp-server inert --command')
+    expect(stderr).not.toContain('at the machine scope')
+    expect(stderr).not.toContain('no other scope takes it either')
+  })
+
+  it('CONTROL: an entry that is merely unplaced HERE still talks about scope, because that is true of it', async () => {
+    // Without this the clause above is satisfied by deleting the scope sentences
+    // everywhere, which would erase the one case where they are the whole point:
+    // a skill that no scope takes here but another scope would.
+    const { homeDir, projectDir, entryPath } = await withCodex()
+    const io = capture()
+
+    expect(
+      await runPanda(['project', 'add', 'skill', 'elsewhere', '--entry-path', entryPath, projectDir], {
+        ...io,
+        homeDir,
+      }),
+    ).toBe(0)
+
     const stderr = io.err.join(String.fromCharCode(10))
     expect(stderr).toContain('NOTHING TAKES IT HERE')
-    expect(stderr).toContain('no target said why')
+    expect(stderr).toContain('at the project scope')
+    expect(stderr).not.toContain('NOTHING TAKES IT, ANYWHERE')
   })
 
   it('carries the same answer in the JSON payload a script reads', async () => {

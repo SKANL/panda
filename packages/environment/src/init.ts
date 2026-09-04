@@ -209,7 +209,13 @@ function reasonUnprojectable(
     .map((entry) =>
       entry.type === 'mcp-server'
         ? `the mcp-server entry declares no command, so there is nothing to render into '${executorId}'`
-        : `'${executorId}' has no native representation for a ${entry.type} entry (correction-01 C5)`,
+        : // NO SPEC CITATION IN A SENTENCE A USER READS. This carried
+          // `(correction-01 C5)` and doctor printed it verbatim: an internal
+          // document name is a fact about panda's own history, not about the
+          // reader's machine, and it is the one part of this line nobody can act
+          // on. The citation belongs where the RULE lives, which is the doc
+          // comment above and the `unprojectable` finding kind's own.
+          `'${executorId}' has no native representation for a ${entry.type} entry`,
     )
     .join('; ')
 }
@@ -592,7 +598,34 @@ async function takenBy(
   const { planned, skills } = targetsFor(scope, detected, homeDir, projectDir)
   const byKind = groupByKind([entry])
   const executorIds: string[] = []
-  const reasons: string[] = []
+  // DEDUPED, and that was measured rather than tidiness. The derived sentence
+  // names the EXECUTOR, while targets are per-executor-PLUS-surface: with a
+  // `.claude.json` and a `.claude/` skills root both present, the same executor
+  // is asked twice and a naive collection printed the identical sentence twice.
+  // Doctor's rows are per TARGET and can carry two; `EntryDelivery.reasons` is a
+  // flat per-executor list and cannot.
+  const reasons = new Set<string>()
+  // The executors whose skills root panda VERIFIED at this scope, which is what
+  // makes "this executor has no native representation for a skill" false for
+  // them -- the same input `unprojectableFor` gives `reasonUnprojectable`.
+  const skillsHandled = new Set(skills.map(({ profile }) => profile.executorId))
+  /**
+   * A target skipped this entry and said nothing. Derive the reason the way
+   * doctor already does, from the ONE producer, rather than reporting an absence
+   * panda never measured.
+   *
+   * `no target said why` at `registry-commands.ts` used to fire here for every
+   * mcp-server with no command -- while `panda doctor`, on the same fixture,
+   * printed the exact sentence. The verb that CREATED the state sent the user to
+   * a second command for an answer that lives in this module.
+   */
+  const explain = (executorId: string): void => {
+    const derived = reasonUnprojectable([entry], executorId, skillsHandled.has(executorId))
+    // `undefined` is the skills-handled case: the id belongs to another row and
+    // this one has nothing true to say. Left unsaid, so the caller's fallback
+    // still fires -- an absence panda DID measure.
+    if (derived !== undefined) reasons.add(derived)
+  }
   for (const { profile, target } of [...planned, ...skills]) {
     if (target.kind === 'materialise') {
       const plan = await target.plan({ entries: byKind, records: [], rootPath: target.rootPath })
@@ -600,15 +633,37 @@ async function takenBy(
         executorIds.push(profile.executorId)
         continue
       }
-      for (const skip of plan.skipped ?? []) {
-        if (skip.entryId === entry.id) reasons.push(`${profile.executorId}: ${skip.reason}`)
+      // The target's own words win where it had any -- it knows things no
+      // derivation from a registry entry could produce, like a skill whose
+      // source cannot be read. The prefix stays HERE and only here, because that
+      // text was authored by the target and may not name the executor; the
+      // derived sentence already does.
+      const own = (plan.skipped ?? []).filter((skip) => skip.entryId === entry.id)
+      if (own.length > 0) {
+        for (const skip of own) reasons.add(`${profile.executorId}: ${skip.reason}`)
+        continue
       }
+      // AND THIS BRANCH IS THE ONE THE FIRST DIAGNOSIS MISSED. A skills target
+      // iterates `entries.skill` alone, so an mcp-server is dropped by it without
+      // ever producing a `ProjectionSkip`: for that entry BOTH target kinds were
+      // silent, not just merge.
+      explain(profile.executorId)
       continue
     }
     const outcome = await target.merge({ entries: byKind, records: [], nativeText: '' })
-    if (!(outcome.skippedEntryIds ?? []).includes(entry.id)) executorIds.push(profile.executorId)
+    if (!(outcome.skippedEntryIds ?? []).includes(entry.id)) {
+      executorIds.push(profile.executorId)
+      continue
+    }
+    // A merge outcome carries ids alone (`ProjectionMergeOutcome.skippedEntryIds`),
+    // which `contracts/src/projection.ts` names as the defect that forces this
+    // derivation. It is EXACT rather than approximate today: `collectMcpEntries`
+    // skips exactly the two shapes `reasonUnprojectable` derives, and anything
+    // else falls through to its honest "the registry holds no entry that
+    // explains it".
+    explain(profile.executorId)
   }
-  return { executorIds, reasons }
+  return { executorIds, reasons: [...reasons] }
 }
 
 /**

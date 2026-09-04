@@ -145,7 +145,7 @@ describe('projection results are specific per target', () => {
 
     const result = await initProject({ homeDir, projectDir })
     expect(result.targets[0]?.unprojectable).toEqual([
-      { entryId: 'frontend', reason: "'claude-code' has no native representation for a skill entry (correction-01 C5)" },
+      { entryId: 'frontend', reason: "'claude-code' has no native representation for a skill entry" },
     ])
     expect(result.targets[0]?.written).toBe(false)
     await expect(stat(join(projectDir, '.mcp.json'))).rejects.toMatchObject({ code: 'ENOENT' })
@@ -411,7 +411,7 @@ describe('the facts a caller acts on are not fabricated', () => {
     expect(result.targets[0]?.unprojectable).toEqual([
       {
         entryId: 'ctx',
-        reason: "'claude-code' has no native representation for a skill entry (correction-01 C5)",
+        reason: "'claude-code' has no native representation for a skill entry",
       },
     ])
     expect(result.targets[0]?.written).toBe(true)
