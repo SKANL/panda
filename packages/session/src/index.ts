@@ -39,7 +39,30 @@ export { resolveMethod, swapMethod } from './methods.ts'
 // the harder reason — it hands back a `PluginFactory`, and a factory a caller
 // can invoke with an `ActivationContext` of its own is exactly the bypass
 // surface the block below records five withdrawn exports for.
-export { selectWorkspaceProvider, type WorkspaceProviderSelection } from './workspaces.ts'
+export { selectWorkspaceProvider, worktreeStateDir, type WorkspaceProviderSelection } from './workspaces.ts'
+// Taking a worktree back, beside the run that creates one (Story 4.3 / spec
+// M16.A). `panda run` under the git-worktree provider cuts a real worktree and
+// nothing removed one; these are the two halves of the exit, and they are
+// re-exported for the same FR-29 reason as everything above — a host that
+// installed only this package can look at what panda holds and take it back,
+// without `@panda/cli`. `worktreeStateDir` is what turns a project directory
+// into the argument they take, so the three travel together.
+//
+// `WorktreeLedger` is deliberately NOT here. It is the store these two functions
+// operate through, and publishing it would hand a caller `retire()` and
+// `claimRemoval()` with none of the checks around them — the "no factory a
+// caller can invoke" rule the block below records five withdrawn exports for,
+// pointed at a destructive operation instead of a kernel.
+export {
+  inspectWorktrees,
+  removeWorktree,
+  type ClaimedWorktree,
+  type InterruptedRemoval,
+  type UnclaimedDirectory,
+  type WorktreeInspection,
+  type WorktreeOutcome,
+  type WorktreeOutcomeKind,
+} from '@panda/workspace-git-worktree'
 // The recorded quota reading, beside the run that produces it (Story M15.A,
 // D7): `panda run` records, `panda status` reads, and nothing here invokes an
 // executor. Both halves are exported for the same FR-29 reason as the two

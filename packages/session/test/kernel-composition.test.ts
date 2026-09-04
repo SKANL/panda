@@ -601,6 +601,16 @@ describe('createSessionKernel is the only composition surface', () => {
     // fourth, `USAGE_ABSENCE_REASONS`, is a frozen record of codes — a
     // `UsageAbsence.reason` is routed on (AD-7), and a consumer that could not
     // name the codes would be comparing strings by hand.
+    //
+    // WIDENED AGAIN BY 4.3 (spec M16.A), by three, and all three pass the same
+    // rule. `worktreeStateDir` joins two path segments. `inspectWorktrees` reads
+    // panda's own records and hands back plain rows. `removeWorktree` performs a
+    // removal and hands back a plain outcome. None of them constructs a kernel,
+    // a plugin or an adapter, and none hands back anything a caller can invoke:
+    // the store they operate through, `WorktreeLedger`, is deliberately NOT
+    // here — publishing it would expose `retire()` and `claimRemoval()` with
+    // none of the refusals around them, which is the withdrawn-factory hazard
+    // above pointed at a destructive operation instead of at a vendor adapter.
     expect(values.sort()).toEqual([
       'SESSION_ACTION_COST',
       'SESSION_ACTION_ID',
@@ -608,15 +618,18 @@ describe('createSessionKernel is the only composition surface', () => {
       'createLogSink',
       'createMemoryLogSink',
       'createSessionKernel',
+      'inspectWorktrees',
       'readExecutorConfigLayers',
       'readUsageReports',
       'recordUsageObservation',
+      'removeWorktree',
       'resolveExecutor',
       'resolveMethod',
       'runSession',
       'selectWorkspaceProvider',
       'swapMethod',
       'usageObservationsPath',
+      'worktreeStateDir',
     ])
   })
 

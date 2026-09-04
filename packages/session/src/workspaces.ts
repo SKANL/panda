@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 import type { ConfigLayer, LayeredConfig } from '@panda/kernel'
 import { createGitWorktreeWorkspacePlugin } from '@panda/workspace-git-worktree'
@@ -20,6 +21,20 @@ import type { WorkspacePlugin } from '@panda/workspace-local'
 
 /** The key inside the `workspace` subtree that names the provider. */
 export const WORKSPACE_PROVIDER_CONFIG_KEY = 'provider'
+
+/**
+ * Where a project's workspaces live: the `workspace.rootDir` `runSession` seeds,
+ * as ONE function rather than two `join` calls.
+ *
+ * It exists because a second caller arrived. `panda workspace remove` has to
+ * find the ledger and the trees a run created, and a CLI that spelled
+ * `.panda/workspaces` for itself would be a second answer to where panda's
+ * worktrees are — right until a run wrote them somewhere else. The session
+ * decides this path; everyone else asks.
+ */
+export function worktreeStateDir(projectRoot: string): string {
+  return join(projectRoot, '.panda', 'workspaces')
+}
 
 /** What panda mounts when nothing selects otherwise. */
 export const DEFAULT_WORKSPACE_PROVIDER_ID = 'local'

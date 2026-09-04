@@ -101,6 +101,24 @@ export type DiagnosisFindingKind =
   | 'legacy-block'
   /** This target could not be diagnosed at all; the others still were. */
   | 'target-failed'
+  /**
+   * A worktree removal that was interrupted between recording its intent and
+   * finishing it (spec M16.A, D3/D4).
+   *
+   * It is REPORTED here and resolved by a verb, never swept at startup: a sweep
+   * that removed on every process start would make panda destructive on a run
+   * the user did not ask to be destructive — the same reasoning `remediate`
+   * rests on, which is why the exit below is a command rather than something
+   * this command performs.
+   *
+   * The leftovers arrive through {@link DiagnoseOptions.worktreeLeftovers}
+   * rather than being discovered here. `@panda/environment` may not import a
+   * workspace implementation (`test/guard.test.ts`), and doctor may not open a
+   * file of its own; the caller that already holds the worktree capability
+   * hands the facts in, and this file phrases them — the same shape every other
+   * row here has, where `runScope` supplies and doctor words.
+   */
+  | 'worktree-leftover'
 
 /**
  * Whether a finding is something WRONG or something merely true.
@@ -158,6 +176,7 @@ const RESOLUTION: Record<DiagnosisFindingKind, string> = {
   unprojectable: 'no target can express this entry, so projecting again changes nothing for it; it stays out of this configuration',
   'legacy-block': "`panda remediate discard --executor <id>` removes exactly this block and leaves every other byte of the file alone; projecting again neither reads nor removes it. Where the detail says panda will NOT take it, that is the reason, and panda leaves the file untouched",
   'target-failed': 'projecting again fails the same way for this executor and leaves its file untouched; the other executors are unaffected',
+  'worktree-leftover': 'projecting neither reads nor touches a worktree, so `panda init` would do nothing about this; panda never sweeps a leftover on its own, because removing a checkout on a run nobody asked to be destructive is exactly what a startup sweep would be',
 }
 
 /**
@@ -277,6 +296,18 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
     detail:
       'a condition the projection run surfaced with no more specific reading than its own code; panda resolves none of it by itself',
   },
+  // A COMMAND, and the same shape `retired-type` reached: the state is fully
+  // resolvable and the thing that resolves it is a verb the binary dispatches.
+  // Naming the removal here is also what keeps the report and the capability one
+  // answer -- the verb re-runs the identical removal the interrupted one was
+  // performing, so a leftover cannot be resolved by a second code path that
+  // reasons differently from the first.
+  'worktree-leftover': {
+    by: 'command',
+    command: 'panda workspace remove <id>',
+    detail:
+      'the removal is finished by running it again: the same checks, the same refusals, and the same retirement the interrupted one was performing. It removes only what panda holds a record for, and it still refuses a tree with modified or untracked files or one whose commit no ref contains -- resuming an interrupted removal is not a licence to skip the checks. Run it with no id to resolve every leftover in the project at once',
+  },
 }
 
 /** Every kind this remediation is the named exit for. Derived, never listed. */
@@ -347,6 +378,11 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   // also fully resolvable, which is what earns a non-zero exit — the exit code
   // is a promise that the light can be got back to green.
   'legacy-block': 'problem',
+  // A PROBLEM: a half-removed worktree is a real state of panda's own store,
+  // and one command clears it for good. The `unprojectable` test applies and
+  // passes — the light CAN be got back to green — so silence here would hide
+  // the one visible consequence of a run that was killed.
+  'worktree-leftover': 'problem',
 }
 
 /**
@@ -410,6 +446,24 @@ export interface Diagnosis {
   readonly findings: readonly DiagnosisFinding[]
 }
 
+/**
+ * One interrupted worktree removal, as the caller who found it describes it.
+ *
+ * A STRUCTURAL shape, deliberately: `@panda/environment` may not import the
+ * worktree implementation, and the one type both sides would otherwise share
+ * would have to live in `@panda/contracts` — a third-party port surface, for a
+ * detail of one provider's own store. The caller holds the capability that
+ * discovers these; this file only phrases them.
+ */
+export interface WorktreeLeftover {
+  /** The workspace id, e.g. `w-3`. It is what the exit command takes. */
+  readonly id: string
+  /** The tree the interrupted removal was working on. */
+  readonly path: string
+  /** What the capability found, in its own words. */
+  readonly detail: string
+}
+
 export interface DiagnoseOptions {
   /** Defaults to the OS home directory. */
   readonly homeDir?: string
@@ -417,6 +471,16 @@ export interface DiagnoseOptions {
   readonly projectDir?: string
   /** Defaults to `'machine'`, mirroring `panda init`. */
   readonly scope?: 'machine' | 'project'
+  /**
+   * Interrupted worktree removals the caller already found (spec M16.A, D4).
+   *
+   * Supplied rather than discovered, for the reason `WorktreeLeftover` gives.
+   * Absent means the caller did not look — which is NOT the same as "there are
+   * none", so nothing here reports an empty list as a clean bill of health; a
+   * caller that did look and found nothing simply produces no findings, exactly
+   * as it would for any other row.
+   */
+  readonly worktreeLeftovers?: readonly WorktreeLeftover[]
 }
 
 /** True when at least one finding is something wrong — the non-zero condition. */
@@ -519,6 +583,7 @@ async function findingsFor(
   diagnosis: Omit<Diagnosis, 'findings'>,
   registryError: TargetFailure | undefined,
   retired: readonly RetiredEntry[],
+  worktreeLeftovers: readonly WorktreeLeftover[],
 ): Promise<DiagnosisFinding[]> {
   const findings: DiagnosisFinding[] = []
   if (registryError !== undefined) {
@@ -559,6 +624,20 @@ async function findingsFor(
         `'${entry.id}' is a '${entry.type}' entry in the ${row.scope} registry, and '${entry.type}' is a type panda no longer declares (it has ${REGISTRY_ENTRY_TYPES.join(', ')}); no target will ever take it`,
         { filePath: row.registryPath, entryId: entry.id },
         removeCommand,
+      ),
+    )
+  }
+  for (const leftover of worktreeLeftovers) {
+    // The command is SPELLED OUT with this leftover's own id rather than left as
+    // the `<id>` template the exit declares, for the reason `retired-type`'s
+    // block gives: a finding that already knows the id makes the user translate
+    // a command panda could have written out.
+    findings.push(
+      finding(
+        'worktree-leftover',
+        leftover.detail,
+        { filePath: leftover.path },
+        `panda workspace remove ${leftover.id}`,
       ),
     )
   }
@@ -669,7 +748,7 @@ export async function diagnose(options: DiagnoseOptions = {}): Promise<Diagnosis
   // `initMachine` follows, and it bites harder here: an accessor that answered
   // with a temp directory now and the real home directory later would have the
   // real one diagnosed under a promise that nothing would be touched.
-  const { homeDir = homedir(), projectDir, scope = 'machine' } = options
+  const { homeDir = homedir(), projectDir, scope = 'machine', worktreeLeftovers = [] } = options
   const home = await scopeDirectory('the home directory', homeDir)
   // Resolved and validated only when it is the scope being diagnosed. `panda
   // doctor` must not fail on a working directory it was never asked about — and
@@ -697,5 +776,8 @@ export async function diagnose(options: DiagnoseOptions = {}): Promise<Diagnosis
     skipped: report.skipped,
     warnings: report.warnings,
   }
-  return { ...body, findings: await findingsFor(body, report.registryError, report.retired) }
+  return {
+    ...body,
+    findings: await findingsFor(body, report.registryError, report.retired, worktreeLeftovers),
+  }
 }

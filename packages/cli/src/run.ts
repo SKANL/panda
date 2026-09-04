@@ -15,16 +15,22 @@ import {
   type InitResult,
   type RemediationKind,
   type RemediationReport,
+  type WorktreeLeftover,
 } from '@panda/environment'
 import {
   createLogSink,
+  inspectWorktrees,
   readExecutorConfigLayers,
   readUsageReports,
   recordUsageObservation,
+  removeWorktree,
   runSession,
+  worktreeStateDir,
   type LogRecord,
   type SessionOptions,
   type UsageReport,
+  type WorktreeInspection,
+  type WorktreeOutcome,
 } from '@panda/session'
 import {
   isRegistryVerb,
@@ -90,6 +96,7 @@ export const USAGE = [
   '       panda doctor',
   '       panda project doctor [directory]',
   '       panda status',
+  '       panda workspace remove [<id>]',
   '       panda remediate <adopt|release|repair|discard> [--executor <id>] [--entry <id>] [--apply]',
   '       panda project remediate <adopt|release|repair|discard> [directory] [--executor <id>] [--entry <id>] [--apply]',
   `       panda swap <${SWAP_NOUNS.join('|')}> <id>`,
@@ -162,6 +169,16 @@ export const USAGE = [
   '                 it is written, so a broken one fails while you can still fix it. The next',
   '                 session mounts it; a method changed on disk takes effect on the next run, never',
   '                 inside a running one.',
+  'workspace remove  Takes back a worktree panda made, in the project it is run in. With an <id>',
+  '              it removes that one; with none it FINISHES the removals an interrupted run left',
+  '              half-done and reports everything else it found, removing none of it.',
+  '              It removes only what panda holds an ownership record for: a directory shaped',
+  '              exactly like one of pandas own, with no record, is reported and never touched.',
+  '              It refuses a tree with modified or untracked files in gits own words, and it',
+  '              refuses a tree whose commit no ref contains -- git removes that one silently and',
+  '              the work would be reachable from nothing. There is no override: a user who wants',
+  '              to destroy unreachable work has git for that. A removed id is retired for good',
+  '              and is never issued to another worktree.',
   'remediate     Leaves ONE state doctor reported, named by the user. Describes and writes nothing',
   '              unless --apply is given; nothing is ever remediated automatically or in bulk.',
   "  adopt    Panda claims what is at its own location, exactly as it is. No vendor byte is written;",
@@ -176,6 +193,7 @@ export const USAGE = [
   'For init, a target that failed to project exits 1; detecting no executor at all exits 2.',
   'For doctor, a finding that is a problem exits 1; a clean environment exits 0.',
   'For status, 0 whenever a report could be produced; 2 only when none could be.',
+  'For workspace remove, a refusal or an id panda does not own exits 1; nothing to do exits 0.',
 ].join('\n')
 
 /**
@@ -263,6 +281,9 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
   if (argv[0] === 'status') {
     return await runStatus(argv.slice(1), out, err, () => readUsageReports({ homeDir: options.homeDir }))
   }
+  if (argv[0] === 'workspace') {
+    return await runWorkspace(argv.slice(1), out, err, options)
+  }
   if (argv[0] === 'remediate') {
     return await runRemediate(argv.slice(1), out, err, 1, (selector) =>
       remediate({ ...selector, homeDir: options.homeDir, scope: 'machine' }),
@@ -281,9 +302,27 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
       return 0
     }
     if (argv[1] === 'doctor') {
-      return await runDoctor(argv.slice(2), out, err, 1, (directory) =>
-        diagnose({ homeDir: options.homeDir, scope: 'project', projectDir: directory ?? options.cwd }),
-      )
+      return await runDoctor(argv.slice(2), out, err, 1, async (directory) => {
+        // Worktrees are PROJECT state: `runSession` puts them under the project's
+        // own `.panda/workspaces`, so the machine scope has none to report and
+        // this is the only doctor that looks. The list is discovered here and
+        // handed in because `@panda/environment` may not import a workspace
+        // implementation (spec M16.A, D4 and the environment guard test).
+        const projectDir = directory ?? options.cwd ?? process.cwd()
+        const inspection = await inspectWorktrees(worktreeStateDir(projectDir))
+        return await diagnose({
+          homeDir: options.homeDir,
+          scope: 'project',
+          projectDir,
+          worktreeLeftovers: inspection.interrupted.map(
+            (leftover): WorktreeLeftover => ({
+              id: leftover.id,
+              path: leftover.path,
+              detail: leftover.detail,
+            }),
+          ),
+        })
+      })
     }
     if (argv[1] === 'remediate') {
       return await runRemediate(argv.slice(2), out, err, 2, (selector, directory) =>
@@ -554,6 +593,8 @@ function usageOutcome(
   maxPositionals: 0 | 1,
   out: (line: string) => void,
   err: (line: string) => void,
+  /** What the one positional IS, so the refusal names the thing that was wrong. */
+  positional: 'directory' | 'workspace id' = 'directory',
 ): number | undefined {
   const flagToken = optionToken(tokens)
   if (isHelp(flagToken)) {
@@ -571,12 +612,123 @@ function usageOutcome(
     err(
       maxPositionals === 0
         ? `unexpected argument '${tokens[0]}'`
-        : `unexpected argument '${tokens[maxPositionals]}'; at most one directory may be given`,
+        : `unexpected argument '${tokens[maxPositionals]}'; at most one ${positional} may be given`,
     )
     err(DEFAULT_USAGE)
     return 2
   }
   return undefined
+}
+
+/**
+ * The whole of what `panda workspace remove` is: reject bad argv, call the
+ * worktree capability in `@panda/session`, print what it did, map it to an exit
+ * code. Every fact printed is the capability's — the CLI removes nothing, checks
+ * nothing and classifies nothing.
+ *
+ * ONE noun, and it is honest about what it will not do (spec M16.A, D6). With an
+ * id it removes that worktree; with none it finishes the removals an interrupted
+ * run left half-done, through the SAME call — a sweep that resolved a leftover
+ * some other way would be a second answer to the question the removal already
+ * answers. Everything it will not remove is REPORTED with the reason, never
+ * skipped in silence and never counted as a success.
+ */
+async function runWorkspace(
+  tokens: readonly string[],
+  out: (line: string) => void,
+  err: (line: string) => void,
+  options: RunCommandOptions,
+): Promise<number> {
+  if (isHelp(tokens[0])) {
+    out(USAGE)
+    return 0
+  }
+  if (tokens[0] !== 'remove') {
+    err(
+      tokens[0] === undefined
+        ? 'panda workspace needs a noun: remove'
+        : `panda workspace has no '${tokens[0]}' noun; it has: remove`,
+    )
+    err(DEFAULT_USAGE)
+    return 2
+  }
+  const rest = tokens.slice(1)
+  const usage = usageOutcome(rest, 1, out, err, 'workspace id')
+  if (usage !== undefined) return usage
+
+  // The project the binary is running in, exactly as `panda run` reads it: a
+  // worktree lives under that project's own state directory, and the path is
+  // asked for rather than spelled here so the remover cannot look somewhere
+  // other than where the run wrote.
+  const stateDir = worktreeStateDir(options.cwd ?? process.cwd())
+  try {
+    const named = rest[0]
+    const outcomes: WorktreeOutcome[] = []
+    let inspection: WorktreeInspection | undefined
+    if (named === undefined) {
+      inspection = await inspectWorktrees(stateDir)
+      for (const leftover of inspection.interrupted) {
+        outcomes.push(await removeWorktree(stateDir, leftover.id))
+      }
+    } else {
+      outcomes.push(await removeWorktree(stateDir, named))
+    }
+
+    out(
+      JSON.stringify(
+        {
+          stateDir,
+          outcomes,
+          ...(inspection === undefined
+            ? {}
+            : { claimed: inspection.claimed, unclaimed: inspection.unclaimed }),
+        },
+        null,
+        2,
+      ),
+    )
+    for (const outcome of outcomes) err(formatWorktreeOutcome(outcome))
+    if (inspection !== undefined) {
+      // Reported and never removed (D2/E5): what makes a worktree panda's is the
+      // ownership record, so a directory without one is somebody else's however
+      // exactly it is shaped like panda's.
+      for (const directory of inspection.unclaimed) {
+        err(
+          `unclaimed: ${directory.id} (${directory.path}): panda holds no ownership record for this directory, so it is not panda's to remove and nothing here will remove it`,
+        )
+      }
+      // The healthy claims, said out loud: a sweep that printed nothing about
+      // them would look like it had considered and rejected them.
+      for (const worktree of inspection.claimed) {
+        err(
+          `claimed: ${worktree.id} (${worktree.path}): panda claims this worktree and no removal was asked for; name its id to remove it`,
+        )
+      }
+      if (
+        outcomes.length === 0 &&
+        inspection.unclaimed.length === 0 &&
+        inspection.claimed.length === 0
+      ) {
+        err(`nothing to remove: panda holds no worktrees under '${stateDir}'`)
+      } else if (outcomes.length === 0) {
+        err('nothing to resolve: no worktree removal was left unfinished in this project')
+      }
+    }
+    // A refusal is not a success, and neither is an id panda does not own —
+    // reporting either as 0 would tell a script the tree is gone.
+    return outcomes.some((outcome) => outcome.kind === 'refused' || outcome.kind === 'unknown')
+      ? 1
+      : 0
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
+}
+
+/** One outcome on one line, with the coded reason whenever nothing was removed. */
+function formatWorktreeOutcome(outcome: WorktreeOutcome): string {
+  const about = outcome.path === undefined ? outcome.id : `${outcome.id} (${outcome.path})`
+  return `${outcome.kind}: ${about}: ${outcome.error === undefined ? outcome.detail : describe(outcome.error)}`
 }
 
 /**

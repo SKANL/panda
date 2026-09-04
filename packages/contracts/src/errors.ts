@@ -23,6 +23,22 @@ export const PANDA_ERROR_CODES = {
   contractWorkspaceInvalidHandle: 'PANDA_CONTRACT_WORKSPACE_INVALID_HANDLE',
   contractWorkspaceDoubleRelease: 'PANDA_CONTRACT_WORKSPACE_DOUBLE_RELEASE',
   contractWorkspaceUnavailable: 'PANDA_CONTRACT_WORKSPACE_UNAVAILABLE',
+  // Panda looked at a workspace it owns and DECLINED to remove it. Nothing
+  // failed and nothing is unavailable: the removal would have destroyed work
+  // that exists nowhere else, so panda stopped. Its own code rather than
+  // `contractWorkspaceUnavailable`, for the reason that one's note gives — a
+  // caller told a workspace is unavailable goes looking at git or the disk,
+  // and here both are fine and the answer is to put the work somewhere a ref
+  // names. Every refusal on the removal path arrives under this code, so a
+  // caller branches on "panda would not" without matching message text.
+  contractWorkspaceRemovalRefused: 'PANDA_CONTRACT_WORKSPACE_REMOVAL_REFUSED',
+  // Two removals of ONE workspace at once; the loser gets this, naming the
+  // holder as `pid@host`. Deliberately the same rule and the same shape as
+  // `registryContention` rather than a second answer to the same question: one
+  // winner, a bounded coded refusal for everyone else, and a holder a user can
+  // identify. Separate from the refusal above because the fix is different —
+  // wait for the other process, versus move the work somewhere a ref names.
+  contractWorkspaceContention: 'PANDA_CONTRACT_WORKSPACE_CONTENTION',
   contractProviderDisposed: 'PANDA_CONTRACT_PROVIDER_DISPOSED',
   // A save request the port will not admit: a non-string payload, or provenance
   // missing or malformed in any of its three mandatory fields (RD-1). ONE code

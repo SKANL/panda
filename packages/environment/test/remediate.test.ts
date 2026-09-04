@@ -141,6 +141,7 @@ describe('every state panda reports has an exit', () => {
     'out-of-date': 'panda init',
     'retired-type': 'panda remove <type> <id>',
     unprojectable: 'panda remove <type> <id>',
+    'worktree-leftover': 'panda workspace remove <id>',
   }
 
   it('says what leaves the states panda cannot leave itself, rather than promising one it cannot perform', () => {

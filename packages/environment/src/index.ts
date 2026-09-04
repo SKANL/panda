@@ -35,6 +35,7 @@ export {
   type DiagnosisFindingSeverity,
   type DiagnosisTarget,
   type FindingExit,
+  type WorktreeLeftover,
 } from './doctor.ts'
 export { remediate, type RemediateOptions, type RemediationReport } from './remediate.ts'
 export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDetection, type ExecutorProfile } from './executors.ts'

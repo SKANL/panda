@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { createExecutorPlugin, EXECUTOR_CONFIG_KEY, EXECUTOR_SERVICE } from '@panda/adapter-cli'
 import type { CliExecutorAdapterOptions, ExecutorService } from '@panda/adapter-cli'
 import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
@@ -31,6 +30,7 @@ import {
   WORKSPACE_PROVIDER_CONFIG_KEY,
   createSelectedWorkspacePlugin,
   selectWorkspaceProvider,
+  worktreeStateDir,
 } from './workspaces.ts'
 import { resolveMethod, selectMethod, swapMethod } from './methods.ts'
 
@@ -361,7 +361,7 @@ export function createSessionKernel(options: SessionKernelOptions = {}): PandaKe
     // not — so a `workspace.rootDir` in the project document decides in exactly
     // the case a layered configuration says it should.
     const projectRoot = cwd ?? process.cwd()
-    const workspaceRoot = { [WORKSPACE_CONFIG_KEY]: { rootDir: join(projectRoot, '.panda', 'workspaces') } }
+    const workspaceRoot = { [WORKSPACE_CONFIG_KEY]: { rootDir: worktreeStateDir(projectRoot) } }
     // Panda's built-in workspace provider is a LAYER too, and the same layer the
     // executor's default lives in — which is what makes "nothing configured" a
     // reportable provenance (`defaults`) rather than an invisible branch, and

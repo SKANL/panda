@@ -727,6 +727,9 @@ describe('every finding names what it is about', () => {
     'registry-unreadable',
     'ledger-damaged',
     'retired-type',
+    // Panda's own store again: the file it names is the TREE an interrupted
+    // removal was working on, and no executor was ever involved.
+    'worktree-leftover',
   ]
   const TARGET_SCOPED: DiagnosisFindingKind[] = ['target-failed', 'out-of-date', 'not-writable', 'legacy-block']
   const ENTRY_SCOPED: DiagnosisFindingKind[] = ['edited', 'removed-by-user', 'foreign-collision', 'unprojectable']

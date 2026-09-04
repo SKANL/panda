@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { hostname } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
 
@@ -21,8 +22,46 @@ interface LedgerDocument {
   readonly nextOrdinal: number
 }
 
+/**
+ * The durable INTENT to remove one worktree, written before anything is touched.
+ *
+ * Its own file rather than a field on the record, and the reason is exclusivity:
+ * it is created with `wx` (O_EXCL), so exactly one contender per host wins the
+ * removal and every other one gets a coded refusal naming the holder. A flag
+ * inside the record would need a read-modify-write, which two processes can
+ * interleave — the same reasoning `@panda/registry`'s lockfile rests on, whose
+ * rule this matches rather than answering a second time.
+ *
+ * It doubles as the crash marker: a process killed between writing this and
+ * finishing leaves the file behind, and that is exactly what the sweep looks for.
+ */
+export interface WorktreeRemovalIntent {
+  readonly version: 1
+  readonly id: string
+  readonly pid: number
+  readonly host: string
+  readonly startedAt: string
+}
+
 const LEDGER_FILE = 'worktrees.json'
 const RECORDS_DIR = 'records'
+const RECORD_SUFFIX = '.json'
+/**
+ * Longer than the suffix above ON PURPOSE, and stripped first everywhere: an
+ * intent file also ends in `.json`, so a listing that tested the record suffix
+ * first would report `w-3.removing` as a worktree with that id.
+ */
+const INTENT_SUFFIX = '.removing.json'
+
+/**
+ * How long a removal intent whose holder still looks alive is believed.
+ *
+ * Taken from `@panda/registry`'s `DEFAULT_MAX_AGE_MS` rather than chosen here,
+ * and for its reason: a pid on a long-lived machine gets reused, and without an
+ * age fallback a reused pid would make one interrupted removal unresolvable
+ * forever — a state panda reports and cannot leave, which is what M4.C abolishes.
+ */
+const INTENT_MAX_AGE_MS = 30 * 60 * 1000
 
 /**
  * RECORDS LIVE IN PANDA'S STATE DIRECTORY, NEVER INSIDE THE WORKTREE.
@@ -108,12 +147,180 @@ export class WorktreeLedger {
     return parsed
   }
 
+  /**
+   * Every id this store holds an ownership record for, and every id it holds a
+   * removal INTENT for — read from one directory listing so the two answers
+   * cannot come from two different moments.
+   *
+   * An entry it cannot classify is left out rather than guessed at: the atomic
+   * writer above lands `<uuid>.tmp` files here, and a crash during a write can
+   * leave one behind.
+   */
+  async listIds(): Promise<{ records: string[]; intents: string[] }> {
+    let entries: string[]
+    try {
+      entries = await readdir(join(this.stateDir, RECORDS_DIR))
+    } catch (error) {
+      // No records directory is a store that has issued nothing, not a failure.
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { records: [], intents: [] }
+      throw this.#unreadable('ownership records', error)
+    }
+    const records: string[] = []
+    const intents: string[] = []
+    for (const entry of entries) {
+      // Intents FIRST: `w-3.removing.json` also ends in `.json`.
+      if (entry.endsWith(INTENT_SUFFIX)) intents.push(entry.slice(0, -INTENT_SUFFIX.length))
+      else if (entry.endsWith(RECORD_SUFFIX)) records.push(entry.slice(0, -RECORD_SUFFIX.length))
+    }
+    return { records: records.sort(), intents: intents.sort() }
+  }
+
+  /** The removal intent for an id, or `undefined` when none was ever written. */
+  async readIntent(id: string): Promise<WorktreeRemovalIntent | undefined> {
+    let raw: string
+    try {
+      raw = await readFile(this.#intentPath(id), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return undefined
+      throw this.#unreadable(`removal intent for '${id}'`, error)
+    }
+    // A CORRUPT intent is not absence and is not a live holder either: it is a
+    // marker some process wrote and did not finish — an empty file is exactly
+    // what a crash between the exclusive create and the write leaves. It is
+    // treated as a holder panda cannot identify, dated by the FILE's own mtime
+    // so the age fallback gives it the same grace `@panda/registry` gives a
+    // corrupt lockfile. Reading it as absence would let two removals run.
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (isIntentShape(parsed)) return parsed
+    } catch {
+      // fall through
+    }
+    const writtenAt = await stat(this.#intentPath(id)).then(
+      (info) => info.mtimeMs,
+      () => 0,
+    )
+    return { version: 1, id, pid: 0, host: '', startedAt: new Date(writtenAt).toISOString() }
+  }
+
+  /**
+   * Records the intent to remove `id`, exclusively.
+   *
+   * `wx` is the whole mechanism: the file either did not exist and is now ours,
+   * or somebody else holds the removal. A holder that is provably dead on THIS
+   * host, or older than {@link INTENT_MAX_AGE_MS}, is taken over — that is the
+   * interrupted removal being resumed, and it is the same call a fresh removal
+   * makes, so the sweep and the remover cannot drift apart. Anything else is
+   * contention, coded, naming the holder.
+   *
+   * ponytail: a healthy intent written by ANOTHER host is never taken over,
+   * because panda cannot see that machine's processes — the identical ceiling
+   * `@panda/registry`'s lock accepts, with the identical consequence (a state
+   * dir on a network share needs the age fallback to expire). Upgrade path: the
+   * same one that lock records.
+   */
+  async claimRemoval(id: string): Promise<WorktreeRemovalIntent> {
+    const intent: WorktreeRemovalIntent = {
+      version: 1,
+      id,
+      pid: process.pid,
+      host: hostname(),
+      startedAt: new Date().toISOString(),
+    }
+    const path = this.#intentPath(id)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await mkdir(dirname(path), { recursive: true })
+        const handle = await open(path, 'wx')
+        try {
+          await handle.writeFile(`${JSON.stringify(intent, null, 2)}\n`, 'utf8')
+        } finally {
+          await handle.close()
+        }
+        return intent
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
+          throw new PandaError(
+            PANDA_ERROR_CODES.contractWorkspaceUnavailable,
+            `git-worktree provider could not record the intent to remove '${id}': ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          )
+        }
+      }
+      const holder = await this.readIntent(id)
+      if (holder === undefined) continue // released between our create and our read
+      if (!isStale(holder)) {
+        throw new PandaError(
+          PANDA_ERROR_CODES.contractWorkspaceContention,
+          `the removal of workspace '${id}' is held by ${holder.pid}@${holder.host} since ${holder.startedAt}; another panda process is mid-removal`,
+        )
+      }
+      // Stale: take it over by overwriting in place. `writeJson` renames over
+      // the target, so no window exists where the intent is absent — losing the
+      // marker mid-takeover is exactly the crash this file exists to survive.
+      await this.#writeJson(path, intent)
+      return intent
+    }
+    throw new PandaError(
+      PANDA_ERROR_CODES.contractWorkspaceContention,
+      `the removal of workspace '${id}' could not be claimed; another panda process is mid-removal`,
+    )
+  }
+
+  /**
+   * Drops a removal intent this process holds, leaving the record in place.
+   *
+   * For a REFUSAL, which is not an interruption: panda looked, declined, and
+   * changed nothing — so leaving the marker behind would make the next sweep
+   * think a removal was in flight when none ever started.
+   */
+  async releaseClaim(id: string): Promise<void> {
+    const holder = await this.readIntent(id)
+    // Never unlink a successor's claim: after the age fallback another process
+    // may legitimately hold it, and this one has no business removing it.
+    if (holder === undefined || holder.pid !== process.pid || holder.host !== hostname()) return
+    await this.#unlinkIfPresent(this.#intentPath(id))
+  }
+
+  /**
+   * Retires an id permanently: the ownership record first, then the intent.
+   *
+   * THAT ORDER IS THE INVARIANT. A crash between the two leaves an intent with
+   * no record, which the sweep reads as "the removal already finished" and
+   * clears. The opposite order leaves a record with nothing marking it, which
+   * nothing would ever look at again.
+   *
+   * The ordinal is NOT freed — `nextOrdinal` only increases (AD-6), so the name
+   * this id used is never issued to another worktree.
+   */
+  async retire(id: string): Promise<void> {
+    await this.#unlinkIfPresent(this.#recordPath(id))
+    await this.#unlinkIfPresent(this.#intentPath(id))
+  }
+
   get #ledgerPath(): string {
     return join(this.stateDir, LEDGER_FILE)
   }
 
   #recordPath(id: string): string {
-    return join(this.stateDir, RECORDS_DIR, `${id}.json`)
+    return join(this.stateDir, RECORDS_DIR, `${id}${RECORD_SUFFIX}`)
+  }
+
+  #intentPath(id: string): string {
+    return join(this.stateDir, RECORDS_DIR, `${id}${INTENT_SUFFIX}`)
+  }
+
+  async #unlinkIfPresent(path: string): Promise<void> {
+    try {
+      await unlink(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return
+      throw new PandaError(
+        PANDA_ERROR_CODES.contractWorkspaceUnavailable,
+        `git-worktree provider could not remove '${path}': ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    }
   }
 
   /**
@@ -207,6 +414,39 @@ function parseOrThrow(raw: string, fail: () => PandaError): unknown {
     return JSON.parse(raw)
   } catch {
     throw fail()
+  }
+}
+
+function isIntentShape(value: unknown): value is WorktreeRemovalIntent {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate['id'] === 'string' &&
+    candidate['id'].length > 0 &&
+    Number.isSafeInteger(candidate['pid']) &&
+    typeof candidate['host'] === 'string' &&
+    typeof candidate['startedAt'] === 'string'
+  )
+}
+
+/**
+ * Whether a removal intent may be taken over: its holder is provably gone on
+ * THIS machine, or it has outlived {@link INTENT_MAX_AGE_MS}.
+ *
+ * `process.kill(pid, 0)` throwing EPERM means the process exists under another
+ * user — alive. Only ESRCH proves it is gone, which is `@panda/registry`'s rule
+ * and is not restated here for a second time by accident.
+ */
+function isStale(intent: WorktreeRemovalIntent): boolean {
+  const started = Date.parse(intent.startedAt)
+  if (!Number.isFinite(started) || Date.now() - started > INTENT_MAX_AGE_MS) return true
+  if (intent.host !== hostname()) return false
+  if (!Number.isSafeInteger(intent.pid) || intent.pid <= 0) return true
+  try {
+    process.kill(intent.pid, 0)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code === 'ESRCH'
   }
 }
 
