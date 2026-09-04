@@ -554,16 +554,24 @@ export const MEMORY_CLAUSES: readonly Clause<MemoryContractHarness>[] = [
         return failWith(`dispose() must be idempotent and resolve: ${describeThrown(error)}`)
       }
       const code = PANDA_ERROR_CODES.contractProviderDisposed
+      // THUNKS, for the reason written on the sibling clause in
+      // `workspace-clauses.ts`: an array literal of calls starts all five before
+      // the first `await`, and the `return` below abandons every one it did not
+      // reach. Their rejections land in the consumer's process with no handler.
+      // Five here against three there, so this is the worse of the two.
       for (const [action, attempt] of [
-        ['save() after dispose', throwaway.save({ payload: 'post-dispose', provenance: provenanceFor('post-dispose') })],
-        ['search() after dispose', throwaway.search({})],
-        ['timeline() after dispose', throwaway.timeline()],
-        ['describe() after dispose', throwaway.describe()],
+        [
+          'save() after dispose',
+          () => throwaway.save({ payload: 'post-dispose', provenance: provenanceFor('post-dispose') }),
+        ],
+        ['search() after dispose', () => throwaway.search({})],
+        ['timeline() after dispose', () => throwaway.timeline()],
+        ['describe() after dispose', () => throwaway.describe()],
         // Disposal wins over the append-only refusal: a dead provider reports
         // that it is dead rather than lecturing about RD-1.
-        ['overwrite() after dispose', throwaway.overwrite('any')],
+        ['overwrite() after dispose', () => throwaway.overwrite('any')],
       ] as const) {
-        const outcome = await expectRejection(action, code, attempt)
+        const outcome = await expectRejection(action, code, attempt())
         if (!outcome.ok) return outcome
       }
       const stillThere = await entryCount(provider)

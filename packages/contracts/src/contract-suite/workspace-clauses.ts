@@ -199,15 +199,23 @@ export const WORKSPACE_CLAUSES: readonly Clause<WorkspaceProvider>[] = [
         return failWith(`dispose() rejected unexpectedly: ${describeThrown(error)}`)
       }
       const code = PANDA_ERROR_CODES.contractProviderDisposed
+      // THUNKS, not promises. An array literal of calls starts every one of them
+      // before the loop's first `await`, and the `return` below abandons the ones
+      // it never reached — whose rejections then have no handler and surface as an
+      // unhandled rejection in the CONSUMER's process. That is the failure path of
+      // a suite whose whole job is to diagnose a non-conformant provider: the
+      // report is correct and the process still dies. Invisible to every in-repo
+      // run, because panda's own providers PASS this clause and therefore await
+      // all three; measured from a packed tarball against a half-right subject.
       for (const [action, attempt] of [
-        ['create() after dispose', provider.create()],
-        ['acquire() after dispose', provider.acquire('panda-post-dispose-probe')],
+        ['create() after dispose', () => provider.create()],
+        ['acquire() after dispose', () => provider.acquire('panda-post-dispose-probe')],
         [
           'release() of an outstanding handle after dispose',
-          provider.release(outstanding ?? FORGED_HANDLE),
+          () => provider.release(outstanding ?? FORGED_HANDLE),
         ],
       ] as const) {
-        const outcome = await expectRejection(action, code, attempt)
+        const outcome = await expectRejection(action, code, attempt())
         if (!outcome.ok) return outcome
       }
       return pass()

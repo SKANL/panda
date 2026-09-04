@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, posix, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { gunzipSync } from 'node:zlib'
+import { WORKSPACE_CLAUSES } from '@panda/contracts'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 /**
@@ -339,10 +340,60 @@ export const wrong: SessionOptions = { prompt: 42 }
  * control is that arm: if the harness itself were broken, both would be red.
  *
  * Runtime half. A port is a type, so this exercises the runtime surface a port
- * implementation actually calls — the validator and the coded error — and the
- * typecheck below carries the port itself.
+ * implementation actually calls — the validator, the coded error, and THE
+ * PUBLISHED CONTRACT SUITE — and the typecheck below carries the port itself.
+ *
+ * The suite is here because the promise is stated three times and was gated
+ * nowhere. `AGENTS.md` says a port is implementable installing ONLY
+ * `@panda/contracts`; FR-9 says a "published suite validates any
+ * ExecutorAdapter"; NFR-8 says "public contract-test suite per Contract". The
+ * word in all three is PUBLISHED, and every in-repo run of these suites resolves
+ * through pnpm's workspace links — which, as the header of this file already
+ * says about `consumer.test.ts`, answers no matter what the export map, the
+ * build or the tarball say. Nothing proved the arrays survive packing.
+ *
+ * The subject is HALF-RIGHT ON PURPOSE, and that is the control. A subject that
+ * passes everything and a suite that checks nothing produce the same green; a
+ * subject that fails everything and a suite that throws on everything produce
+ * the same red. Only a MIXED report says the suite discriminates, so the
+ * assertion below requires both sets to be non-empty. Real temp roots let the
+ * filesystem clauses pass; `release` is the planted defect.
  */
-const CONTRACTS_ONLY_SCRIPT = `import { PANDA_ERROR_CODES, PandaError, validateWorkspaceHandle } from '@panda/contracts'
+const CONTRACTS_ONLY_SCRIPT = `import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  PANDA_ERROR_CODES,
+  PandaError,
+  runWorkspaceContractSuite,
+  validateWorkspaceHandle,
+} from '@panda/contracts'
+
+class HalfRightWorkspaces {
+  #roots = new Map()
+
+  async create() {
+    const id = \`w\${this.#roots.size + 1}\`
+    const root = mkdtempSync(join(tmpdir(), 'panda-contracts-only-'))
+    this.#roots.set(id, root)
+    return validateWorkspaceHandle({ id, rootPath: root, capabilities: ['read', 'write'] })
+  }
+
+  async acquire(id) {
+    const root = this.#roots.get(id)
+    if (root === undefined) {
+      throw new PandaError(PANDA_ERROR_CODES.contractWorkspaceUnknownId, 'unknown workspace id')
+    }
+    return validateWorkspaceHandle({ id, rootPath: root, capabilities: ['read', 'write'] })
+  }
+
+  // PLANTED: a conformant provider refuses a forged handle and a second release.
+  async release() {}
+
+  async dispose() {}
+}
+
+const suite = await runWorkspaceContractSuite(new HalfRightWorkspaces())
 
 const handle = validateWorkspaceHandle({ id: 'w1', rootPath: process.cwd(), capabilities: ['read', 'write'] })
 
@@ -361,6 +412,10 @@ console.log(
     rejectedCode,
     expectedCode: PANDA_ERROR_CODES.contractEnvelopeInvalid,
     resolvedFrom: import.meta.resolve('@panda/contracts'),
+    suiteName: suite.suite,
+    suiteClauses: suite.clauses,
+    suitePassing: suite.outcomes.filter((outcome) => outcome.passed).map((outcome) => outcome.clause),
+    suiteViolations: suite.violations.map((violation) => violation.clause),
   }),
 )
 console.log('${PAYLOAD_END}')
@@ -691,6 +746,10 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       rejectedCode: string | null
       expectedCode: string
       resolvedFrom: string
+      suiteName: string
+      suiteClauses: string[]
+      suitePassing: string[]
+      suiteViolations: string[]
     }
     expect(sole.handle).toEqual({ id: 'w1', rootPath: soleDir, capabilities: ['read', 'write'] })
     // The coded error is real, not a bare throw: a port implementation routes on
@@ -700,6 +759,23 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     expect(sole.resolvedFrom.toLowerCase()).not.toContain(
       pathToFileURL(repoRoot).href.toLowerCase().replace(/\/$/, ''),
     )
+
+    // THE PUBLISHED SUITE RAN FROM THE TARBALL. Compared against the workspace's
+    // own array rather than a literal count, so this reddens in both directions:
+    // a clause added in source and stranded by `files`/`exports`, and a clause
+    // the tarball carries that source no longer has.
+    expect(sole.suiteName).toBe('workspace-provider')
+    expect(sole.suiteClauses).toEqual(WORKSPACE_CLAUSES.map((clause) => clause.name))
+    // AND IT BIT. Both sets non-empty is the control: a suite that passes
+    // everything and one that checks nothing are the same green, and a suite
+    // that fails everything and one that throws on everything are the same red.
+    expect(sole.suiteViolations.length).toBeGreaterThan(0)
+    expect(sole.suitePassing.length).toBeGreaterThan(0)
+    // The planted defect is named, so the violations are this subject's and not
+    // an unconditional failure: `release` accepts a forged handle and a double
+    // release, and a conformant provider refuses both.
+    expect(sole.suiteViolations).toContain('release-forged-handle-rejected')
+    expect(sole.suiteViolations).toContain('double-release-rejected')
 
     const tsc = join(dirname(createRequire(import.meta.url).resolve('typescript')), 'tsc.js')
     const typechecked = await node([tsc, '-p', 'tsconfig.json'], soleDir, RUN_TIMEOUT_MS)
