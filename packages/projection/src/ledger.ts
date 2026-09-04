@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError, PROJECTION_LEDGER_VERSION, isRecord } from '@panda/contracts'
 import type { ProjectionLedgerRecord, ProjectionWarning } from '@panda/contracts'
 import { atomicWriteText } from './atomic-write.ts'
+import { strictFaultLocation } from './document-fault.ts'
 
 // The durable ownership ledger (AD-6, correction-01 C2): panda's own record of
 // every entry it placed in someone else's file. It lives beside the registry
@@ -238,8 +239,12 @@ export class ProjectionLedger {
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
-    } catch (error) {
-      return this.#unreadable(`is not valid JSON: ${detailOf(error)}`)
+    } catch {
+      // LOCATED, never quoted (`document-fault.ts`). This ledger holds paths and
+      // hashes rather than server arguments, so no leak was measured out of it —
+      // and it is brought under the rule anyway, because "no credential happens
+      // to sit inside V8's snippet window today" is not a property of the code.
+      return this.#unreadable(`is not valid JSON: ${strictFaultLocation(raw)}`)
     }
     if (!isRecord(parsed) || parsed['version'] !== PROJECTION_LEDGER_VERSION) {
       return this.#unreadable(

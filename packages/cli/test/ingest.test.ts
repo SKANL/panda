@@ -272,7 +272,10 @@ describe('panda ingest', () => {
     const run = await panda(['ingest'], homeDir)
 
     expect(run.code).toBe(2)
-    expect(run.err).toMatch(/line \d+ column \d+/)
+    // `line N, column M` is panda's own spelling. This read V8's `line N
+    // column M` until M17.A, which discards V8's message because the credential
+    // travelled inside it; the location the user acts on is unchanged.
+    expect(run.err).toMatch(/line \d+, column \d+/)
     // Phase 1 validates every origin before phase 2 writes, so the skill that
     // WOULD have landed did not.
     expect(await bytesAt(registryPath(homeDir))).toBe('<absent>')

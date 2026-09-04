@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
 import { atomicWriteText } from './atomic-write.ts'
+import { strictFaultLocation } from './document-fault.ts'
 
 // The write half of panda's OWN configuration. `panda run --help` has always
 // told the user where the executor selection comes from and never how a value
@@ -97,8 +98,13 @@ async function readDocument(filePath: string): Promise<Record<string, unknown> |
   let parsed: unknown
   try {
     parsed = JSON.parse(text) as unknown
-  } catch (error) {
-    throw unusable(filePath, 'it is not valid JSON, and panda does not overwrite a document it cannot read', error)
+  } catch {
+    // LOCATED, never quoted (`document-fault.ts`), and no `cause`: passing the
+    // error here put its message on every stack that printed this refusal.
+    throw unusable(
+      filePath,
+      `it is not valid JSON, and panda does not overwrite a document it cannot read: ${strictFaultLocation(text)}`,
+    )
   }
   if (!isRecord(parsed)) {
     throw unusable(filePath, 'it must hold a JSON object, and panda does not replace one that does not')

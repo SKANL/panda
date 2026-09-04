@@ -191,6 +191,9 @@ importers:
       '@panda/kernel':
         specifier: workspace:*
         version: link:../kernel
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

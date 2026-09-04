@@ -14,6 +14,7 @@ import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { PandaError, PANDA_ERROR_CODES, normalizeRegistryEntryPaths, registryEntryIssues } from '@panda/contracts'
 import type { RegistryEntry, StoredEntryType } from '@panda/contracts'
+import { strictFaultLocation } from './document-fault.ts'
 
 /** Bumped only when a reader of an older build could MISREAD the document. */
 export const BUNDLE_VERSION = 1
@@ -228,11 +229,17 @@ export async function writeBundle(path: string, bundle: RegistryBundle): Promise
 
 // --- Reading one back (FR-22) ----------------------------------------------
 
-function unreadable(path: string, detail: string, cause?: unknown): PandaError {
+/**
+ * `detail` is a string panda AUTHORS, and there is no `cause` parameter any
+ * more — that is what enforces it, because a cause is reachable from any printed
+ * stack. `document-fault.ts` holds the rule: a bundle carries `mcp-server`
+ * args, and V8's parse message quoted a planted credential straight out of one
+ * through `panda import` (Spec M17.A, Change Log 1).
+ */
+function unreadable(path: string, detail: string): PandaError {
   return new PandaError(
     PANDA_ERROR_CODES.registryBundleUnavailable,
     `bundle at '${path}' cannot be imported: ${detail}`,
-    cause === undefined ? undefined : { cause },
   )
 }
 
@@ -253,8 +260,9 @@ export function parseBundle(path: string, text: string): RegistryBundle {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
-  } catch (error) {
-    throw unreadable(path, error instanceof Error ? error.message : String(error), error)
+  } catch {
+    // LOCATED, never quoted.
+    throw unreadable(path, `it is not valid JSON: ${strictFaultLocation(text)}`)
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw unreadable(path, 'the document is not an object')
@@ -324,7 +332,9 @@ export async function readBundle(path: string): Promise<RegistryBundle> {
   try {
     text = await readFile(path, 'utf8')
   } catch (error) {
-    throw unreadable(path, error instanceof Error ? error.message : String(error), error)
+    // The errno alone: it names why the OS refused and can hold no part of the
+    // document, unlike the parse message above it.
+    throw unreadable(path, `it could not be read (${(error as NodeJS.ErrnoException)?.code ?? 'unknown error'})`)
   }
   return parseBundle(path, text)
 }

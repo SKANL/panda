@@ -13,6 +13,7 @@ import {
   validateRegistryScope,
 } from '@panda/contracts'
 import type { RegistryEntry, RegistryScope, StoredEntryType } from '@panda/contracts'
+import { strictFaultLocation } from './document-fault.ts'
 import { acquireLock } from './lock.ts'
 import type { LockOptions, StaleLockBreak } from './lock.ts'
 
@@ -68,13 +69,30 @@ function sameDirectory(left: string, right: string): boolean {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
-function unavailable(operation: string, path: string, cause?: unknown): PandaError {
-  const detail = cause === undefined ? '' : `: ${cause instanceof Error ? cause.message : String(cause)}`
+/**
+ * `detail` is a string panda AUTHORS, and the `string` type is what enforces
+ * that: an `Error` can no longer be handed in, so its message cannot reach the
+ * user and no `cause` can carry it onto a stack. `document-fault.ts` holds the
+ * rule and the measurement behind it.
+ *
+ * The one caller that still has an `Error` worth reporting is the FILESYSTEM
+ * failure, whose `errno` names a condition rather than a document — so it passes
+ * the code, not the error.
+ */
+function unavailable(operation: string, path: string, detail?: string): PandaError {
   return new PandaError(
     PANDA_ERROR_CODES.registryStoreUnavailable,
-    `registry store ${operation} failed on '${path}'${detail}`,
-    { cause },
+    `registry store ${operation} failed on '${path}'${detail === undefined ? '' : `: ${detail}`}`,
   )
+}
+
+/**
+ * A filesystem failure as its `errno` alone (`EACCES`, `EPERM`). The condition,
+ * not the message: an errno names why the OS refused and can hold no part of the
+ * document, which is the whole distinction `unavailable` above is drawn on.
+ */
+function errnoOf(error: unknown): string {
+  return (error as NodeJS.ErrnoException)?.code ?? 'unknown error'
 }
 
 export class RegistryStore {
@@ -164,7 +182,7 @@ export class RegistryStore {
       () => true,
       (error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return false
-        throw unavailable('read', path, error)
+        throw unavailable('read', path, errnoOf(error))
       },
     )
     if (present) {
@@ -300,7 +318,7 @@ export class RegistryStore {
   #storePath(scope: Exclude<RegistryScope, 'agent'>): string {
     if (scope === 'global') return join(this.#homeDir, '.panda', 'registry.json')
     if (this.#projectDir === undefined) {
-      throw unavailable('resolve project scope', '.panda/registry.json', new Error('no project directory is configured'))
+      throw unavailable('resolve project scope', '.panda/registry.json', 'no project directory is configured')
     }
     return join(this.#projectDir, '.panda', 'registry.json')
   }
@@ -311,26 +329,29 @@ export class RegistryStore {
       raw = await readFile(path, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { version: STORE_VERSION, entries: [] }
-      throw unavailable('read', path, error)
+      throw unavailable('read', path, errnoOf(error))
     }
 
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
-    } catch (error) {
-      throw unavailable('parse', path, error)
+    } catch {
+      // LOCATED, never quoted. This is THE document that holds `mcp-server`
+      // args, and V8's message quoted a planted credential out of it through
+      // `panda list`, `panda doctor` and `panda init` (Spec M17.A, Change Log 1).
+      throw unavailable('parse', path, strictFaultLocation(raw))
     }
-    if (!isRecord(parsed)) throw unavailable('validate', path, new Error('store document is not an object'))
+    if (!isRecord(parsed)) throw unavailable('validate', path, 'store document is not an object')
     const foundVersion = parsed['version']
     if (foundVersion !== STORE_VERSION) {
       throw unavailable(
         'validate',
         path,
-        new Error(`store document has version ${JSON.stringify(foundVersion)} but this build expects ${STORE_VERSION}`),
+        `store document has version ${JSON.stringify(foundVersion)} but this build expects ${STORE_VERSION}`,
       )
     }
     if (!Array.isArray(parsed['entries'])) {
-      throw unavailable('validate', path, new Error("store document has no 'entries' array"))
+      throw unavailable('validate', path, "store document has no 'entries' array")
     }
 
     const entries = parsed['entries'] as unknown[]
@@ -344,10 +365,12 @@ export class RegistryStore {
       // still fails the store here exactly as before.
       const issues = registryEntryIssues(candidate, true)
       if (issues.length > 0) {
+        // `registryEntryIssues` names keys and types, never the values they
+        // hold — the same shape the rule requires everywhere else.
         throw unavailable(
           'validate',
           path,
-          new Error(`entries[${index}] violates the canonical envelope: ${issues.map((issue) => issue.message).join('; ')}`),
+          `entries[${index}] violates the canonical envelope: ${issues.map((issue) => issue.message).join('; ')}`,
         )
       }
     })
@@ -357,7 +380,7 @@ export class RegistryStore {
   async #persist(path: string, next: (current: StoreFile) => StoreFile): Promise<void> {
     const dir = dirname(path)
     await mkdir(dir, { recursive: true }).catch((error: unknown) => {
-      throw unavailable('prepare', dir, error)
+      throw unavailable('prepare', dir, errnoOf(error))
     })
     const lock = await acquireLock(`${path}.lock`, this.#lockOptions)
     try {
@@ -381,7 +404,7 @@ export class RegistryStore {
           await new Promise((resolve) => setTimeout(resolve, PERSIST_RETRY_DELAY_MS))
         }
       }
-      if (lastError !== undefined) throw unavailable('persist', path, lastError)
+      if (lastError !== undefined) throw unavailable('persist', path, errnoOf(lastError))
     } finally {
       await lock.release()
     }

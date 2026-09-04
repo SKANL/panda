@@ -19,7 +19,8 @@ import type {
   RegistryEntry,
 } from '@panda/contracts'
 import type { Node, ParseError } from 'jsonc-parser'
-import { parse, parseTree, printParseErrorCode } from 'jsonc-parser'
+import { parse, parseTree } from 'jsonc-parser'
+import { FAULT_UNLOCATED, faultDetail, positionOf, strictFaultLocation } from './document-fault.ts'
 import { hashOwnedText, resolveOwnedPath, sameOwnedPath } from './ledger.ts'
 
 // Format-trait table + generic native-merge strategies (FR-8): everything that
@@ -269,12 +270,16 @@ function indentLevelOf(whitespace: string, unit: string): number {
   return level
 }
 
-function nativeMalformed(filePath: string, cause: unknown): PandaError {
-  const detail = cause instanceof Error ? cause.message : String(cause)
+/**
+ * `detail` is a string panda AUTHORS, never a parser's message and never a
+ * `cause`. `document-fault.ts` holds the rule and why it exists; the `string`
+ * parameter is what enforces it, because an `Error` can no longer be handed in
+ * at all.
+ */
+function nativeMalformed(filePath: string, detail: string): PandaError {
   return new PandaError(
     PANDA_ERROR_CODES.projectionNativeMalformed,
     `native config file '${filePath}' is malformed: ${detail}`,
-    { cause },
   )
 }
 
@@ -312,10 +317,12 @@ function objectRootOf(body: string, filePath: string, strictJson: boolean): Node
     let parsed: unknown
     try {
       parsed = JSON.parse(body)
-    } catch (error) {
-      throw nativeMalformed(filePath, error)
+    } catch {
+      // The error is DISCARDED unread. See `nativeMalformed`: for the shapes
+      // that quote the document there is no position in the message to keep.
+      throw nativeMalformed(filePath, strictFaultLocation(body))
     }
-    if (!isRecord(parsed)) throw nativeMalformed(filePath, new Error('document root is not an object'))
+    if (!isRecord(parsed)) throw nativeMalformed(filePath, 'document root is not an object')
     // Strict JSON already validated above; the tree exists by construction.
     return parseTree(body)!
   }
@@ -333,7 +340,15 @@ function objectRootOf(body: string, filePath: string, strictJson: boolean): Node
   // every real fault collects at least one. `canonical()` below already parses
   // this way; this is the same answer given at both doors.
   const errors: ParseError[] = []
-  const root = parseTree(body, errors, { allowTrailingComma: true })
+  let root: Node | undefined
+  try {
+    root = parseTree(body, errors, { allowTrailingComma: true })
+  } catch {
+    // `parseTree` RECURSES and throws `RangeError` past ~5000 nesting levels
+    // (Spec M17.A, Change Log 2). Refusing coded without a location is the
+    // documented outcome; propagating an uncoded throw is not.
+    throw nativeMalformed(filePath, FAULT_UNLOCATED)
+  }
   const first = errors[0]
   if (first !== undefined) {
     // The FIRST only. A recovering parser cascades — an unquoted key reports
@@ -343,28 +358,12 @@ function objectRootOf(body: string, filePath: string, strictJson: boolean): Node
     // panda invents for it. It is terser than a sentence and it is stable,
     // greppable, and the same word the user's editor and every other
     // jsonc-parser consumer already shows them for that fault.
-    throw nativeMalformed(
-      filePath,
-      new Error(`${printParseErrorCode(first.error)} at ${positionOf(body, first.offset)}`),
-    )
+    throw nativeMalformed(filePath, faultDetail(body, first))
   }
   if (!root || root.type !== 'object') {
-    throw nativeMalformed(filePath, new Error('document root is not an object'))
+    throw nativeMalformed(filePath, 'document root is not an object')
   }
   return root
-}
-
-/**
- * A byte offset as the 1-based `line:column` a user's editor shows.
- *
- * Offset 0 needs no special case and had one until it was measured: there
- * `lastIndexOf('\n', -1)` is -1, the +1 makes `lineStart` 0, and `''.split('\n')`
- * has length 1 — so the general form already answers `line 1, column 1`.
- */
-function positionOf(text: string, offset: number): string {
-  const bounded = Math.max(0, Math.min(offset, text.length))
-  const lineStart = text.lastIndexOf('\n', bounded - 1) + 1
-  return `line ${text.slice(0, lineStart).split('\n').length}, column ${bounded - lineStart + 1}`
 }
 
 /**
@@ -504,10 +503,7 @@ const JSONC_STRATEGY: FormatStrategy = {
   validate(body, filePath, traits) {
     const root = objectRootOf(body, filePath, traits.strictJson ?? false)
     if (memberProperties(root, traits.mcpContainerKey).length > 1) {
-      throw nativeMalformed(
-        filePath,
-        new Error(`document declares more than one '${traits.mcpContainerKey}' key`),
-      )
+      throw nativeMalformed(filePath, `document declares more than one '${traits.mcpContainerKey}' key`)
     }
     const container = memberValue(root, traits.mcpContainerKey)
     if (container !== undefined && container.type !== 'object') {
@@ -836,9 +832,13 @@ const TOML_STRATEGY: FormatStrategy = {
         const key = tomlAssignmentPath(text)
         const equals = text.indexOf('=')
         if (key === undefined || key.length !== 1 || equals < 0) {
+          // LOCATED, never quoted (`document-fault.ts`). This echoed the line
+          // itself until M17.A, and a line of a vendor config is a line that can
+          // hold an API token — the same hazard as a parser message, reached
+          // through panda's OWN prose rather than through V8's.
           unreadable.push({
             id,
-            detail: `'${traits.mcpContainerKey}.${id}' holds a line panda cannot read as one 'key = value' assignment: ${trimmed}`,
+            detail: `'${traits.mcpContainerKey}.${id}' holds a line panda cannot read as one 'key = value' assignment, at ${positionOf(body, lines[scan]!.start)}`,
           })
           byId.delete(id)
           order.splice(order.indexOf(id), 1)
@@ -849,9 +849,14 @@ const TOML_STRATEGY: FormatStrategy = {
         try {
           parsed = JSON.parse(raw)
         } catch {
+          // The value is NAMED by its key, never reproduced — the shape the
+          // JSONC reporter above already uses ("holds a value panda cannot
+          // read…"), and the reason it never leaked while this one did. Measured
+          // at 4232e9c: `panda ingest --dry-run` printed a planted credential
+          // verbatim out of `config.toml` through this interpolation.
           unreadable.push({
             id,
-            detail: `'${traits.mcpContainerKey}.${id}.${key[0]!}' is spelled '${raw}', which is not how panda renders a value; panda reports it rather than guessing what it means`,
+            detail: `'${traits.mcpContainerKey}.${id}.${key[0]!}' holds a value panda cannot read, because it is not spelled the way panda renders one; panda reports it rather than guessing what it means, at ${positionOf(body, lines[scan]!.start + equals + 1)}`,
           })
           byId.delete(id)
           order.splice(order.indexOf(id), 1)

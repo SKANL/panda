@@ -368,19 +368,14 @@ describe('OpenCode — a broken config is refused with its location', () => {
   })
 })
 
-describe('Claude — the strict target keeps V8 as its parser', () => {
-  it('reports a broken file through JSON.parse, unchanged by M7.E', async () => {
-    // `strictJson: true` runs JSON.parse first and its message already carries a
-    // position. Re-deriving one would be two answers to one question.
-    const target = createClaudeMcpTarget({ filePath: '/home/u/.claude.json' })
-    let caught: { code?: string; message: string } | undefined
-    try {
-      await target.merge({ entries: ENTRIES, records: [], nativeText: '{\n  "mcpServers": {},,\n}\n' })
-    } catch (error) {
-      caught = error as { code?: string; message: string }
-    }
-    expect(caught?.code).toBe('PANDA_PROJECTION_NATIVE_MALFORMED')
-    // V8's own words, with V8's own position — not panda's re-derived one.
-    expect(caught?.message).toContain('position 21')
-  })
-})
+// --- The strict target LOCATES a fault, it does not quote it (Spec M17.A) ---
+//
+// M7.E's clause here was "the strict target keeps V8 as its parser", asserting
+// `position 21` — V8's own message reaching the user, which is the exact string
+// a planted credential travelled in through `doctor`, `init` and `ingest`.
+//
+// It is not replaced in place, because M17.A closes a RULE and not a site: no
+// error panda raises about a document quotes that document's content, over all
+// six documents panda parses. That lives in ONE gate,
+// `test/document-quoting.test.ts`, which drives this target among the rest —
+// splitting it across files would be six promises to keep in step.

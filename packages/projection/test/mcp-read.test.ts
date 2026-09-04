@@ -221,7 +221,14 @@ describe('E13 and its siblings: a native entry panda cannot represent is reporte
 
     expect(result.entries.map((item) => item.id)).toEqual(['b'])
     expect(result.unreadable[0]).toMatchObject({ id: 'a' })
-    expect(result.unreadable[0]!.detail).toContain("'uvx'")
+    // The KEY and WHERE, never the value. This asserted `'uvx'` — the document's
+    // own bytes echoed back — until M17.A, and that echo printed a planted
+    // credential out of a real `config.toml`. The sibling clause above it always
+    // named only `mcpServers.a`, which is why the JSONC reader never leaked and
+    // is the shape this one was corrected to. `document-quoting.test.ts` is the
+    // gate; this clause keeps its own subject, which is refusing to GUESS.
+    expect(result.unreadable[0]!.detail).toContain('mcp_servers.a.command')
+    expect(result.unreadable[0]!.detail).toContain('line 2, column 10')
   })
 
   it('reports a location the document spells twice rather than reading one of them', async () => {
@@ -265,16 +272,19 @@ describe.skipIf(process.platform === 'win32')('a config panda may not OPEN is re
 
 describe('E7/E8: a document panda cannot merge into is refused on the way IN too (D8)', () => {
   it('E7: names the line and column, through the same strategy the writer uses', async () => {
-    // Two families, two spellings of the same fact, and BOTH are the writer's
-    // own: a strict-JSON target refuses through `JSON.parse`, whose message
-    // carries V8's `(line N column M)`, and a lenient JSONC target refuses
-    // through `positionOf`, which spells it `line N, column M`. Neither is
-    // reworded here, so what a user sees is what their editor already shows.
+    // Two families, ONE spelling, and it is the writer's own: both refuse
+    // through `positionOf`, which spells it `line N, column M`.
+    //
+    // This clause read `(line N column M)` for the strict family until M17.A —
+    // V8's own words, passed through. That is the string the credential
+    // travelled in, so it is gone (M17.A/D1) and the strict family now derives
+    // its location from jsonc-parser's offsets like the lenient one. The FACT
+    // the clause names is unchanged: the user is told where.
     const strict = await refusal(CLAUDE_MCP_TRAITS, '.claude.json', '{"mcpServers": {"a": {"command": "x"},,}}')
     const lenient = await refusal(OPENCODE_CONFIG_TRAITS, 'opencode.json', '{"mcp": {a: {"command": "x"}}}')
 
     expect(strict.code).toBe(PANDA_ERROR_CODES.projectionNativeMalformed)
-    expect(strict.message).toMatch(/line \d+ column \d+/)
+    expect(strict.message).toMatch(/line \d+, column \d+/)
     expect(lenient.code).toBe(PANDA_ERROR_CODES.projectionNativeMalformed)
     expect(lenient.message).toMatch(/line \d+, column \d+/)
   })
