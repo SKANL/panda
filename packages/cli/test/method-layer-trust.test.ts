@@ -72,13 +72,26 @@ describe('a method the project layer named is never imported', () => {
     // that refused after importing would exit 2 as well.
     expect(existsSync(marker), 'the project-named module was imported and its top-level code ran').toBe(false)
     expect(code).toBe(2)
-    // Actionable, per panda's own principle: the refusal names the one command
-    // that adopts the methodology into a document the user owns, which is the
-    // consent a cloned file cannot give.
+    // Actionable, per panda's own principle — but see the note below for what
+    // "actionable" turned out to require, and why the first version of these
+    // assertions did not deliver it.
     const said = io.err.join('\n')
     expect(said).toContain('./arrived.mjs')
     expect(said).toContain('project')
-    expect(said).toContain('panda swap method')
+    // THIS LINE USED TO READ `toContain('panda swap method')`, AND THAT IS THE
+    // FINDING. Driven end to end, the command it demanded is a CLOSED LOOP: exit
+    // 0, writes the machine document, changes nothing — layer precedence keeps
+    // `project` deciding and this same guard fires again, byte-identically. The
+    // user could run the recommended command forever, and their only real exit
+    // was hand-editing the JSON that `config-write.ts` says the product exists
+    // to stop asking for.
+    //
+    // A clause asserting a message CONTAINS a command pins that panda gives
+    // ADVICE. Nothing here can pin that the advice WORKS. It now names the two
+    // facts a user can act on: which file holds the key, and that a machine
+    // selection must be ABSOLUTE.
+    expect(said).toContain('.panda/config.json')
+    expect(said).toContain('ABSOLUTE')
   })
 
   it('CONTROL: the same run with no method key reaches the executor', async () => {

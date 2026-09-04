@@ -113,7 +113,7 @@ A gate placed after `resolveMethod` would pass its test and prevent nothing.
 | E2 | `run` with the method in `~/.panda/config.json` | mounts exactly as today |
 | E3 | `run` with no method anywhere | unchanged; no warning, no failure (M5.D row 9) |
 | E4 | `project swap method X` | still writes the project document (M5.D row 6) |
-| E5 | machine and project both name a method | the machine one mounts; no refusal, because the deciding layer is `global` |
+| E5 | machine and project both name a method | ~~the machine one mounts; no refusal, because the deciding layer is `global`~~ **FALSE — see the correction below** |
 | E6 | a method supplied on the `agent` layer | mounts; that document is the host's own code |
 | E7 | `doctor` / `list` in the hostile project | unchanged — they never mounted a method |
 
@@ -218,3 +218,68 @@ bytes 0, typecheck 12/12, lint 0, session and cli green on Node 24.14.1 and
 3. **A guard's placement needs its own gate.** A unit test over the guard
    function is satisfied by a guard that runs too late. Assert the side effect
    the ordering suppresses, not the function's return value.
+
+## Correction — E5 is false, and the advice D2 shipped was a closed loop
+
+Written by this spec's own author, hours after it froze, by driving the three
+things it asserted instead of reading them. All three are wrong in the same
+direction: they assume the refusal LEAVES A WAY OUT, and it did not.
+
+### E5 is false
+
+It says the machine selection mounts "because the deciding layer is `global`".
+The layer order is `defaults → global → project → agent` and `config.dump()`
+returns the NARROWEST deciding layer, so when both documents name a method the
+deciding layer is `project`, not `global`, and the guard fires.
+
+Driven: same machine selection both rows, only the project document differs.
+
+    project doc present, machine method set   →  refused
+    project doc REMOVED, machine method set   →  reached the executor
+
+So a cloned repository carrying a `method` key does not merely fail to run ITS
+method — it **denies service to the machine owner's own**, and `panda run` stays
+unusable in that clone until someone hand-edits the JSON.
+
+### D2's command did not resolve anything
+
+D2 says the refusal "carries the command that resolves it". Driven verbatim,
+`panda swap method <spec>` exits 0, writes `~/.panda/config.json`, and changes
+nothing observable: `project` still decides, this same guard fires byte for
+byte. **A closed loop.** The user's only real exit was editing the file that
+`config-write.ts:11-12` says the product exists to stop asking for.
+
+### And the loop's exit was a wildcard
+
+When the machine selection DOES decide, `run-session.ts:602` resolves the
+specifier against **the run's cwd**, whatever layer chose it. So
+`"method": "./mine.mjs"` in the machine document means *whatever `./mine.mjs` is
+where you are standing* — every repository on the machine at once. Driven: a
+directory holding only a `mine.mjs` and NO `.panda` config ran that module's
+top-level code; the same directory with an empty `HOME` did not.
+
+That is WIDER than the hole this spec closed — E1 needed the hostile repo to
+carry a config, this needs only a file with the right name — and it was
+reachable **only by following this spec's own printed instruction**.
+
+### What shipped instead (M30)
+
+Refusal on both sides, chosen over resolution deliberately. Resolving a
+machine-layer relative specifier against `homeDir` would silently change what an
+existing selection MEANS; refusing says the true thing, which is that a relative
+specifier in a machine-wide document never named a file.
+
+- `assertMethodMayMount` refuses a relative specifier from any non-`project`
+  layer, and the `project` refusal now names the FILE that holds the key plus
+  the fact that a machine selection must be ABSOLUTE.
+- `swap-command.ts` refuses to WRITE one, because that verb validated
+  `<cwd>/mine.mjs` and then stored the raw `./mine.mjs` — **the thing it
+  validated was not the thing it stored.**
+
+### The reusable lesson, and it is about tests
+
+Both of this spec's clauses asserted `message.toContain('panda swap method')`.
+That pins that panda gives **advice**. Nothing in it can pin that the advice
+**works** — and it did not. Assertions about a message's text are satisfied by a
+message that lies. The proof that an exit is an exit lives in a driven
+transcript, never in a `toContain`.

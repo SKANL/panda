@@ -165,11 +165,37 @@ export async function resolveMethod(specifier: string, baseDir?: string): Promis
  * is the principled shape rather than this one. Recorded in `deferred-work.md`.
  */
 export function assertMethodMayMount(selected: { readonly specifier: string; readonly layer: string }): void {
-  if (selected.layer !== 'project') return
-  throw new PandaError(
-    PANDA_ERROR_CODES.configurationUnusable,
-    `the 'project' layer selects the method '${selected.specifier}', and panda will not import a module a project directory named: running it is running that project's code. If you want this methodology, adopt it into a document you own with \`panda swap method ${selected.specifier}\``,
-  )
+  if (selected.layer === 'project') {
+    throw new PandaError(
+      PANDA_ERROR_CODES.configurationUnusable,
+      `the 'project' layer selects the method '${selected.specifier}', and panda will not import a module a project directory named: running it is running that project's code. To use this methodology, remove the 'method' key from this project's '.panda/config.json' and name the module by ABSOLUTE path in your own machine document`,
+    )
+  }
+  // A RELATIVE SPECIFIER IN A MACHINE-WIDE DOCUMENT IS NOT A SELECTION.
+  //
+  // `runSession` resolves the specifier against the RUN's cwd regardless of
+  // which layer decided it, so `"method": "./mine.mjs"` in `~/.panda/config.json`
+  // means "whatever `./mine.mjs` is in whatever directory you are standing in" —
+  // a wildcard over every repository on the machine.
+  //
+  // Driven, with a control: standing in a directory carrying only a `mine.mjs`
+  // and NO `.panda` config at all, the module's top-level code RAN; the same
+  // directory with an empty HOME did not. So the selection caused it, and this is
+  // WIDER than the hole the clause above closes — that one needs the hostile
+  // repository to carry a config, this needs only a file with the right name.
+  //
+  // REFUSED rather than resolved against the home directory. Resolving would
+  // silently change what an existing selection means; refusing says the true
+  // thing, which is that the selection never named a file. An absolute path and
+  // a package specifier both still work, and the clause that proves this did not
+  // simply remove the feature asserts exactly that.
+  const relative = ['./', '../', '.\\', '..\\'].some((prefix) => selected.specifier.startsWith(prefix))
+  if (selected.layer !== 'project' && relative) {
+    throw new PandaError(
+      PANDA_ERROR_CODES.configurationUnusable,
+      `the '${selected.layer}' layer selects the method '${selected.specifier}', and a relative specifier there names no file: panda resolves it against the directory you run in, so it would mean a different module in every project. Name it by ABSOLUTE path, or by package specifier`,
+    )
+  }
 }
 
 export function selectMethod(config: {

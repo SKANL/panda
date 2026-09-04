@@ -197,3 +197,54 @@ describe('M5.C row 15: the selection persists across PROCESSES', () => {
     expect(second.stderr).toContain('codex')
   })
 })
+
+describe('M30.B: what the machine document stores must mean the same thing everywhere', () => {
+  /**
+   * `swap` VALIDATED one file and STORED a specifier meaning a different one.
+   *
+   * `swap-command.ts:104` computes `projectDir` from cwd for the MACHINE scope
+   * too, and `:118` validates `resolveMethod(id, projectDir)`. So
+   * `panda swap method ./mine.mjs` run from a project validated THAT project's
+   * `mine.mjs` and then wrote the raw `./mine.mjs` into the HOME document —
+   * where `runSession` resolves it against whatever directory the next run
+   * happens to stand in.
+   *
+   * Driven before this clause existed, with a control: standing in a directory
+   * carrying only a `mine.mjs` and NO `.panda` config at all, that module's
+   * top-level code RAN; the same directory with an empty HOME did not run it.
+   * A wildcard over every repository on the machine, reachable by following the
+   * refusal's own printed advice.
+   *
+   * The run-time guard now refuses such a selection. This clause closes the
+   * other half: a verb whose success message is a lie about what it stored.
+   */
+  it('refuses to store a relative method specifier in the machine document', async () => {
+    const at = await fixture()
+    await writeFile(join(at.projectDir, 'mine.mjs'), 'export default {}\n', 'utf8')
+
+    const said = await panda(['swap', 'method', './mine.mjs'], at)
+
+    expect(said.code).toBe(2)
+    expect(said.err).toContain('./mine.mjs')
+    expect(said.err).toContain('ABSOLUTE')
+    // Nothing written: a refused selection must not leave a document behind for
+    // the next run to trip over.
+    await expect(readConfig(at.homeDir)).rejects.toThrow()
+  })
+
+  it('CONTROL: still stores an absolute specifier, and a project-scope relative one', async () => {
+    // Without this the clause above is satisfied by a verb that refuses every
+    // method, which would remove the feature instead of the ambiguity.
+    const at = await fixture()
+    const absolute = join(at.projectDir, 'mine.mjs')
+    await writeFile(absolute, 'export default { id: "m", version: "1.0.0", phases: [], artifacts: [], commands: [] }\n', 'utf8')
+
+    const machine = await panda(['swap', 'method', absolute], at)
+    expect(machine.code, machine.err).toBe(0)
+    expect((await readConfig(at.homeDir))['method']).toBe(absolute)
+
+    const project = await panda(['project', 'swap', 'method', './mine.mjs'], at)
+    expect(project.code, project.err).toBe(0)
+    expect((await readConfig(at.projectDir))['method']).toBe('./mine.mjs')
+  })
+})

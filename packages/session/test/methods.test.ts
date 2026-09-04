@@ -229,8 +229,74 @@ describe('M25.A: a method that arrived with a clone is not a method you chose', 
     // own, which is the consent a cloned file cannot give.
     expect((raised as PandaError).message).toContain('./hostile.mjs')
     expect((raised as PandaError).message).toContain('project')
-    expect((raised as PandaError).message).toContain('panda swap method')
+    // THE ADVICE CHANGED, AND THIS CLAUSE PINNING THE OLD ONE IS THE FINDING.
+    // It used to require the message to name `panda swap method <specifier>`.
+    // Driven end to end, that command is a CLOSED LOOP: it exits 0, writes the
+    // machine document, and changes nothing, because layer precedence keeps
+    // `project` deciding and this very guard fires again — byte-identically.
+    // The user could run the recommended command forever.
+    //
+    // Worse, when the machine selection DID take effect it was a relative
+    // specifier resolved against the run's cwd, which is the wildcard the
+    // clauses below now refuse. The old advice walked the user into a wider
+    // hole than the one this guard closes.
+    //
+    // A test that asserts a message CONTAINS a command pins that panda gives
+    // advice. Nothing here can pin that the advice works; only driving it can,
+    // and `packages/cli/test/method-layer-trust.test.ts` is where that lives.
+    expect((raised as PandaError).message).toContain('.panda/config.json')
+    expect((raised as PandaError).message).toContain('ABSOLUTE')
   })
+
+  /**
+   * A RELATIVE SPECIFIER IN A MACHINE-WIDE DOCUMENT IS NOT A SELECTION.
+   *
+   * `run-session.ts` resolves the specifier against the RUN's cwd regardless of
+   * which layer decided it, so `"method": "./mine.mjs"` in `~/.panda/config.json`
+   * means "whatever ./mine.mjs is in whatever directory you are standing in" — a
+   * wildcard over every repository on the machine.
+   *
+   * Driven at `081cf6e`, with a control: standing in a directory that carried
+   * only a `mine.mjs` and NO `.panda` config at all, the module's top-level code
+   * RAN; the same directory with an empty HOME did not run it. So the marker was
+   * caused by the machine-scope selection and nothing else.
+   *
+   * That is WIDER than the hole M25.A closed — that one needed the hostile
+   * repository to carry a `.panda/config.json`; this needs only a file with the
+   * right name — and it is reachable by following M25.A's own printed advice.
+   *
+   * Refused rather than resolved against the home directory. Resolving would
+   * silently change what an existing selection means; refusing says the true
+   * thing, which is that the selection never named a file.
+   */
+  it('refuses a RELATIVE specifier the machine document named, and says to make it absolute', () => {
+    let raised: unknown
+    try {
+      assertMethodMayMount({ specifier: './mine.mjs', layer: 'global' })
+    } catch (error) {
+      raised = error
+    }
+    expect(raised).toBeInstanceOf(PandaError)
+    expect((raised as PandaError).code).toBe(PANDA_ERROR_CODES.configurationUnusable)
+    expect((raised as PandaError).message).toContain('./mine.mjs')
+    expect((raised as PandaError).message).toContain('ABSOLUTE')
+  })
+
+  it.each([['./a.mjs'], ['../b.mjs'], ['.\\c.mjs'], ['..\\d.mjs']] as readonly (readonly [string])[])(
+    'refuses %s from the machine document whatever the separator',
+    (specifier) => {
+      expect(() => assertMethodMayMount({ specifier, layer: 'global' })).toThrow(PandaError)
+    },
+  )
+
+  it.each([['/abs/m.mjs'], ['my-method-package'], ['@scope/method']] as readonly (readonly [string])[])(
+    'still lets the machine document name %s',
+    (specifier) => {
+      // The CONTROL for the two clauses above. A guard that refused every machine
+      // specifier would satisfy them and would have removed the feature.
+      expect(() => assertMethodMayMount({ specifier, layer: 'global' })).not.toThrow()
+    },
+  )
 
   it.each([['global'], ['agent']] as readonly (readonly [string])[])(
     'lets the %s layer mount, because that document is already yours',
@@ -238,7 +304,14 @@ describe('M25.A: a method that arrived with a clone is not a method you chose', 
       // The CONTROL for the clause above. A guard that refused every layer would
       // satisfy it perfectly and would have removed the feature instead of the
       // hazard.
-      expect(() => assertMethodMayMount({ specifier: './m.mjs', layer })).not.toThrow()
+      //
+      // The specifier is ABSOLUTE, and the change from './m.mjs' is the finding
+      // rather than a fixture tidy-up: a relative specifier in a machine-wide
+      // document resolves against the RUN's cwd, so it named no file and is now
+      // refused by the clauses below. This clause's subject was always WHICH
+      // LAYER may mount; it happened to be written with a specifier that could
+      // not have meant anything.
+      expect(() => assertMethodMayMount({ specifier: '/abs/m.mjs', layer })).not.toThrow()
     },
   )
 })

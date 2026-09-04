@@ -103,6 +103,29 @@ export async function runSwap(
   // green. Defaulted HERE so the validation and the write see one directory.
   const projectDir = (scope === 'project' ? extra[0] : undefined) ?? options.cwd ?? process.cwd()
 
+  // WHAT THIS VALIDATES MUST MEAN THE SAME THING WHERE IT IS STORED.
+  //
+  // `projectDir` above is cwd for the MACHINE scope too, so `swap method
+  // ./mine.mjs` run from a project validated THAT project's file and then wrote
+  // the raw './mine.mjs' into the HOME document — where `runSession` resolves it
+  // against whatever directory the next run stands in. Driven, with a control: a
+  // directory carrying only a `mine.mjs` and NO `.panda` config had that module's
+  // top-level code RUN; the same directory with an empty HOME did not.
+  //
+  // A wildcard over every repository on the machine, and reachable by following
+  // the run-time refusal's own printed advice. The run-time guard refuses such a
+  // selection now; this refuses WRITING one, so the verb's success stops being a
+  // lie about what it stored.
+  if (noun === 'method' && scope === 'machine') {
+    const relative = ['./', '../', '.\\', '..\\'].some((prefix) => id.startsWith(prefix))
+    if (relative) {
+      err(
+        `'${id}' is relative, and a machine-wide selection resolves against the directory you run in — so it would name a different module in every project. Give an ABSOLUTE path, or a package specifier.`,
+      )
+      return 2
+    }
+  }
+
   try {
     // Nothing is written before this returns, for either noun: a selection panda
     // cannot honour must cost no byte on disk, the same rule `runSession`
