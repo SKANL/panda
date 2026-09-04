@@ -1,16 +1,18 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   BUNDLE_KIND,
   BUNDLE_VERSION,
+  OMITTED_FIELDS,
   createBundle,
   isCredential,
   parseBundle,
   serializeBundle,
   writeBundle,
 } from '../src'
+import type { OmittedEntry, OmittedField } from '../src'
 import type { RegistryEntry } from '@panda/contracts'
 
 const HOME = join('/home', 'dev')
@@ -135,34 +137,116 @@ describe('createBundle', () => {
     expect(bundle.omitted).toEqual([{ type: 'mcp-server', id: 'leaky', field: 'args' }])
   })
 
-  it('puts no part of the credential anywhere in the artifact, including the record', () => {
-    // The omission record is itself part of the artifact NFR-5 scans, so a
-    // record that carried the value — or an excerpt, or its length — would
-    // defeat the whole story while looking like diligence.
-    const token = FAKE.openai
-    const text = serializeBundle(createBundle([mcp('leaky', ['--api-key', token])], HOME))
-    expect(text).not.toContain(token)
-    expect(text).not.toContain(token.slice(0, 12))
-    expect(text).not.toContain('Ab3dEfGh')
-    // CONTROL: the id DOES travel, so the assertions above are not passing on an
-    // empty document.
-    expect(text).toContain('leaky')
-  })
+  // The omission record is itself part of the artifact NFR-5 scans, so a record
+  // that carried the value — or an excerpt, or its length — would defeat the
+  // whole story while looking like diligence.
+  //
+  // Driven over EVERY arm, and that is the whole lesson of this row. The first
+  // version of this clause planted its token in `args` only, with `id: 'leaky'`,
+  // so the one arm that could fail it — the arm where the credential IS the id —
+  // was never exercised. That is `document-quoting.test.ts:36-39`'s falsification
+  // lesson committed inside the test written to prevent it.
+  //
+  // Three needles per arm, as M17.A established: the whole token, its first eight
+  // characters, its last eight. The CONTROL is per-arm and must be satisfiable
+  // only by the code under test — for the four value arms the id still travels,
+  // and for the `id` arm the record's FIELD NAME travels while no part of the
+  // token does.
+  const NOTHING_ANYWHERE: readonly (readonly [OmittedField, RegistryEntry, string])[] = [
+    ['id', { type: 'mcp-server', id: FAKE.githubClassic, command: 'npx' }, FAKE.githubClassic],
+    ['command', { type: 'mcp-server', id: 'leaky', command: FAKE.aws }, FAKE.aws],
+    ['entryPath', { type: 'skill', id: 'leaky', entryPath: FAKE.gitlab }, FAKE.gitlab],
+    ['args', mcp('leaky', ['--api-key', FAKE.openai]), FAKE.openai],
+    [
+      'extensions',
+      { type: 'mcp-server', id: 'leaky', command: 'npx', extensions: { a: { b: [FAKE.anthropic] } } },
+      FAKE.anthropic,
+    ],
+  ]
 
-  it.each([
+  it.each(NOTHING_ANYWHERE)(
+    'puts no part of the credential anywhere in the artifact when the %s arm carries it, including the record',
+    (field, entry, token) => {
+      const text = serializeBundle(createBundle([entry], HOME))
+      expect(text).not.toContain(token)
+      expect(text).not.toContain(token.slice(0, 8))
+      expect(text).not.toContain(token.slice(-8))
+      if (field === 'id') {
+        // CONTROL for the arm with nothing else to name, and satisfiable ONLY by
+        // the code under test. `toContain('"field"')` was not: every omission
+        // record on every arm contains that key, so a build that recorded the
+        // wrong arm — or recorded this entry as an `args` omission — satisfied it.
+        // The record is read back instead, so it has to name THIS arm.
+        expect(JSON.parse(text).omitted).toEqual([{ type: entry.type, field: 'id' }])
+      } else {
+        // CONTROL: the id DOES travel, so the assertions above are not passing
+        // on an empty document.
+        expect(text).toContain('leaky')
+      }
+    },
+  )
+
+  const OMITS_AND_NAMES: readonly (readonly [OmittedField, RegistryEntry])[] = [
     ['id', { type: 'mcp-server', id: FAKE.githubClassic, command: 'npx' }],
     ['command', { type: 'mcp-server', id: 'x', command: FAKE.aws }],
     ['entryPath', { type: 'skill', id: 'x', entryPath: FAKE.gitlab }],
     ['args', { type: 'mcp-server', id: 'x', command: 'npx', args: [FAKE.aws] }],
     ['extensions', { type: 'mcp-server', id: 'x', command: 'npx', extensions: { a: { b: [FAKE.aws] } } }],
-  ] as readonly (readonly [string, RegistryEntry])[])(
+  ]
+
+  it('drives both corpora over EVERY field the bundle can omit, and over nothing else', () => {
+    // D4 says "the corpus is all FIVE arms" and, until this row, nothing
+    // executable said five: both lists were hand-written and a sixth field could
+    // be added to `OMITTED_FIELDS` while both corpora stayed silently at five.
+    // Derived from the shipped list rather than counted.
+    expect(NOTHING_ANYWHERE.map(([field]) => field)).toEqual([...OMITTED_FIELDS])
+    expect(OMITS_AND_NAMES.map(([field]) => field)).toEqual([...OMITTED_FIELDS])
+  })
+
+  it.each(OMITS_AND_NAMES)(
     'omits an entry whose %s carries one, and says which field it was',
     (field, entry) => {
       const bundle = createBundle([entry], HOME)
       expect(bundle.entries).toEqual([])
-      expect(bundle.omitted).toEqual([{ type: entry.type, id: entry.id, field }])
+      // INVERTED, not deleted. This row used to assert `{type, id, field}` on
+      // every arm — so the suite REQUIRED the credential to sit in the record on
+      // the one arm where the id IS the credential. A red pin is a question, and
+      // this one was answered by M8.A's own frozen clause: "an entry whose `id`
+      // matches is omitted with `field: 'id'` and nothing else about it is
+      // written."
+      expect(bundle.omitted).toEqual([
+        field === 'id' ? { type: entry.type, field } : { type: entry.type, id: entry.id, field },
+      ])
     },
   )
+
+  it('records two id-arm entries of one type, and still exports one store byte for byte twice', () => {
+    // E3. The two records are indistinguishable — that is the cost D3 wrote down
+    // — and byte-identity survives it because `Array.prototype.sort` is stable
+    // and one store read twice yields one input order.
+    const entries: readonly RegistryEntry[] = [
+      { type: 'mcp-server', id: FAKE.githubClassic, command: 'npx' },
+      { type: 'mcp-server', id: FAKE.aws, command: 'npx' },
+    ]
+    expect(createBundle(entries, HOME).omitted).toEqual([
+      { type: 'mcp-server', field: 'id' },
+      { type: 'mcp-server', field: 'id' },
+    ])
+    expect(serializeBundle(createBundle(entries, HOME))).toBe(serializeBundle(createBundle(entries, HOME)))
+  })
+
+  it('orders an id-arm record against a value-arm record of the same type deterministically', () => {
+    // E4. The id arm sorts under its type alone, so it precedes every value-arm
+    // record of that type; both input orders produce the same bytes.
+    const idArm: RegistryEntry = { type: 'mcp-server', id: FAKE.githubClassic, command: 'npx' }
+    const valueArm: RegistryEntry = { type: 'mcp-server', id: 'leaky', command: FAKE.aws }
+    const forward = createBundle([idArm, valueArm], HOME)
+    expect(forward.omitted).toEqual([
+      { type: 'mcp-server', field: 'id' },
+      { type: 'mcp-server', id: 'leaky', field: 'command' },
+    ])
+    expect(serializeBundle(forward)).toBe(serializeBundle(createBundle([valueArm, idArm], HOME)))
+  })
 
   it('reads a credential used as an extensions KEY, not only as a value', () => {
     const entry: RegistryEntry = {
@@ -217,6 +301,36 @@ describe('createBundle', () => {
     // story add one without the version meaning something it did not.
     const parsed = JSON.parse(serializeBundle(createBundle([], HOME))) as Record<string, unknown>
     expect(Object.keys(parsed).sort()).toEqual(['entries', 'kind', 'omitted', 'scope', 'version'])
+  })
+})
+
+// The `id` arm's absent slot is a COMPILE-TIME guarantee, so a runtime clause
+// cannot pin it — and nothing did: deleting `readonly id?: never` from
+// `bundle.ts` left all 170 rows green. `expectTypeOf` is the idiom this repo
+// already argues for over `@ts-expect-error` (`kernel/test/log.test.ts:151-160`):
+// it cannot be satisfied by an unrelated error landing on the same line, and it
+// fails whether the slot is deleted, widened to `string`, or made optional.
+// `packages/registry/tsconfig.json` includes `test` and this package's
+// `typecheck` script is `tsc --noEmit` inside `pnpm check`, so the gate is where
+// it goes red.
+//
+// Measured on this build's tsc (`.scratch/never-probe.mjs`), which is also why
+// the type's own comment now says less than it used to. WITHOUT the slot:
+//   - a fresh literal whose `field` is an un-narrowed `OmittedField` compiles
+//     clean — this is the exact line the story removed from `createBundle`;
+//   - a pre-built, non-fresh `{type, id, field:'id' as const}` compiles clean;
+//   - a fresh literal whose `field` is the LITERAL `'id'` is REJECTED (TS2353),
+//     because TypeScript discriminates first and then applies excess-property
+//     checking per arm.
+// WITH the slot all three are rejected. So the slot is load-bearing on two
+// routes, not on every route, and the comment must not claim more.
+describe('OmittedEntry', () => {
+  it('has no slot for an id on the arm where the id IS the credential', () => {
+    expectTypeOf<{ type: 'mcp-server'; id: string; field: 'id' }>().not.toExtend<OmittedEntry>()
+  })
+
+  it('still carries the id on every other arm, so the pin above is not vacuous', () => {
+    expectTypeOf<{ type: 'mcp-server'; id: string; field: 'args' }>().toExtend<OmittedEntry>()
   })
 })
 
@@ -338,6 +452,94 @@ describe('parseBundle', () => {
     )
     expect(error.message).toContain('entries[0]')
     expect(error.message).toContain('entries[1]')
+  })
+
+  it('round-trips BOTH arms of the omission record', () => {
+    // E5. `parseBundle` has to accept what this build writes, on both arms, or
+    // the artifact is unreadable by the build that produced it.
+    const text = serializeBundle(
+      createBundle(
+        [{ type: 'mcp-server', id: FAKE.githubClassic, command: 'npx' }, mcp('leaky', ['--api-key', FAKE.openai])],
+        HOME,
+      ),
+    )
+    expect(parseBundle('/tmp/b.json', text).omitted).toEqual([
+      { type: 'mcp-server', field: 'id' },
+      { type: 'mcp-server', id: 'leaky', field: 'args' },
+    ])
+  })
+
+  it('REFUSES a pre-M18.A record that carried the credential as its id', () => {
+    // E6. Not a BUNDLE_VERSION bump: that moves when an older reader could
+    // MISREAD a document, and a refusal is not a misread. Refused rather than
+    // accepted-and-stripped, because stripping would mean reading it first.
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), omitted: [{ type: 'mcp-server', id: 'x', field: 'id' }] }))
+    expect(error.message).toContain('it holds invalid entries')
+    expect(error.message).toContain('omitted[0]')
+    // And it says what the reader can DO. A refusal that only describes the
+    // shape it wanted hands the problem back, which is the thing panda is not
+    // allowed to do: the bundle is stale, and re-exporting on the source machine
+    // is the whole remedy.
+    expect(error.message).toContain('export it again from the source machine')
+  })
+
+  // The four rows below are one root: `parseBundle` CAST the omitted array where
+  // its sibling `entries[]` constructs one out of validated fields. A predicate
+  // over unvalidated JSON leaves the document's own object in the process, and
+  // `runImportCommand` copies that object onto `panda import`'s stdout — a fourth
+  // exit site nothing in D5 enumerates. `omitted[]` is given the SAME policy the
+  // sibling has had since M4.C rather than a second one: the type vocabulary is
+  // checked, unknown root keys are refused, and the record panda keeps is built.
+  const R1_TOKEN = 'ghp' + '_Zz9YxWv8UtSr7QpOn6MlKj5Ih4Gf3Ed2Cb1A'
+
+  it('refuses an omission record carrying a key its envelope does not have', () => {
+    // `{type, field:'id', note:<token>}` passed the old predicate whole. So did
+    // `__proto__`, because JSON.parse makes it an OWN data property and the old
+    // check was `'id' in record`.
+    const error = refusal(
+      JSON.stringify({ ...JSON.parse(good), omitted: [{ type: 'mcp-server', field: 'id', note: R1_TOKEN }] }),
+    )
+    expect(error.message).toContain('omitted[0]')
+    expect(error.message).not.toContain(R1_TOKEN)
+    // `__proto__` in particular: `JSON.parse` makes it an OWN data property, so
+    // the old `'id' in record` check read `false` for it and the record passed.
+    // Written as JSON text rather than an object literal, because `__proto__:`
+    // in source sets the prototype instead of a key.
+    const document = JSON.parse(good) as Record<string, unknown>
+    document['omitted'] = JSON.parse(`[{"type":"mcp-server","field":"id","__proto__":{"id":"${R1_TOKEN}"}}]`)
+    expect(refusal(JSON.stringify(document)).message).toContain("'__proto__' is not allowed")
+  })
+
+  it('refuses an omission record whose type is not a word panda stores', () => {
+    // `type` was DECLARED `StoredEntryType` and validated as a bare string, which
+    // left it the only free-text slot on the arm that must carry none — and
+    // `panda import` interpolates it into the pending sentence, so a credential
+    // there reached stderr too.
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), omitted: [{ type: R1_TOKEN, field: 'id' }] }))
+    expect(error.message).toContain('omitted[0]')
+    expect(error.message).not.toContain(R1_TOKEN)
+  })
+
+  it('still admits an omission record naming a RETIRED type, as the sibling entries array does', () => {
+    // Same vocabulary as `registryEntryIssues(candidate, true)` one loop above,
+    // not a stricter second one: a bundle is a document another build wrote, and
+    // retiring a word must not brick an import (M4.E).
+    const text = JSON.stringify({ ...JSON.parse(good), omitted: [{ type: 'tool', id: 'rg', field: 'command' }] })
+    expect(parseBundle('/tmp/b.json', text).omitted).toEqual([{ type: 'tool', id: 'rg', field: 'command' }])
+  })
+
+  it('BUILDS the record it keeps instead of handing back the parsed document object', () => {
+    // What pins the constructor once unknown keys are refused: the record panda
+    // holds is assembled from the fields it validated, in its own order, so the
+    // document's key order cannot reach the process. Restore the `as readonly
+    // OmittedEntry[]` cast and this reddens.
+    const text = JSON.stringify({ ...JSON.parse(good), omitted: [{ field: 'id', type: 'mcp-server' }] })
+    expect(Object.keys(parseBundle('/tmp/b.json', text).omitted[0]!)).toEqual(['type', 'field'])
+  })
+
+  it('refuses an omission record naming a field that is not one of the five', () => {
+    const error = refusal(JSON.stringify({ ...JSON.parse(good), omitted: [{ type: 'mcp-server', id: 'x', field: 'env' }] }))
+    expect(error.message).toContain('omitted[0]')
   })
 
   it('refuses a malformed omission record too, because it is part of the artifact', () => {

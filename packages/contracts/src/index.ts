@@ -62,6 +62,7 @@ export {
   isRegistryEntryType,
   isRegistryScopeValue,
   isRetiredEntryType,
+  isStoredEntryType,
   pathFieldsFor,
   registryEntryIssues,
   normalizeRegistryEntryPaths,

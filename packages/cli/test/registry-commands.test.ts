@@ -984,6 +984,78 @@ describe('panda import', () => {
     expect(io.err.join('\n')).toContain('pending: mcp-server')
   })
 
+  it('names no id on any of the three exits when the entry that could not travel WAS its id', async () => {
+    // E1/E7/E8 through the binding, over all three exits D5 names: the artifact,
+    // `panda export`'s stdout and `panda import`'s stderr. The `id` arm has
+    // nothing to name, so the sentence has to say what to do instead — the
+    // source machine's registry still holds the entry and re-adding it is hand
+    // work.
+    //
+    // Assembled, not a literal: see the note above. GitHub push protection
+    // scans these files.
+    const token = 'ghp' + '_Ab3dEfGh1jKlMn0pQrStUvWxYz1234567'
+    const from = await tempDir()
+    expect(await runPanda(['add', 'mcp-server', token, '--command', 'npx'], { ...capture(), homeDir: from })).toBe(0)
+
+    const bundle = join(await tempDir(), 'bundle.json')
+    const exported = capture()
+    expect(await runPanda(['export', bundle], { ...exported, homeDir: from })).toBe(0)
+    const stdout = exported.out.join('\n')
+    expect(stdout).not.toContain(token)
+    expect(stdout).not.toContain(token.slice(0, 8))
+    expect(stdout).not.toContain(token.slice(-8))
+    expect(JSON.parse(stdout)).toMatchObject({ exported: 0, omitted: [{ type: 'mcp-server', field: 'id' }] })
+
+    const artifact = await readFile(bundle, 'utf8')
+    expect(artifact).not.toContain(token)
+    expect(artifact).not.toContain(token.slice(0, 8))
+    expect(artifact).not.toContain(token.slice(-8))
+    // CONTROL, satisfiable only by the arm under test: `toContain('"field"')`
+    // was satisfied by ANY omission record, including one naming a different arm.
+    expect(JSON.parse(artifact).omitted).toEqual([{ type: 'mcp-server', field: 'id' }])
+
+    const to = await tempDir()
+    const io = capture()
+    await runPanda(['import', bundle], { ...io, homeDir: to })
+    const stderr = io.err.join('\n')
+    expect(stderr).not.toContain(token)
+    expect(stderr).not.toContain(token.slice(0, 8))
+    expect(stderr).not.toContain(token.slice(-8))
+    expect(stderr).toContain('its own id carried a credential')
+    expect(stderr).toContain("source machine's registry still holds it")
+  })
+
+  it.each([
+    ['an undeclared key holds it', '{"type":"mcp-server","field":"id","note":"<TOKEN>"}'],
+    ['the TYPE is it', '{"type":"<TOKEN>","field":"id"}'],
+    ['a pre-M18.A record carries it as the id', '{"type":"mcp-server","id":"<TOKEN>","field":"id"}'],
+  ])('refuses a hand-written omission record and prints no part of it when %s', async (_label, shape) => {
+    // The FOURTH exit site, which D5 does not enumerate: `panda import` echoes
+    // its own result — `pending` included — as JSON on STDOUT. While the omitted
+    // array was CAST rather than constructed, every property a document arrived
+    // with reached that stream, and `type` reached stderr as well through the
+    // pending sentence. Driven through the binding rather than the parser,
+    // because the parser is not the thing that prints.
+    const token = 'ghp' + '_Ab3dEfGh1jKlMn0pQrStUvWxYz1234567'
+    const bundle = join(await tempDir(), 'bundle.json')
+    await writeFile(
+      bundle,
+      JSON.stringify({
+        version: 1,
+        kind: 'panda-bundle',
+        scope: 'global',
+        entries: [],
+        omitted: [JSON.parse(shape.replace('<TOKEN>', token))],
+      }),
+    )
+    const io = capture()
+    expect(await runPanda(['import', bundle], { ...io, homeDir: await tempDir() })).toBe(2)
+    expect(io.out.join('\n')).not.toContain(token)
+    expect(io.err.join('\n')).not.toContain(token)
+    // CONTROL: it was refused for the omission record, not for something else.
+    expect(io.err.join('\n')).toContain('omitted[0]')
+  })
+
   it('refuses a bundle from a newer build, by name, writing nothing', async () => {
     const from = await tempDir()
     const bundle = await exportedBundle(from)

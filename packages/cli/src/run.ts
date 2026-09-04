@@ -1038,7 +1038,14 @@ async function runImport(
     // without parsing JSON for it. An entry that could not travel is absent,
     // named, and theirs to re-add — panda does not guess at what the secret was.
     for (const entry of installed.pending) {
-      err(`pending: ${entry.type} '${entry.id}' was not exported (its ${entry.field} carried a credential)`)
+      err(
+        // The `id` arm names NO id, because there the id is the credential —
+        // and it still has to say what to do, since the entry is intact in the
+        // source machine's registry and re-adding it is hand work.
+        entry.field === 'id'
+          ? `pending: one ${entry.type} was not exported because its own id carried a credential, so panda cannot name it here; the source machine's registry still holds it and it has to be re-added by hand`
+          : `pending: ${entry.type} '${entry.id}' was not exported (its ${entry.field} carried a credential)`,
+      )
     }
     for (const entry of installed.replaced) {
       err(`replaced: ${entry.type} '${entry.id}' was already registered here`)

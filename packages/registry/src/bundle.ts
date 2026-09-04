@@ -12,7 +12,14 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { PandaError, PANDA_ERROR_CODES, normalizeRegistryEntryPaths, registryEntryIssues } from '@panda/contracts'
+import {
+  PandaError,
+  PANDA_ERROR_CODES,
+  REGISTRY_ENTRY_TYPES,
+  isStoredEntryType,
+  normalizeRegistryEntryPaths,
+  registryEntryIssues,
+} from '@panda/contracts'
 import type { RegistryEntry, StoredEntryType } from '@panda/contracts'
 import { strictFaultLocation } from './document-fault.ts'
 
@@ -22,6 +29,26 @@ export const BUNDLE_VERSION = 1
 /** Names the artifact in its own bytes, so a stray JSON file is not mistaken for one. */
 export const BUNDLE_KIND = 'panda-bundle'
 
+/** Every envelope field a credential can stop an entry on. */
+export const OMITTED_FIELDS = ['id', 'command', 'entryPath', 'args', 'extensions'] as const
+
+/**
+ * The envelope field whose value matched.
+ *
+ * DERIVED from the array above rather than written beside it, which is the
+ * spelling `RETIRED_ENTRY_TYPES` (`contracts/src/registry.ts:48-56`) already
+ * ships. The two used to be one list written twice, and only the harmless
+ * direction was gated: ADDING a word to the array without adding it to the union
+ * was a compile error, but REMOVING one was silent — `panda export` then wrote a
+ * bundle `panda import` refused, accusing the user's document one command after
+ * producing it.
+ *
+ * CLOSED rather than `string`, and that is load-bearing too: an open `string` is
+ * what let the two arms of `OmittedEntry` share one shape, and sharing one shape
+ * is how the `id` arm came to carry the credential it exists to withhold.
+ */
+export type OmittedField = (typeof OMITTED_FIELDS)[number]
+
 /**
  * An entry that did not travel, and the field that stopped it.
  *
@@ -29,13 +56,48 @@ export const BUNDLE_KIND = 'panda-bundle'
  * this carries is what a person needs to re-create the entry by hand on the
  * other machine, and what a later import needs in order to list it as pending
  * rather than silently lack it.
+ *
+ * That guarantee is STRUCTURAL, not a promise in this paragraph. When the field
+ * that matched is `id`, the credential IS the id — so that arm has no `id` slot
+ * at all and there is nowhere for a later edit to put one back. A placeholder
+ * string was rejected for exactly that reason: a redacted value is still a slot.
+ *
+ * WHAT THIS COSTS, written down rather than discovered later: `sortKey` orders
+ * the `id` arm by its `type` alone, so two `id`-arm records of the same type
+ * tie. `Array.prototype.sort` is stable and one store read twice yields one
+ * input order, so the criterion that matters — the same store exported twice is
+ * byte-identical — still holds. What degrades is the weaker second claim, that
+ * two bundles from different machines are comparable line by line, and only for
+ * this arm.
  */
-export interface OmittedEntry {
-  readonly type: StoredEntryType
-  readonly id: string
-  /** The envelope field whose value matched: `id`, `command`, `entryPath`, `args` or `extensions`. */
-  readonly field: string
-}
+export type OmittedEntry =
+  | {
+      readonly type: StoredEntryType
+      readonly id: string
+      readonly field: Exclude<OmittedField, 'id'>
+    }
+  | {
+      readonly type: StoredEntryType
+      readonly field: 'id'
+      /**
+       * DECLARED ABSENT rather than merely left out, and this is not decoration.
+       *
+       * What was MEASURED, on this build's tsc, and nothing wider. Without this
+       * slot, two routes admit `{ type, id, field }` against a bare
+       * `{ type, field: 'id' }`: one where `field` is an un-narrowed
+       * `OmittedField` — exactly the line this story removed from
+       * {@link createBundle} — and one where the value is pre-built and so no
+       * longer fresh. A fresh literal whose `field` is the LITERAL `'id'` is
+       * rejected either way, because TypeScript discriminates first and then
+       * applies excess-property checking per arm. So this slot closes those two
+       * routes; it is not a general rule about unions, and an earlier draft of
+       * this comment claimed one.
+       *
+       * `bundle.test.ts`'s `OmittedEntry` rows are what keep it here: deleting
+       * it left every runtime clause in this package green.
+       */
+      readonly id?: never
+    }
 
 export interface RegistryBundle {
   readonly version: typeof BUNDLE_VERSION
@@ -136,7 +198,7 @@ function stringsWithin(value: unknown): string[] {
  * omission record, and a record whose `field` changed between two runs over the
  * same entry would break D5's byte-identity.
  */
-function credentialField(entry: RegistryEntry): string | undefined {
+function credentialField(entry: RegistryEntry): OmittedField | undefined {
   if (isCredential(entry.id)) return 'id'
   if (entry.command !== undefined && isCredential(entry.command)) return 'command'
   if (entry.entryPath !== undefined && isCredential(entry.entryPath)) return 'entryPath'
@@ -149,8 +211,17 @@ function credentialField(entry: RegistryEntry): string | undefined {
 
 // --- The bundle ------------------------------------------------------------
 
-function sortKey(entry: { readonly type: string; readonly id: string }): string {
-  return `${entry.type}:${entry.id}`
+/**
+ * Total over BOTH arms of an omission record as well as over an entry.
+ *
+ * The `id` arm has no id, so it sorts under its type alone. That was decided
+ * here rather than papered over with `?? ''` because the compiler is what asked
+ * the question: widening `id` to optional without answering it would have let
+ * the arm fall through to `undefined` inside a template literal, which sorts
+ * fine and reads as `mcp-server:undefined`.
+ */
+function sortKey(entry: { readonly type: string; readonly id?: string }): string {
+  return entry.id === undefined ? entry.type : `${entry.type}:${entry.id}`
 }
 
 /**
@@ -181,6 +252,9 @@ export function createBundle(entries: readonly RegistryEntry[], homeDir: string)
     // not decide whether an entry is a credential.
     const field = credentialField(entry)
     if (field === undefined) kept.push(entry)
+    // The `id` arm is built WITHOUT an id, and the type is what makes that the
+    // only spelling available: there is no slot to write `entry.id` into.
+    else if (field === 'id') omitted.push({ type: entry.type, field })
     else omitted.push({ type: entry.type, id: entry.id, field })
   }
   return {
@@ -302,8 +376,11 @@ export function parseBundle(path: string, text: string): RegistryBundle {
       issues.push(`entries[${index}]: ${issue.message}`)
     }
   }
+  const omitted: OmittedEntry[] = []
   for (const [index, candidate] of rawOmitted.entries()) {
-    if (!isOmittedEntry(candidate)) issues.push(`omitted[${index}]: must be {type, id, field} of strings`)
+    const read = readOmittedEntry(candidate)
+    if ('entry' in read) omitted.push(read.entry)
+    else for (const issue of read.issues) issues.push(`omitted[${index}]: ${issue}`)
   }
   if (issues.length > 0) throw unreadable(path, `it holds invalid entries: ${issues.join('; ')}`)
 
@@ -312,18 +389,77 @@ export function parseBundle(path: string, text: string): RegistryBundle {
     kind: BUNDLE_KIND,
     scope: 'global',
     entries: rawEntries as readonly RegistryEntry[],
-    omitted: rawOmitted as readonly OmittedEntry[],
+    omitted,
   }
 }
 
-function isOmittedEntry(value: unknown): value is OmittedEntry {
-  if (typeof value !== 'object' || value === null) return false
+/** The three keys an omission record may carry, on either arm. */
+const OMITTED_ROOT_KEYS: ReadonlySet<string> = new Set(['type', 'id', 'field'])
+
+/**
+ * One omission record, BUILT from the fields it validated — or every way it
+ * violates its envelope.
+ *
+ * The same policy {@link registryEntryIssues} gives the sibling `entries[]`
+ * array in the loop above, not a second one: the same type vocabulary (retired
+ * words admitted, because a bundle is a document another build wrote), unknown
+ * root keys refused, and every issue reported rather than the first.
+ *
+ * It CONSTRUCTS rather than narrowing the document with a predicate, and that is
+ * the difference this function exists for. A predicate leaves the parsed object
+ * itself in the process — carrying whatever properties it arrived with — and
+ * `runImportCommand` copies that object onto `panda import`'s stdout, a fourth
+ * exit site beside the three the story enumerates. Two holes came through it: a
+ * record could smuggle a credential in a key nobody declared (`__proto__`
+ * included, since `JSON.parse` makes it an own data property), and `type` was
+ * declared `StoredEntryType` while being checked as a bare string, which left it
+ * the one free-text slot on the arm that must carry none. Building the record is
+ * what makes the type's structural guarantee TRUE at the boundary where a
+ * document enters, rather than asserted about it with `as`.
+ */
+function readOmittedEntry(value: unknown): { entry: OmittedEntry } | { issues: readonly string[] } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { issues: ['an omission record must be an object'] }
+  }
   const record = value as Record<string, unknown>
-  return (
-    typeof record['type'] === 'string' &&
-    typeof record['id'] === 'string' &&
-    typeof record['field'] === 'string'
-  )
+  const issues: string[] = []
+  for (const key of Object.keys(record)) {
+    // The KEY, never its value: an unknown key can hold anything, including the
+    // credential the record exists to withhold.
+    if (!OMITTED_ROOT_KEYS.has(key)) issues.push(`'${key}' is not allowed on an omission record`)
+  }
+  const type = record['type']
+  const field = record['field']
+  if (!isStoredEntryType(type) || !isOmittedField(field)) {
+    if (!isStoredEntryType(type)) issues.push(`'type' must be one of: ${REGISTRY_ENTRY_TYPES.join(', ')}`)
+    if (!isOmittedField(field)) issues.push(`'field' must be one of: ${OMITTED_FIELDS.join(', ')}`)
+    return { issues }
+  }
+  if (field === 'id') {
+    // A record that names this arm AND carries an id was written by a build that
+    // leaked the credential into the record. REFUSED rather than
+    // accepted-and-stripped: stripping means reading it first, and reading it is
+    // what puts the value in this process. Not a BUNDLE_VERSION bump either —
+    // that moves when an older reader could MISREAD a document, and a refusal is
+    // not a misread. The remedy is named because a refusal that only describes
+    // the shape it wanted hands the problem back: the bundle is simply stale.
+    if (Object.hasOwn(record, 'id')) {
+      issues.push(
+        "'id' must be absent when 'field' is 'id', because there the id IS the credential; export it again from the source machine with this build",
+      )
+    }
+    return issues.length > 0 ? { issues } : { entry: { type, field } }
+  }
+  const id = record['id']
+  if (typeof id !== 'string' || id.length === 0) {
+    issues.push("'id' must be a non-empty string")
+    return { issues }
+  }
+  return issues.length > 0 ? { issues } : { entry: { type, id, field } }
+}
+
+function isOmittedField(value: unknown): value is OmittedField {
+  return typeof value === 'string' && (OMITTED_FIELDS as readonly string[]).includes(value)
 }
 
 /** Reads and validates the bundle at `path`. */

@@ -62,8 +62,8 @@ export type { RegistryStoreOptions } from '@panda/registry'
 // `@panda/registry` itself. `writeBundle` is here and this package still writes
 // no file — it names a capability its own guard test forbids it to PERFORM,
 // which is the whole point of a facade.
-export { BUNDLE_KIND, BUNDLE_VERSION, createBundle, isCredential, parseBundle, readBundle, serializeBundle, writeBundle } from '@panda/registry'
-export type { OmittedEntry, RegistryBundle } from '@panda/registry'
+export { BUNDLE_KIND, BUNDLE_VERSION, OMITTED_FIELDS, createBundle, isCredential, parseBundle, readBundle, serializeBundle, writeBundle } from '@panda/registry'
+export type { OmittedEntry, OmittedField, RegistryBundle } from '@panda/registry'
 export {
   DRIFT_KINDS,
   REGISTRY_ENTRY_TYPES,

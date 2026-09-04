@@ -183,7 +183,16 @@ export function isRetiredEntryType(value: unknown): value is RetiredEntryType {
   return typeof value === 'string' && RETIRED_ENTRY_TYPES.includes(value as RetiredEntryType)
 }
 
-function isStoredEntryType(value: unknown): value is StoredEntryType {
+/**
+ * True for a word a stored DOCUMENT may carry: the declared vocabulary plus the
+ * retired one.
+ *
+ * Exported so a reader of a document written by another build — `parseBundle`'s
+ * omission records, alongside the entries {@link registryEntryIssues} already
+ * validates for it — checks the same vocabulary rather than keeping a second
+ * copy of the rule.
+ */
+export function isStoredEntryType(value: unknown): value is StoredEntryType {
   return isRegistryEntryType(value) || isRetiredEntryType(value)
 }
 

@@ -12,7 +12,13 @@ import {
   storeFor,
   writeBundle,
 } from '@panda/environment'
-import type { EntryDelivery, RegistryEntry, RegistryScope, StoredEntryType } from '@panda/environment'
+import type {
+  EntryDelivery,
+  OmittedEntry,
+  RegistryEntry,
+  RegistryScope,
+  StoredEntryType,
+} from '@panda/environment'
 
 // `panda add` / `panda remove` / `panda list` — the surface Story 2.1 built a
 // store for and never gave a verb, which is why two of `panda doctor`'s own
@@ -544,6 +550,10 @@ export async function runExportCommand(
           exported: bundle.entries.length,
           // Named, never counted alone: an entry that did not travel is a task
           // waiting on the other machine, and a bare number is not one.
+          //
+          // Forwarded VERBATIM, and that is what makes stdout clean without a
+          // redaction step here: the record's `id` arm has no id to print, so
+          // there is nothing at this site to remember to strip.
           omitted: bundle.omitted,
         },
         null,
@@ -563,8 +573,15 @@ export interface ImportInstallation {
   readonly imported: number
   /** Entries whose `type:id` was already registered here and has been taken over. */
   readonly replaced: readonly { type: string; id: string }[]
-  /** What the bundle could not carry, forwarded verbatim: FR-22's manual work. */
-  readonly pending: readonly { type: string; id: string; field: string }[]
+  /**
+   * What the bundle could not carry, forwarded verbatim: FR-22's manual work.
+   *
+   * `OmittedEntry` itself rather than a structural copy of its shape. The copy
+   * spelled `{type, id, field}`, which is exactly the shape the `id` arm must
+   * NOT have — so a hand-written mirror of a type is how a second slot for the
+   * credential gets re-opened one package downstream.
+   */
+  readonly pending: readonly OmittedEntry[]
 }
 
 /**
