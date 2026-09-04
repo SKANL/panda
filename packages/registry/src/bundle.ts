@@ -162,10 +162,60 @@ function looksLikePath(value: string): boolean {
   return value.includes('/') || value.includes('\\') || value.startsWith('~')
 }
 
+/**
+ * A flag whose NAME says its value is a secret.
+ *
+ * This is the "second signal" `deferred-work.md` said the hex exclusion needed
+ * and could not find. It was in hand the whole time: `args` is an ORDERED array
+ * and a flag may be inline, so the thing that names a value travels next to it.
+ * Matched on the flag's TAIL so a vendor prefix counts (`--openai-api-key`) and
+ * a word that merely contains one does not (`--keyring`, `--tokenizer`).
+ */
+const SECRET_FLAG =
+  /(?:^|[-_])(?:token|tokens|key|keys|secret|secrets|password|passwd|pwd|auth|authorization|credential|credentials|bearer)$/i
+
+function flagNamesASecret(flag: string | undefined): boolean {
+  return flag !== undefined && flag.startsWith('-') && SECRET_FLAG.test(flag)
+}
+
+/**
+ * `--flag=value` as its two halves; anything else as a bare value.
+ *
+ * Splitting is what makes the two spellings agree. Before it, the exclusion was
+ * tested against the WHOLE argument, so `--ref=<sha>` did not match `^hex40$`,
+ * fell through to the opaque-token rule, and DROPPED a legitimate entry — while
+ * `--ref <sha>` travelled. Same value, same flag, opposite verdict, decided by a
+ * separator.
+ */
+function splitInlineFlag(argument: string): readonly [string | undefined, string] {
+  if (!argument.startsWith('-')) return [undefined, argument]
+  const equals = argument.indexOf('=')
+  return equals === -1 ? [undefined, argument] : [argument.slice(0, equals), argument.slice(equals + 1)]
+}
+
+/**
+ * Whether one string should keep panda's Registry off another machine, given
+ * whatever named it.
+ *
+ * The flag is consulted for ONE decision only: whether an exactly-40 or
+ * exactly-64 hex run is a git object name or a token. A provider-shaped value is
+ * a credential whatever names it, and a value with no naming flag behaves exactly
+ * as it did before — so this widens detection without widening false positives,
+ * which is the trade the original exclusion was measured on.
+ */
+function isCredentialNamedBy(flag: string | undefined, value: string): boolean {
+  const [inlineFlag, named] = splitInlineFlag(value)
+  return credentialUnderFlag(inlineFlag ?? flag, named)
+}
+
 /** Whether one string should keep panda's Registry off another machine. */
 export function isCredential(value: string): boolean {
+  return isCredentialNamedBy(undefined, value)
+}
+
+function credentialUnderFlag(flag: string | undefined, value: string): boolean {
   if (PROVIDER_PATTERNS.some((pattern) => pattern.test(value))) return true
-  if (NOT_A_CREDENTIAL.some((pattern) => pattern.test(value))) return false
+  if (NOT_A_CREDENTIAL.some((pattern) => pattern.test(value))) return flagNamesASecret(flag)
   // A normalized path is long and mixed by nature; it is also the one thing this
   // envelope is FULL of, so excluding it is what keeps the detector usable.
   if (looksLikePath(value)) return false
@@ -202,7 +252,11 @@ function credentialField(entry: RegistryEntry): OmittedField | undefined {
   if (isCredential(entry.id)) return 'id'
   if (entry.command !== undefined && isCredential(entry.command)) return 'command'
   if (entry.entryPath !== undefined && isCredential(entry.entryPath)) return 'entryPath'
-  if (entry.args?.some((argument) => isCredential(argument)) === true) return 'args'
+  // PAIRED, because the flag that names a value is the argument before it. An
+  // unnamed value behaves exactly as it did when this line read `isCredential`.
+  if (entry.args?.some((argument, index) => isCredentialNamedBy(entry.args?.[index - 1], argument)) === true) {
+    return 'args'
+  }
   if (entry.extensions !== undefined && stringsWithin(entry.extensions).some(isCredential)) {
     return 'extensions'
   }

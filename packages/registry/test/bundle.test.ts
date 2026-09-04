@@ -104,6 +104,51 @@ describe('the secret detector', () => {
     expect(isCredential(value)).toBe(true)
   })
 
+  /**
+   * THE FLAG NAMES THE VALUE, and the same value spelled two ways used to get
+   * opposite verdicts.
+   *
+   * `NOT_A_CREDENTIAL` excludes an exactly-40 or exactly-64 lowercase hex run
+   * because a git object name and a sha256 are both plausible in a real argv --
+   * the trade `deferred-work.md` recorded, measured against a corpus, because a
+   * false positive DROPS a user's entry. What it could not see is which value it
+   * was looking at, and its upgrade path said so: "none that is an improvement
+   * without a SECOND SIGNAL".
+   *
+   * The second signal was already in hand and unread. `args` is an ORDERED array
+   * and a flag can be inline, so `--ref` and `--token` are distinguishable for
+   * free. Driven through the real `createBundle` before this clause existed:
+   *
+   *   --ref  <sha>   travels    correct
+   *   --ref=<sha>    OMITTED    WRONG -- a legitimate entry dropped
+   *   --token <hex>  travels    WRONG -- a secret escapes
+   *   --token=<hex>  OMITTED    correct
+   *
+   * The separator decided, not the meaning. Both rows are fixed by one rule.
+   */
+  const GIT_SHA = '0123456789abcdef0123456789abcdef01234567'
+  const SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+
+  it.each([
+    ['a ref names a git object', ['--ref', GIT_SHA], false],
+    ['a ref names it inline too', [`--ref=${GIT_SHA}`], false],
+    ['a digest names a sha256', ['--digest', SHA256], false],
+    ['a session id names an opaque id', ['--session-id', GIT_SHA], false],
+    ['a token flag names a secret', ['--token', GIT_SHA], true],
+    ['a token flag names it inline too', [`--token=${GIT_SHA}`], true],
+    ['an api-key flag names a secret', ['--api-key', SHA256], true],
+    ['a vendor-prefixed key flag counts', ['--openai-api-key', GIT_SHA], true],
+  ] as readonly (readonly [string, string[], boolean])[])(
+    'omits an entry only when %s',
+    (_label, args, omitted) => {
+      const bundle = createBundle([{ type: 'mcp-server', id: 'srv', command: 'npx', args }], HOME)
+      expect(bundle.omitted.length === 1).toBe(omitted)
+      // CONTROL, per row: the opposite side must be non-empty, so a run where
+      // createBundle returned nothing at all cannot satisfy either expectation.
+      expect(bundle.entries.length === 1).toBe(!omitted)
+    },
+  )
+
   it.each(NOT_CREDENTIALS)('leaves %s alone', (_label, value) => {
     expect(isCredential(value)).toBe(false)
   })
