@@ -93,13 +93,13 @@ Every claim below was executed on 2026-09-04 at `92bc0cc`, not read.
    not measure. This story spells `OmittedEntry` the same way; it introduces no
    new pattern.
 
-8. **The gate FR-21 names does not exist.** `epics.md:410` requires *"the
+8. **The gate FR-21 names does not exist.** `epics.md:411` requires *"the
    artifact contains no secret-detector matches (CI-scanned)"* and `prd.md:421`
    makes it testable as a *"secret-detector scan over logs/bundle artifacts in
    CI"*. `.github/workflows/ci.yml` runs install, `pnpm check`, and build +
    `proof:consumer-install`. There is no such scan. M8.A deferred it as *"a
    pipeline concern"* (`spec-m8a…:193`). Out of scope here — see D6 — but
-   recorded, because it is the gate that would have caught this.
+   recorded. NOTE, added 2026-09-04 after this spec shipped: the ledger entry this produced went on to claim the scan "would have caught" this leak, and that claim is FALSE -- corrected in `deferred-work.md` with the disproof on all three surfaces. The gate is still worth having; its justification is that it does not depend on panda's exit-site enumeration being complete, not that it would have caught this one.
 
 ## Boundaries & Constraints
 
@@ -180,7 +180,7 @@ that the source registry still holds it.
 - **`isCredential`'s thresholds** — D2.
 - **`mcp-source.ts:258`** — measurement 5.
 - **Publishing, versions, `@changesets/cli`, NFR-8's home.** Measured as the
-  real gap in M3.A (`ROADMAP-02:132-137` scoped *"package versions"*; all twelve
+  real gap in M3.A (`ROADMAP-02:125-130` scoped *"package versions"*; all twelve
   are `0.0.0` and the root manifest has no changesets). It is a separate story
   and it needs an owner decision. Recorded here so it is not rediscovered.
 - **A `pending` state in `doctor`.** `epics.md:41`'s *"doctor clean except
