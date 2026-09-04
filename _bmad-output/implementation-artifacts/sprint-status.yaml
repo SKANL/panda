@@ -50,7 +50,7 @@ development_status:
   1-7-tool-call-interception-waterfall: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done   # every row closed; 2-6 closed as not-buildable-as-written with its reopen condition, see its row
   # ROADMAP-01 Correction A: the capability lives in a package, the CLI is a
   # thin binding. 2-0 heads M2 so init/doctor/selection are built on the
   # pattern rather than corrected onto it.
@@ -67,7 +67,7 @@ development_status:
   # broken for one of three executors, and a wrong answer there invalidates the
   # worktree stories built on it.
   m4a-the-workspace-is-a-boundary-or-panda-says-it-is-not: done
-  2-6-liveness-detection-hierarchy: backlog  # re-spec onto native hook locations
+  2-6-liveness-detection-hierarchy: done   # CLOSED 2026-09-04 AS NOT BUILDABLE AS WRITTEN AND NOT NEEDED AS SCOPED, with the measurement and an explicit reopen condition. Its AC asks for `started/working/idle/exited` plus a PTY/OSC fallback. THREE independent measurements close it. (1) RD-2 makes the executor process EPHEMERAL per task, so `idle` is a state it cannot reach, and AGENTS.md's own judgment rule is not to build a branch that cannot fire. (2) correction-01 already amended the PTY/OSC row and records opencode's liveness as `none -- plugin-only; liveness declares unsupported`, so the fallback half was retired by an architecture correction rather than by this closure. (3) AND THE ONE THAT DECIDES IT: THERE IS NO OBSERVER. Measured -- zero `'running'|'started'|'exited'|'idle'|liveness` across every `packages/*/src` (control: `DRIFT_KINDS|FINDING_EXITS` returns 6 and 2 hits in the same shape of query), and zero detached/background/daemon run in the CLI (control: `--help` lists 21 verb lines, so the query sees a real file). `panda run` is SYNCHRONOUS and FOREGROUND. The user watching the command IS the liveness report; a queryable state field has nobody to answer. WHAT A LONG FOREGROUND RUN ACTUALLY NEEDS is progress, not state, and that is a different shape which already ships: M15.A opened Claude Code's event stream (`system/init`, `assistant`, `result/success`) and M7.D's `panda run --trace` surfaces records as they arrive. The DeepSeek Harness lens reached the same conclusion from the outside -- progress there is a stream of EVIDENCE (`workflow/phase`, `workflow/log`, explicitly with no execution semantics), never a queryable state field, and every one of its five lifecycle unions has exactly ONE non-terminal state. WHAT PANDA ALREADY HAS, so the re-spec's real subject is not missing: the invariant DSH says is the actual work -- a published start owes exactly one terminal fact -- is implemented at the process altitude in `packages/adapter-cli/src/node-child-spawner.ts:118-121` (a `settled` latch, exactly-once), `:226-235` (`close` settles terminal) and `:208-225` (`error` settles on its own, because a spawn failure may never be followed by `close`). REOPEN CONDITION, written precisely because 5-6 taught this board that a reason expires while its entry does not notice: REOPEN the day panda gains a run that OUTLIVES the command that started it -- a detached run, a daemon, or a `panda ps` -- because that is the day an observer exists. Not before, and not because a vendor publishes more events: more events make the STREAM richer, which is `--trace`'s axis, not this one.
   # ROADMAP-01 M2: split — 2.7 was the named home for four deferred items.
   2-7a-panda-init-and-project-init: done
   2-7b-panda-doctor: done
