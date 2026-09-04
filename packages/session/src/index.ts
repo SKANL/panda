@@ -63,6 +63,27 @@ export {
   type WorktreeOutcome,
   type WorktreeOutcomeKind,
 } from '@panda/workspace-git-worktree'
+// The SAME pair for the DEFAULT provider (spec M27.A). `panda run` under
+// `local` — which is what runs when nothing selects otherwise — creates a
+// directory per session and nothing removed one; these are the two halves of
+// that exit, re-exported for the same FR-29 reason as the worktree pair above.
+//
+// BOTH pairs are on the surface, and that is D4 rather than duplication: a
+// project that switched `workspace.provider` has leftovers of both kinds, so a
+// verb that asked only the currently selected store would strand the other
+// forever. `worktreeStateDir` is the argument both pairs take — `runSession`
+// seeds it as `workspace.rootDir` for whichever provider is mounted — so the
+// two stores are read out of one path and cannot look in different places.
+export {
+  inspectLocalWorkspaces,
+  removeLocalWorkspace,
+  type ClaimedLocalWorkspace,
+  type InspectLocalWorkspacesOptions,
+  type LocalWorkspaceInspection,
+  type LocalWorkspaceOutcome,
+  type LocalWorkspaceOutcomeKind,
+  type UnclaimedLocalDirectory,
+} from '@panda/workspace-local'
 // The recorded quota reading, beside the run that produces it (Story M15.A,
 // D7): `panda run` records, `panda status` reads, and nothing here invokes an
 // executor. Both halves are exported for the same FR-29 reason as the two

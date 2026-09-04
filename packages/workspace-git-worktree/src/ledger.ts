@@ -44,7 +44,11 @@ export interface WorktreeRemovalIntent {
 }
 
 const LEDGER_FILE = 'worktrees.json'
-const RECORDS_DIR = 'records'
+/**
+ * EXPORTED so `inspectWorktrees` can declare this store's own footprint under a
+ * shared state directory without spelling the name a second time.
+ */
+export const RECORDS_DIR = 'records'
 const RECORD_SUFFIX = '.json'
 /**
  * Longer than the suffix above ON PURPOSE, and stripped first everywhere: an

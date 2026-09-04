@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
 import type { WorkspaceCapability, WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
 import { git } from './git.ts'
-import { WorktreeLedger } from './ledger.ts'
+import { RECORDS_DIR, WorktreeLedger } from './ledger.ts'
 import type { WorktreeRecord } from './ledger.ts'
 
 const WORKTREE_CAPABILITIES: readonly WorkspaceCapability[] = ['read', 'write']
@@ -307,6 +307,23 @@ export interface UnclaimedDirectory {
 /** Everything panda can see about one worktree state directory. Read-only. */
 export interface WorktreeInspection {
   readonly stateDir: string
+  /**
+   * The directory names this store owns directly under `stateDir`.
+   *
+   * DECLARED, because the two shipped providers share one root: `runSession`
+   * seeds `workspace.rootDir` with the same path whichever one is mounted, so
+   * the local store's own listing of that root sees these and would otherwise
+   * report panda's worktrees and panda's ownership proofs as directories panda
+   * knows nothing about. A composing caller asks the store which entries are its
+   * own rather than spelling `trees` and `records` for itself, which is the same
+   * rule `worktreeStateDir` states for the path: the owner decides, everyone
+   * else asks.
+   *
+   * It narrows a REPORT and nothing else. Removal stays record-gated in both
+   * stores (D2), so a name here is still refused by `removeLocalWorkspace` for
+   * the only reason that matters — it holds no record panda wrote.
+   */
+  readonly storeDirectories: readonly string[]
   /** Healthy claims. Removal is a decision, so nothing here is ever swept. */
   readonly claimed: readonly ClaimedWorktree[]
   readonly interrupted: readonly InterruptedRemoval[]
@@ -352,7 +369,10 @@ export async function inspectWorktrees(stateDir: string): Promise<WorktreeInspec
     if (!known.has(name)) unclaimed.push({ id: name, path: join(resolved, TREES_DIR, name) })
   }
 
-  return { stateDir: resolved, claimed, interrupted, unclaimed }
+  // Read out of the same constants the writers use, never typed out again: a
+  // second spelling of this store's own layout is a report that stops matching
+  // the store the first time either name changes.
+  return { stateDir: resolved, storeDirectories: [RECORDS_DIR, TREES_DIR], claimed, interrupted, unclaimed }
 }
 
 /**

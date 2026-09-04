@@ -19,13 +19,17 @@ import {
 } from '@panda/environment'
 import {
   createLogSink,
+  inspectLocalWorkspaces,
   inspectWorktrees,
   readExecutorConfigLayers,
   readUsageReports,
   recordUsageObservation,
+  removeLocalWorkspace,
   removeWorktree,
   runSession,
   worktreeStateDir,
+  type LocalWorkspaceInspection,
+  type LocalWorkspaceOutcome,
   type LogRecord,
   type SessionOptions,
   type UsageReport,
@@ -169,16 +173,22 @@ export const USAGE = [
   '                 it is written, so a broken one fails while you can still fix it. The next',
   '                 session mounts it; a method changed on disk takes effect on the next run, never',
   '                 inside a running one.',
-  'workspace remove  Takes back a worktree panda made, in the project it is run in. With an <id>',
-  '              it removes that one; with none it FINISHES the removals an interrupted run left',
-  '              half-done and reports everything else it found, removing none of it.',
+  'workspace remove  Takes back a workspace panda made, in the project it is run in. BOTH shipped',
+  '              providers write under the same .panda/workspaces root, so both stores are asked:',
+  '              the local one, which is what runs when nothing selects otherwise, and the',
+  '              git-worktree one. Their ids are disjoint, so an <id> routes to whichever store',
+  '              holds a record for it; with none it FINISHES the removals an interrupted run',
+  '              left half-done and reports everything else it found, removing none of it.',
   '              It removes only what panda holds an ownership record for: a directory shaped',
   '              exactly like one of pandas own, with no record, is reported and never touched.',
-  '              It refuses a tree with modified or untracked files in gits own words, and it',
-  '              refuses a tree whose commit no ref contains -- git removes that one silently and',
-  '              the work would be reachable from nothing. There is no override: a user who wants',
-  '              to destroy unreachable work has git for that. A removed id is retired for good',
-  '              and is never issued to another worktree.',
+  '              Every workspace made before panda kept these records has none, so it is named',
+  '              and left alone -- guessing ownership from a directory name is the one thing this',
+  '              verb must never do.',
+  '              For a worktree it also refuses a tree with modified or untracked files in gits',
+  '              own words, and refuses a tree whose commit no ref contains -- git removes that',
+  '              one silently and the work would be reachable from nothing. There is no override:',
+  '              a user who wants to destroy unreachable work has git for that. A removed id is',
+  '              retired for good and is never issued to another workspace.',
   'remediate     Leaves ONE state doctor reported, named by the user. Describes and writes nothing',
   '              unless --apply is given; nothing is ever remediated automatically or in bulk.',
   "  adopt    Panda claims what is at its own location, exactly as it is. No vendor byte is written;",
@@ -621,17 +631,26 @@ function usageOutcome(
 }
 
 /**
- * The whole of what `panda workspace remove` is: reject bad argv, call the
- * worktree capability in `@panda/session`, print what it did, map it to an exit
- * code. Every fact printed is the capability's — the CLI removes nothing, checks
- * nothing and classifies nothing.
+ * The whole of what `panda workspace remove` is: reject bad argv, call the two
+ * workspace capabilities in `@panda/session`, print what they did, map it to an
+ * exit code. Every fact printed is a capability's — the CLI removes nothing,
+ * checks nothing and classifies nothing.
  *
- * ONE noun, and it is honest about what it will not do (spec M16.A, D6). With an
- * id it removes that worktree; with none it finishes the removals an interrupted
- * run left half-done, through the SAME call — a sweep that resolved a leftover
- * some other way would be a second answer to the question the removal already
- * answers. Everything it will not remove is REPORTED with the reason, never
- * skipped in silence and never counted as a success.
+ * ONE noun, and it is honest about what it will not do (spec M16.A D6, M27.A).
+ * With an id it removes that workspace; with none it finishes the removals an
+ * interrupted run left half-done, through the SAME call — a sweep that resolved
+ * a leftover some other way would be a second answer to the question the removal
+ * already answers. Everything it will not remove is REPORTED with the reason,
+ * never skipped in silence and never counted as a success.
+ *
+ * IT ASKS BOTH STORES, NEVER THE SELECTED PROVIDER (spec M27.A, D4). A project
+ * that switched `workspace.provider` has leftovers of both kinds, and a verb
+ * that asked only the current selection would strand the other forever. The ids
+ * are disjoint by construction — `w-<n>` versus a v4 UUID — so a named id routes
+ * unambiguously: whichever store holds a record for it wins, and neither holding
+ * one is `unknown`. The local store is asked FIRST because `local` is the
+ * default provider, and the worktree store is asked ONLY when the local one
+ * disclaims the id, so exactly one destructive call is ever made.
  */
 async function runWorkspace(
   tokens: readonly string[],
@@ -663,15 +682,34 @@ async function runWorkspace(
   const stateDir = worktreeStateDir(options.cwd ?? process.cwd())
   try {
     const named = rest[0]
-    const outcomes: WorktreeOutcome[] = []
-    let inspection: WorktreeInspection | undefined
+    const outcomes: (WorktreeOutcome | LocalWorkspaceOutcome)[] = []
+    let worktrees: WorktreeInspection | undefined
+    let workspaces: LocalWorkspaceInspection | undefined
     if (named === undefined) {
-      inspection = await inspectWorktrees(stateDir)
-      for (const leftover of inspection.interrupted) {
+      worktrees = await inspectWorktrees(stateDir)
+      // The other store's own footprint, ASKED FOR rather than spelled here: the
+      // two providers share this root, and `trees`/`records` are the worktree
+      // store's, not local leftovers. It narrows the report only — a removal is
+      // still record-gated in both stores.
+      workspaces = await inspectLocalWorkspaces(stateDir, { ignore: worktrees.storeDirectories })
+      // Only the worktree store has an interrupted state to finish. A local
+      // removal is one `rm -rf` of the directory that holds its own proof, so a
+      // process killed mid-removal leaves either the whole workspace or none of
+      // it — there is no half-state for a sweep to resolve.
+      for (const leftover of worktrees.interrupted) {
         outcomes.push(await removeWorktree(stateDir, leftover.id))
       }
     } else {
-      outcomes.push(await removeWorktree(stateDir, named))
+      const local = await removeLocalWorkspace(stateDir, named)
+      if (local.kind === 'unknown') {
+        const worktree = await removeWorktree(stateDir, named)
+        // Both stores disclaim it. Report the answer that at least found a
+        // directory, so the refusal names the path the user typed at instead of
+        // repeating the id back at them.
+        outcomes.push(worktree.kind === 'unknown' && local.path !== undefined ? local : worktree)
+      } else {
+        outcomes.push(local)
+      }
     }
 
     out(
@@ -679,43 +717,59 @@ async function runWorkspace(
         {
           stateDir,
           outcomes,
-          ...(inspection === undefined
+          ...(worktrees === undefined || workspaces === undefined
             ? {}
-            : { claimed: inspection.claimed, unclaimed: inspection.unclaimed }),
+            : {
+                stores: {
+                  local: { claimed: workspaces.claimed, unclaimed: workspaces.unclaimed },
+                  'git-worktree': { claimed: worktrees.claimed, unclaimed: worktrees.unclaimed },
+                },
+              }),
         },
         null,
         2,
       ),
     )
-    for (const outcome of outcomes) err(formatWorktreeOutcome(outcome))
-    if (inspection !== undefined) {
-      // Reported and never removed (D2/E5): what makes a worktree panda's is the
-      // ownership record, so a directory without one is somebody else's however
-      // exactly it is shaped like panda's.
-      for (const directory of inspection.unclaimed) {
+    for (const outcome of outcomes) err(formatOutcome(outcome))
+    if (worktrees !== undefined && workspaces !== undefined) {
+      // Reported and never removed (D2/E3/E5/E8): what makes a workspace panda's
+      // is the ownership record, so a directory without one is somebody else's
+      // however exactly it is shaped like panda's. The local store says WHY in
+      // its own words — a record that is missing and one that is present and
+      // unusable are different facts and must not share a sentence.
+      for (const directory of workspaces.unclaimed) {
+        err(`unclaimed: ${directory.id} (${directory.path}): ${directory.detail}`)
+      }
+      for (const directory of worktrees.unclaimed) {
         err(
           `unclaimed: ${directory.id} (${directory.path}): panda holds no ownership record for this directory, so it is not panda's to remove and nothing here will remove it`,
         )
       }
       // The healthy claims, said out loud: a sweep that printed nothing about
       // them would look like it had considered and rejected them.
-      for (const worktree of inspection.claimed) {
+      for (const workspace of workspaces.claimed) {
+        err(
+          `claimed: ${workspace.id} (${workspace.path}): panda claims this workspace and no removal was asked for; name its id to remove it`,
+        )
+      }
+      for (const worktree of worktrees.claimed) {
         err(
           `claimed: ${worktree.id} (${worktree.path}): panda claims this worktree and no removal was asked for; name its id to remove it`,
         )
       }
-      if (
-        outcomes.length === 0 &&
-        inspection.unclaimed.length === 0 &&
-        inspection.claimed.length === 0
-      ) {
-        err(`nothing to remove: panda holds no worktrees under '${stateDir}'`)
+      const found =
+        worktrees.unclaimed.length +
+        worktrees.claimed.length +
+        workspaces.unclaimed.length +
+        workspaces.claimed.length
+      if (outcomes.length === 0 && found === 0) {
+        err(`nothing to remove: panda holds no workspaces under '${stateDir}'`)
       } else if (outcomes.length === 0) {
-        err('nothing to resolve: no worktree removal was left unfinished in this project')
+        err('nothing to resolve: no workspace removal was left unfinished in this project')
       }
     }
     // A refusal is not a success, and neither is an id panda does not own —
-    // reporting either as 0 would tell a script the tree is gone.
+    // reporting either as 0 would tell a script the workspace is gone.
     return outcomes.some((outcome) => outcome.kind === 'refused' || outcome.kind === 'unknown')
       ? 1
       : 0
@@ -725,8 +779,15 @@ async function runWorkspace(
   }
 }
 
-/** One outcome on one line, with the coded reason whenever nothing was removed. */
-function formatWorktreeOutcome(outcome: WorktreeOutcome): string {
+/**
+ * One outcome on one line, with the coded reason whenever nothing was removed.
+ *
+ * ONE formatter for both stores, and it needs no branch: `LocalWorkspaceOutcome`
+ * is `WorktreeOutcome`'s shape with a narrower `kind` and no `repoPath`, which
+ * is what spec M27.A asks the removal pair to match so the printing cannot drift
+ * between the two.
+ */
+function formatOutcome(outcome: WorktreeOutcome | LocalWorkspaceOutcome): string {
   const about = outcome.path === undefined ? outcome.id : `${outcome.id} (${outcome.path})`
   return `${outcome.kind}: ${about}: ${outcome.error === undefined ? outcome.detail : describe(outcome.error)}`
 }

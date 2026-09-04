@@ -611,6 +611,18 @@ describe('createSessionKernel is the only composition surface', () => {
     // here — publishing it would expose `retire()` and `claimRemoval()` with
     // none of the refusals around them, which is the withdrawn-factory hazard
     // above pointed at a destructive operation instead of at a vendor adapter.
+    //
+    // WIDENED AGAIN BY M27.A, by two, and both pass the same rule for the same
+    // reason as the worktree pair they mirror: `inspectLocalWorkspaces` reads
+    // panda's own records and hands back plain rows, `removeLocalWorkspace`
+    // performs a removal and hands back a plain outcome, and neither constructs
+    // a kernel, a plugin or an adapter or hands back anything a caller can
+    // invoke. Both pairs are here because a project that switched
+    // `workspace.provider` has leftovers of BOTH kinds (D4), and a surface that
+    // published only the currently selected store's pair would strand the other
+    // forever. `LOCAL_WORKSPACE_RECORD_FILE` is deliberately NOT here: naming
+    // the file is how a caller would key a removal on a PATH, which is the one
+    // thing D2 exists to make impossible.
     expect(values.sort()).toEqual([
       'SESSION_ACTION_COST',
       'SESSION_ACTION_ID',
@@ -618,10 +630,12 @@ describe('createSessionKernel is the only composition surface', () => {
       'createLogSink',
       'createMemoryLogSink',
       'createSessionKernel',
+      'inspectLocalWorkspaces',
       'inspectWorktrees',
       'readExecutorConfigLayers',
       'readUsageReports',
       'recordUsageObservation',
+      'removeLocalWorkspace',
       'removeWorktree',
       'resolveExecutor',
       'resolveMethod',
