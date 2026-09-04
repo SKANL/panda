@@ -114,9 +114,14 @@ only sentence AD-6 permits.
 `process.on` returns 2 in `run.ts`, the interrupt handlers, so the query sees).
 
 - **28.A — no exit drain.** Records still in flight when the process ends are
-  lost, and only a seq gap survives to say so.
-- **28.B — counters die with the pipeline**, so a budget cannot span two
-  processes or survive a restart, and `registeredIds` grows without retirement.
+  lost, and only a seq gap survives to say so. **Owner-blocked**, see below.
+- **28.B — CLOSED, measured.** "Counters die with the pipeline" and
+  "`registeredIds` grows without retirement" are both true and neither can
+  fire: `runSession` creates its kernel per invocation and stops it at the end
+  (`run-session.ts:547,580`), so the growth is bounded by one command's
+  lifetime. Same shape as `2-6`'s `idle` — a branch that cannot fire. It
+  becomes real only for a HOST that keeps a kernel across many sessions, which
+  nothing does today. Reopen with that host.
 
 This one has a real prerequisite and it is worth naming rather than
 discovering: **a durable sink has no destination decision yet**. Retention,
@@ -130,14 +135,23 @@ correction-01's own rule pointed inward.
 told "this file differs" cannot tell which entry caused it, and the remediation
 they are handed is file-shaped while the cause is entry-shaped.
 
-- **29.A — drift per entry, not per file.** `doctor.ts:707-713` emits one
-  file-level message; `ProjectionResult` carries no per-entry channel.
-- **29.B — an entry nothing takes is registered in silence.** `panda add` on an
-  entry no target accepts exits 0 saying only where it was stored.
+- **29.A — WRONG IN BOTH HALVES, measured.** `ProjectionResult` DOES carry a
+  per-entry channel: `DriftEntry` has an `entryId` and a `location`
+  (`contracts/src/projection.ts:109-114`). And doctor DOES read it —
+  `doctor.ts:716-718` pushes one finding per drift entry carrying both, and
+  `:719-721` does the same for `unprojectable`. Asserted by tests that run:
+  `doctor.test.ts:248` expects `{ entryId: 'ctx', location: 'mcpServers.ctx' }`
+  (control: 26 clauses in that file). What remains is far narrower than this
+  entry claimed and may not be worth building: the file-level `out-of-date`
+  finding does not say which entries would change — and it is a different fact
+  from drift, since a registry change produces it with no drift at all.
+- **29.B — still open**, and it is the one a lens actually drove: `panda add
+  mcp-server nocmd` registers, prints only where it was stored, and no target
+  says why nothing takes it.
 
-The measured caution: `FINDING_EXITS` is a `Record` over a closed union, so a
-new finding kind cannot ship without an exit. Widening the vocabulary is cheap
-to get wrong and the compiler is what makes it safe.
+The measured caution, if 29.B is built: `FINDING_EXITS` is a `Record` over a
+closed union, so a new finding kind cannot ship without an exit. The compiler
+is what makes widening the vocabulary safe.
 
 ### M30 — The trust surface, decided rather than patched
 
@@ -180,6 +194,23 @@ every tarball offline outside the repo on every push, `@panda/contracts` ships a
 README whose code blocks CI compiles and runs, all twelve manifests carry
 `description` and `repository`, and a gate refuses a version that disagrees with
 its siblings or a package that quietly loses `private`.
+
+## Why this document has been wrong five times, and what that means for the next one
+
+Corrected so far, all by driving rather than reading: the `atomicWriteText`
+trigger fired once and not three times; the `EPERM` escaped falsely coded
+rather than uncoded; 27.C was already rejected on evidence with a reopen
+condition; 28.B cannot fire; and 29.A was wrong in both halves.
+
+The cause is not carelessness, and naming it is the point: **this document was
+written from ledger summaries and from what shipping had just taught, not from
+driving the code it describes.** A summary is a compression of a measurement
+someone else made at a different commit, and compressions rot in exactly the
+direction that makes work look necessary.
+
+So the instruction is not "be careful". It is: **before starting any milestone
+here, drive its subject.** Every correction above cost one command. Two of them
+cost a red CI run instead, because the command was not run first.
 
 ## How to use this document
 
