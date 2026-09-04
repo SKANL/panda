@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const packagesDir = join(import.meta.dirname, '..', '..')
 
 /**
- * AD-2's ONE universal clause, derived once for all ten packages.
+ * AD-2's ONE universal clause, derived once for every package.
  *
  * The four `test/guard.test.ts` files in `environment`, `kernel`, `projection`
  * and `session` are NOT duplicated here and are not replaced: they carry
@@ -33,7 +33,7 @@ const packagesDir = join(import.meta.dirname, '..', '..')
  * restatement is the thing under test — and both directions of rot are checked
  * below, because an order that silently stops naming reality is worse than none.
  *
- * How the spine's ROLES map onto the ten directories:
+ * How the spine's ROLES map onto the directories under `packages/`:
  * - tier 0 — `KERNEL --> (no deps, not even contracts)` and
  *   `CONTRACTS --> (no external runtime deps)`. Tier 0 with nothing beneath it
  *   IS AD-1: `dependencyTier >= tier` is true for every possible import, so the
@@ -54,6 +54,8 @@ const TIER: Readonly<Record<string, number>> = {
   kernel: 0,
   contracts: 0,
   'adapter-cli': 1,
+  'memory-filesystem': 1,
+  'memory-sqlite': 1,
   projection: 1,
   registry: 1,
   'workspace-git-worktree': 1,

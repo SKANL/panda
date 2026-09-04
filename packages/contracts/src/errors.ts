@@ -24,6 +24,31 @@ export const PANDA_ERROR_CODES = {
   contractWorkspaceDoubleRelease: 'PANDA_CONTRACT_WORKSPACE_DOUBLE_RELEASE',
   contractWorkspaceUnavailable: 'PANDA_CONTRACT_WORKSPACE_UNAVAILABLE',
   contractProviderDisposed: 'PANDA_CONTRACT_PROVIDER_DISPOSED',
+  // A save request the port will not admit: a non-string payload, or provenance
+  // missing or malformed in any of its three mandatory fields (RD-1). ONE code
+  // rather than one per field, because the fix is the same class of fix —
+  // correct the request — and the message names the field that is wrong. It is
+  // separate from `contractMemoryUnknownEntry` below, whose fix is different: the
+  // request is well-formed and the store simply does not hold what it points at.
+  contractMemorySaveInvalid: 'PANDA_CONTRACT_MEMORY_SAVE_INVALID',
+  // A `supersedes` pointer naming an entry this store does not hold. Refused
+  // rather than stored, because an append-only log has no later opportunity to
+  // repair a dangling supersession link.
+  contractMemoryUnknownEntry: 'PANDA_CONTRACT_MEMORY_UNKNOWN_ENTRY',
+  // RD-1's destructive overwrite, refused. The port NAMES the operation so the
+  // refusal is coded and identical across providers; an absent method would
+  // reach an untyped caller as `provider.overwrite is not a function`, which is
+  // exactly the uncoded exit AD-7 exists to close.
+  contractMemoryOverwriteUnsupported: 'PANDA_CONTRACT_MEMORY_OVERWRITE_UNSUPPORTED',
+  // A store stamped with a format version this build does not speak. Version by
+  // REJECT, never migrate — the same decision `STORE_VERSION` reached
+  // independently in `@panda/registry`: a partially-read store is worse than an
+  // unopened one, and a migration path is a v1 requirement nobody has.
+  contractMemoryStoreVersionMismatch: 'PANDA_CONTRACT_MEMORY_STORE_VERSION_MISMATCH',
+  // The medium itself cannot be created, opened or read, naming the path.
+  // Distinct from an ABSENT store, which is not a failure at all but an empty
+  // one (AD-5).
+  contractMemoryStoreUnavailable: 'PANDA_CONTRACT_MEMORY_STORE_UNAVAILABLE',
   executorUnavailable: 'PANDA_EXECUTOR_UNAVAILABLE',
   executorRunFailed: 'PANDA_EXECUTOR_RUN_FAILED',
   executorCancelled: 'PANDA_EXECUTOR_CANCELLED',

@@ -28,15 +28,16 @@ and are not pretending otherwise.
   `@panda/contracts`. *Gate: `packages/kernel/test/guard.test.ts`.*
 - **AD-2** — package topology is strictly downward. *Gate:
   `packages/contracts/test/topology.test.ts`, which derives the ONE universal
-  clause for all ten packages — every `@panda/*` import in every
+  clause for EVERY package — every `@panda/*` import in every
   `packages/*/src`, against one declared role order restated from
   `ARCHITECTURE-SPINE.md` — and fails on a package the order does not name, or
   an order that names a package that is gone.*
 - **AD-2, the package-SPECIFIC half** — a `test/guard.test.ts` in `environment`,
-  `kernel`, `projection`, `session` — **4 of 10 packages**. `adapter-cli`,
+  `kernel`, `projection`, `session` — **4 of 12 packages**. `adapter-cli`,
   `cli`, `contracts`, `registry`, `workspace-git-worktree` and `workspace-local`
   have none, which is a known gap, not a permission. The universal clause above
-  covers all ten; what those four add is package-specific and is not derivable.
+  covers every package; what those four add is package-specific and is not
+  derivable.
 - **Read a package's guard test before putting code in it, not only its
   `package.json`.** A manifest is not an architecture: `@panda/environment`
   declares `@panda/projection` and its guard test still refuses the import,
