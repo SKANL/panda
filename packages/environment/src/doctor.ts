@@ -161,7 +161,7 @@ export interface DiagnosisFinding {
  * an answer here does not compile: "each finding carries what panda would do
  * about it" is a type error away from being false, rather than a promise.
  */
-const RESOLUTION: Record<DiagnosisFindingKind, string> = {
+export const RESOLUTION: Record<DiagnosisFindingKind, string> = {
   edited: "panda never overwrites an entry that changed since it wrote it; projecting again leaves your edit exactly as it is",
   'removed-by-user': 'panda never re-adds an entry you deleted; projecting again leaves it absent',
   'foreign-collision': 'panda never resolves a collision with content its ledger does not claim; projecting again leaves it untouched',
@@ -243,7 +243,10 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
   'not-initialised': {
     by: 'command',
     command: 'panda init',
-    detail: "`panda init` (or `panda project init`) creates panda's state for this scope",
+    // ONLY WHAT THE OTHER HALF DID NOT SAY. `RESOLUTION['not-initialised']`
+    // already names the command and says doctor creates nothing; this said the
+    // same sentence again, and the user read both in one line.
+    detail: "it writes panda's own state directory and registry document, and nothing into any executor's configuration",
   },
   'out-of-date': {
     by: 'command',
@@ -252,13 +255,18 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
   },
   'no-executor': {
     by: 'outside-panda',
+    // The premise -- that panda projects into configurations and creates none --
+    // belongs to `RESOLUTION` and was restated here for eleven words. This half
+    // carries the ACTION, which is the only part the other one cannot give.
     detail:
-      'panda projects into configurations that already exist and creates none, so this is left by running one of the executors panda knows at least once',
+      'Run one of them at least once so a configuration exists to project into; nothing in panda has to be fixed first',
   },
   'registry-unreadable': {
     by: 'outside-panda',
+    // The refusal and its reason are `RESOLUTION`'s sentence; repeating them
+    // here cost eight words before the part a user acts on.
     detail:
-      "panda never replaces a registry document it cannot read, because doing so would delete every entry it holds from every vendor file. Repair or remove that document; panda's ownership ledger is a different file and is not involved",
+      "Repair or remove that document. Panda's ownership ledger is a different file and is not involved, so nothing it already claims is at risk while you do",
   },
   'not-writable': {
     by: 'outside-panda',

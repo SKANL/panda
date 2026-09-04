@@ -5,7 +5,7 @@ import { dirname, join, relative } from 'node:path'
 import { RegistryStore } from '@panda/registry'
 import { afterAll, describe, expect, it } from 'vitest'
 import { REGISTRY_ENTRY_TYPES } from '@panda/contracts'
-import { DIAGNOSIS_FINDING_KINDS, diagnose, hasProblem } from '../src/doctor.ts'
+import { DIAGNOSIS_FINDING_KINDS, FINDING_EXITS, RESOLUTION, diagnose, hasProblem } from '../src/doctor.ts'
 import type { Diagnosis, DiagnosisFinding, DiagnosisFindingKind } from '../src/doctor.ts'
 import { initMachine, initProject } from '../src/init.ts'
 
@@ -834,3 +834,70 @@ describe('every finding names what it is about', () => {
 })
 
 const SEVERITIES = ['problem', 'info']
+
+/**
+ * ONE SENTENCE, TWO AUTHORS, AND NEITHER KNEW WHAT THE OTHER HAD ALREADY SAID.
+ *
+ * A finding's `resolution` is composed of two records: `RESOLUTION[kind]`, what
+ * `panda init` WOULD do about the state, and `FINDING_EXITS[kind].detail`, how
+ * the state is LEFT. They are written in different places, by different stories,
+ * and concatenated into the single line a user reads.
+ *
+ * Driven against the shipped binary, `panda doctor` on a machine with no
+ * executor printed this, and the repetition is not an excerpt:
+ *
+ *   "... panda projects into configurations that already exist and creates none,
+ *    so `panda init` would write nothing here and exits 2 - Panda cannot leave
+ *    this state itself. panda projects into configurations that already exist
+ *    and creates none, so this is left by running one of the executors panda
+ *    knows at least once"
+ *
+ * A probe over both records then showed it was not one kind but THREE, repeating
+ * 8, 9 and 11 leading words. (That probe's first version reported ZERO and was
+ * simply broken: it had a negative control and no POSITIVE one, so it could not
+ * tell "nothing repeats" from "I extracted nothing". Rewritten with both, it
+ * found all three.)
+ *
+ * This gate is the mechanical half. Both records are `Record`s over the same
+ * closed union, so the compiler already forces a new kind to answer BOTH -- and
+ * the natural way to answer the second is to restate the first, which is how all
+ * three of these arrived. The type system cannot see that; this can.
+ */
+describe('a finding never says the same thing twice in one sentence', () => {
+  /** Leading words two sentences share, compared case-insensitively. */
+  function repeatedLeadingWords(a: string, b: string): number {
+    const x = a.split(/\s+/)
+    const y = b.split(/\s+/)
+    let n = 0
+    while (n < x.length && n < y.length && x[n]?.toLowerCase() === y[n]?.toLowerCase()) n += 1
+    return n
+  }
+
+  it('DRIVES the comparison, so a green run means it discriminates', () => {
+    // Without this the clause below is satisfied by a comparison that returns 0
+    // for everything -- which is exactly what the first probe of this did.
+    expect(repeatedLeadingWords('panda never re-adds an entry', 'no target can express this')).toBe(0)
+    expect(repeatedLeadingWords('panda projects into configurations', 'panda projects into vendors')).toBe(3)
+  })
+
+  it('scans every kind, and the roster is the closed union itself', () => {
+    // The control for the clause below: a scan over an empty list would pass it.
+    expect(DIAGNOSIS_FINDING_KINDS.length).toBeGreaterThan(10)
+    for (const kind of DIAGNOSIS_FINDING_KINDS) {
+      expect(RESOLUTION[kind], kind).toBeTruthy()
+      expect(FINDING_EXITS[kind].detail, kind).toBeTruthy()
+    }
+  })
+
+  it('never restates its own premise in the half that is supposed to add something', () => {
+    // Three shared words can be an honest coincidence; four running words of a
+    // shared OPENING is a restatement. The three that failed here repeated 8, 9
+    // and 11.
+    const repeats = DIAGNOSIS_FINDING_KINDS.map((kind) => ({
+      kind,
+      words: repeatedLeadingWords(RESOLUTION[kind], FINDING_EXITS[kind].detail),
+    })).filter((row) => row.words >= 4)
+
+    expect(repeats).toEqual([])
+  })
+})
