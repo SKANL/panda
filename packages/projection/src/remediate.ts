@@ -527,7 +527,35 @@ async function discard(options: DiscardRemediationOptions, apply: boolean): Prom
       `'${filePath}' was modified while panda was reading it, so panda would have overwritten that change; nothing was written`,
     )
   }
-  await atomicWriteText(filePath, next)
+  // A REFUSAL, NOT A THROW — the contract this file states about itself at the
+  // top: "A refusal is RETURNED, coded, not thrown". `discard` is the one
+  // remediation of four that writes a user's file, so this was the single state
+  // in the whole surface that left by a different door.
+  //
+  // And it did not escape uncoded, which would have been the ordinary hole. It
+  // escaped FALSELY coded: `describe()` duck-types `.code`, a Node
+  // `ErrnoException` has one, so a libuv errno rendered in panda's coded-error
+  // position and the user read `EPERM: EPERM: ... rename '<file>.<uuid>.tmp'`.
+  // Doubled, exit 2 where every sibling refusal exits 1, and leaking the
+  // temporary path panda writes through.
+  //
+  // BOTH shapes are caught deliberately. `atomicWriteText` can also throw a
+  // CODED `PANDA_PROJECTION_NATIVE_UNCLAIMABLE` from its own containment check,
+  // and catching only errnos would leave a coded error still escaping as a throw
+  // out of a function whose refusals are values.
+  //
+  // Modelled on `config-write.ts`, not on `ledger.ts`: both code their boundary,
+  // but the ledger speaks ledger vocabulary about panda's OWN document, and this
+  // writes a VENDOR file — the same distinction `config-write.ts` already made
+  // as the first non-engine caller to reach this rule.
+  try {
+    await atomicWriteText(filePath, next)
+  } catch (error) {
+    const detail = error instanceof PandaError ? error.code : (error as NodeJS.ErrnoException | null)?.code
+    return deny(
+      `'${filePath}' could not be replaced (${detail ?? String(error)}) and panda wrote nothing. A file made read-only was made read-only on purpose.`,
+    )
+  }
   return { ...base, changes, applied: true }
 }
 

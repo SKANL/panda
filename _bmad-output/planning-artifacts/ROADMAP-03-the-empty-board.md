@@ -62,17 +62,50 @@ wrote and nothing else." Three places do not hold up their half.
   provider is `local`, whose per-run directories under `.panda/workspaces`
   accumulate with no verb. Two `panda run`s leave two UUID directories and
   `workspace remove` answers "nothing to remove".
-- **27.B — a remediation's write has no coded boundary.** `remediate.ts:530` is
-  a bare `await atomicWriteText(filePath, next)` inside `discard()`, so a raw
-  `EPERM` from a read-only target escapes uncoded out of `panda remediate
-  discard --apply`. Its sibling at `ledger.ts:389-400` codes exactly this. The
-  ledger entry that predicted it named the trigger — "if a second non-engine
-  caller ever appears" — and the trigger has fired three times.
-- **27.C — there is no `restore`.** "Take panda's version back" is `remediate
-  adopt` then `init`: two commands with a window between them.
+- **27.B — a remediation's write has no coded boundary. SHIPPED, and designing
+  it corrected this entry twice.** It did not escape UNCODED, which would be the
+  ordinary hole. It escaped FALSELY coded: `describe()` duck-types `.code`, a
+  Node errno has one, so the user read `EPERM: EPERM: … rename
+  '<file>.<uuid>.tmp'` — doubled, leaking the temporary path, and at exit 2 where
+  every sibling refusal exits 1. And the trigger fired ONCE, not three times:
+  four call sites, of which `engine.ts:204` and `materialise.ts:785` are wrapped
+  by their callers and `ledger.ts:394` codes panda's OWN document, leaving
+  `config-write.ts:158` (coded, the first non-engine caller) and
+  `remediate.ts:530` (bare). The model is `config-write.ts`, not `ledger.ts` —
+  same non-engine caller, same VENDOR-file target.
+- **27.C — CLOSED, and it should never have been listed.** `deferred-work.md`
+  already rejects a `restore` verb on evidence, and M24.A re-drove that entry
+  against HEAD and left it standing: a verb rendering one entry straight into a
+  vendor file is a SECOND renderer beside `mergeNative`, which is the divergence
+  correction-01 exists to remove. Its re-open condition is "only if the two-step
+  is measured to be a real product problem", and this roadmap cited no such
+  measurement. Measured since: in the window nothing on disk changes — `adopt`
+  writes only the ledger — and in the one destructive case the window IS the
+  safety feature, because it is where the user reads that the next `init` will
+  REMOVE what the claim covers and can choose `release` instead. `AGENTS.md`
+  says to read that ledger before claiming something is missing. I did not.
 
-Ships as one story or three; the root is one sentence, so the review is one
-review.
+**And 27.A is bigger and more dangerous than it reads, which two seats agreed
+on independently.** Removal does NOT go on the port: `dispose()` is documented
+in five places as preserving state, with a PUBLISHED clause
+(`dispose-idempotent-preserves-state`) asserting it, so making it the removal
+would invert a shipped contract — and removal is already deliberately off the
+port, as `removeWorktree(stateDir, id)`, a free function the CLI calls by name.
+The local twin belongs in `@panda/workspace-local`, leaving `@panda/contracts`
+and its nine clauses untouched.
+
+What makes it dangerous is measured, not feared: the local provider hands out
+read+write handles for `trees` and `records` — the git-worktree provider's own
+worktrees and its ownership proof — because both share one state directory and
+`acquire` consults no record (control: an id with no directory IS refused). A
+removal keyed on "a UUID-shaped child of rootDir" would make `panda workspace
+remove trees` delete every worktree in the project. Keying it on a record panda
+wrote closes that for free, which is AD-6 in its own milestone.
+
+Its honest cost is the backward-compatible half: every workspace that exists
+today has no marker, so under that rule panda names them and refuses to remove
+them. That is the `outside-panda` exit, it is self-liquidating, and it is the
+only sentence AD-6 permits.
 
 ### M28 — The kernel's own record survives the process
 

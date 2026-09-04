@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseJsonc } from 'jsonc-parser'
@@ -757,6 +757,63 @@ command = "rg"
 `
 
 describe('discard removes panda`s own prior output and nothing else (correction-01 C6)', () => {
+  /**
+   * THE ONE STATE `discard` LEAVES THROUGH A DIFFERENT DOOR THAN EVERY OTHER.
+   *
+   * `remediate.ts` states its own contract: "A refusal is RETURNED, coded, not
+   * thrown". Three of the four remediations touch no user file; `discard` is the
+   * one that writes, and its write was a bare `atomicWriteText`.
+   *
+   * Driven before this clause existed, against a 0o444 target: the run did not
+   * escape UNCODED, which would have been the ordinary kind of hole. It escaped
+   * FALSELY CODED. `describe()` duck-types `.code`, and a Node `ErrnoException`
+   * has one, so a libuv errno rendered in panda's coded-error position and the
+   * user read `EPERM: EPERM: operation not permitted, rename '<file>.<uuid>.tmp'
+   * -> ...`. Doubled, and leaking the temporary path panda writes through.
+   *
+   * It also exited 2 where every other refusal in this function exits 1 — so the
+   * read-only target was the single state in the remediation surface that left
+   * by the usage/environment door instead of the refusal door.
+   *
+   * Both halves are caught: `atomicWriteText` can ALSO throw a coded
+   * `PANDA_PROJECTION_NATIVE_UNCLAIMABLE` from its own containment check, and a
+   * fix that only caught errnos would leave that one still escaping as a throw
+   * out of a function whose contract says refusals are values.
+   */
+  it('REFUSES a target it cannot replace, as a value, without quoting its temp path', async () => {
+    const at = await fixture()
+    const path = join(at.homeDir, 'opencode.json')
+    await writeFile(path, LEGACY_JSON, 'utf8')
+    // 0o444 maps to the read-only attribute and takes on BOTH platforms, which
+    // 0o600 does not — a lesson this repository already paid for with a clause
+    // that asserted 0o666 === 0o666 and exercised nothing.
+    await chmod(path, 0o444)
+    try {
+      const outcome = await runRemediation({
+        remediation: 'discard',
+        legacy: { targetId: 'opencode-config', filePath: path, fileFormat: 'jsonc', rootPath: at.homeDir },
+        mode: 'apply',
+      })
+      expect(outcome.refusal?.code).toBe('PANDA_PROJECTION_REMEDIATION_REFUSED')
+      expect(outcome.applied).toBe(false)
+      // The temporary path is panda's own business and names a uuid the user
+      // cannot act on; the refusal says what happened and what it means.
+      expect(outcome.refusal?.message).not.toContain('.tmp')
+      // CONTROL: the same fixture WITHOUT the read-only attribute applies, so a
+      // run that refused for an unrelated reason cannot satisfy the clause above.
+      await chmod(path, 0o666)
+      const ok = await runRemediation({
+        remediation: 'discard',
+        legacy: { targetId: 'opencode-config', filePath: path, fileFormat: 'jsonc', rootPath: at.homeDir },
+        mode: 'apply',
+      })
+      expect(ok.applied).toBe(true)
+      expect(ok.refusal).toBeUndefined()
+    } finally {
+      await chmod(path, 0o666).catch(() => {})
+    }
+  })
+
   it('takes the reserved $.panda key out of a JSON config and leaves every other byte', async () => {
     const at = await fixture()
     const path = join(at.homeDir, 'opencode.json')
