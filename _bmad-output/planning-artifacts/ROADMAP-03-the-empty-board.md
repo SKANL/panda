@@ -173,16 +173,17 @@ not build.
   untrusted-but-executed, hence `watch_file` — and here that hole cannot be
   closed at all, because M25.A measured that a module is not inspectable without
   being loaded. So 30.A is 30.C wearing an ownership record's clothes.
-- **30.D — the project refusal is FATAL, and that is the live defect.** A cloned
-  repository carrying a `method` key denies service to a method the machine's
-  OWNER selected. Driven with a control: project doc present → refused; project
-  doc removed, same machine method → reached the executor. panda's own `project
-  swap method` creates that state, which is why its success message now has to
-  warn that the write breaks `panda run` in that directory. Fix: `selectMethod`
-  skips the project layer and takes the next, the run REPORTS what it declined,
-  and `assertMethodMayMount` keeps its project clause as second-line defence —
-  M25.A's T3 measured that a guard in the wrong place passes its own test.
-  It renegotiates E1's frozen `exit 2`, so it is a story, not a rider.
+- **30.D — SHIPPED (`11b2c20`, green on both legs), and the fix is not the one
+  this entry proposed.** The defect was real: a cloned repository carrying a
+  `method` key denied service to a method the machine's OWNER selected. But the
+  proposal — "`selectMethod` skips the project layer and takes the next" —
+  would have made the method selection the product's ONLY layer-by-layer reader,
+  because `dump()` exposes just the winning layer and `snapshot()` has zero
+  production consumers. It ships at ADMISSION instead: `seedExecutorConfig` drops
+  the key before it becomes a layer, so composition alone yields the next one and
+  no selection learns a new rule. `assertMethodMayMount` keeps its project clause
+  for the supplied-kernel path, driven rather than argued. Renegotiates M25.A row
+  E1, corrected in place. Frozen as `spec-m30d`.
 - **30.B — FR-21's CI secret scan**, whose acceptance criterion says
   "CI-scanned" and which has never existed. The design is recorded whole
   (M24.A's ledger) with three measurements that demolished its original
@@ -198,8 +199,11 @@ not build.
 page.** It read *"30.A first, because it is the only one that removes a
 restriction rather than adding a mechanism"* — written from what shipping had
 just taught rather than from driving it. 30.A adds three mechanisms. The real
-order is **30.D first**: it is the only item that removes a restriction, it is
-the only one with a user losing a run today, and it needs no new store.
+order was **30.D first**, and it shipped: it was the only item that removed a
+restriction, the only one with a user losing a run today, and it needed no new
+store. What is left under M30 is 30.B (FR-21's CI secret scan, waiting on a story
+that needs CI to emit an artifact) and 30.C (per-directory trust, deliberately
+not invented at speed).
 
 ### The decision that is not a milestone
 
