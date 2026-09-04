@@ -1,6 +1,12 @@
 {
   "name": "@panda/session",
   "version": "0.0.0",
+  "description": "The panda session: everything `panda run` does except argv, JSON and exit codes.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SKANL/panda.git",
+    "directory": "packages/session"
+  },
   "private": true,
   "license": "MIT",
   "type": "module",

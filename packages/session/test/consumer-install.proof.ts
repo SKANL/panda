@@ -333,78 +333,39 @@ export const wrong: SessionOptions = { prompt: 42 }
 `
 
 /**
- * The OTHER promise, and the one nothing tested.
+ * The OTHER promise, and the one nothing tested until now.
  * `ARCHITECTURE-SPINE.md` (AD-2): "Third parties implement any port installing
  * only `@panda/contracts`." The session arm above installs six tarballs, so it
- * proves the session BUNDLE is installable and says nothing about this. Its
- * control is that arm: if the harness itself were broken, both would be red.
+ * proves the session BUNDLE is installable and says nothing about this.
  *
- * Runtime half. A port is a type, so this exercises the runtime surface a port
- * implementation actually calls — the validator, the coded error, and THE
- * PUBLISHED CONTRACT SUITE — and the typecheck below carries the port itself.
+ * BOTH HALVES ARE EXTRACTED FROM `packages/contracts/README.md`, OUT OF THE
+ * PACKED TARBALL. The page a third party reads is the page CI compiles and runs.
+ * They used to live here as two template literals — the best-gated code in the
+ * repository, and invisible to every human who will ever consume the package.
  *
- * The suite is here because the promise is stated three times and was gated
- * nowhere. `AGENTS.md` says a port is implementable installing ONLY
- * `@panda/contracts`; FR-9 says a "published suite validates any
- * ExecutorAdapter"; NFR-8 says "public contract-test suite per Contract". The
- * word in all three is PUBLISHED, and every in-repo run of these suites resolves
- * through pnpm's workspace links — which, as the header of this file already
- * says about `consumer.test.ts`, answers no matter what the export map, the
- * build or the tarball say. Nothing proved the arrays survive packing.
+ * The promise is stated three times and was gated nowhere. `AGENTS.md` says a
+ * port is implementable installing ONLY `@panda/contracts`; FR-9 says a
+ * "published suite validates any ExecutorAdapter"; NFR-8 says "public
+ * contract-test suite per Contract". The word in all three is PUBLISHED, and
+ * every in-repo run of these suites resolves through pnpm's workspace links —
+ * which, as this file's header already says about `consumer.test.ts`, answers no
+ * matter what the export map, the build or the tarball say.
  *
- * The subject is HALF-RIGHT ON PURPOSE, and that is the control. A subject that
- * passes everything and a suite that checks nothing produce the same green; a
- * subject that fails everything and a suite that throws on everything produce
- * the same red. Only a MIXED report says the suite discriminates, so the
- * assertion below requires both sets to be non-empty. Real temp roots let the
- * filesystem clauses pass; `release` is the planted defect.
+ * The README's subject is HALF-RIGHT ON PURPOSE, and that is the control. A
+ * subject that passes everything and a suite that checks nothing produce the same
+ * green; a subject that fails everything and a suite that throws on everything
+ * produce the same red. Only a MIXED report says the suite discriminates.
  */
-const CONTRACTS_ONLY_SCRIPT = `import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import {
-  PANDA_ERROR_CODES,
-  PandaError,
-  runWorkspaceContractSuite,
-  validateWorkspaceHandle,
-} from '@panda/contracts'
 
-class HalfRightWorkspaces {
-  #roots = new Map()
-
-  async create() {
-    const id = \`w\${this.#roots.size + 1}\`
-    const root = mkdtempSync(join(tmpdir(), 'panda-contracts-only-'))
-    this.#roots.set(id, root)
-    return validateWorkspaceHandle({ id, rootPath: root, capabilities: ['read', 'write'] })
-  }
-
-  async acquire(id) {
-    const root = this.#roots.get(id)
-    if (root === undefined) {
-      throw new PandaError(PANDA_ERROR_CODES.contractWorkspaceUnknownId, 'unknown workspace id')
-    }
-    return validateWorkspaceHandle({ id, rootPath: root, capabilities: ['read', 'write'] })
-  }
-
-  // PLANTED: a conformant provider refuses a forged handle and a second release.
-  async release() {}
-
-  async dispose() {}
-}
-
-const suite = await runWorkspaceContractSuite(new HalfRightWorkspaces())
-
-const handle = validateWorkspaceHandle({ id: 'w1', rootPath: process.cwd(), capabilities: ['read', 'write'] })
-
-let rejectedCode = null
-try {
-  validateWorkspaceHandle({ id: '', rootPath: '', capabilities: [] })
-} catch (error) {
-  if (!(error instanceof PandaError)) throw error
-  rejectedCode = error.code
-}
-
+/**
+ * The delimited payload the harness reads back.
+ *
+ * The ONLY part that is scaffolding rather than documentation, which is exactly
+ * why it is not in the README: a page teaching someone to write a port should not
+ * teach them to print a payload for a test harness. It is appended to the
+ * README's runnable block, and every name it reads is defined there.
+ */
+const PAYLOAD_TAIL = `
 console.log('${PAYLOAD_BEGIN}')
 console.log(
   JSON.stringify({
@@ -422,33 +383,22 @@ console.log('${PAYLOAD_END}')
 `
 
 /**
- * The port itself, compiled against the SHIPPED declarations with `@panda/contracts`
- * as the only thing installed. `implements WorkspaceProvider` is the assertion:
- * a declaration file that failed to resolve would degrade the import to `any`,
- * the `@ts-expect-error` below would be unused, and tsc would report THAT.
+ * The first fenced block of one language in a markdown document.
+ *
+ * THROWS rather than returning undefined, and that is the whole design: a README
+ * that stopped carrying its example has to fail as a MISSING GATE, not as an
+ * empty consumer file that compiles because there is nothing in it to reject.
  */
-const CONTRACTS_ONLY_TYPES = `import { PANDA_ERROR_CODES, PandaError, validateWorkspaceHandle } from '@panda/contracts'
-import type { WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
-
-export class EphemeralWorkspaces implements WorkspaceProvider {
-  async create(): Promise<WorkspaceHandle> {
-    return validateWorkspaceHandle({ id: 'w1', rootPath: '/w1', capabilities: ['read', 'write'] })
-  }
-
-  async acquire(id: string): Promise<WorkspaceHandle> {
-    return validateWorkspaceHandle({ id, rootPath: \`/\${id}\`, capabilities: ['read'] })
-  }
-
-  async release(_handle: WorkspaceHandle): Promise<void> {}
-
-  async dispose(): Promise<void> {
-    throw new PandaError(PANDA_ERROR_CODES.contractProviderDisposed, 'disposed')
-  }
+function fencedBlock(markdown: string, language: string): string {
+  const opening = `\n\`\`\`${language}\n`
+  const from = markdown.indexOf(opening)
+  if (from === -1) throw new Error(`packages/contracts/README.md carries no \`${language}\` block`)
+  const bodyStart = from + opening.length
+  const to = markdown.indexOf('\n```\n', bodyStart)
+  if (to === -1) throw new Error(`the \`${language}\` block in packages/contracts/README.md is unterminated`)
+  return markdown.slice(bodyStart, to)
 }
 
-// @ts-expect-error 'execute' is not a WorkspaceCapability, so these declarations are real types.
-export const wrong: WorkspaceHandle = { id: 'x', rootPath: '/x', capabilities: ['execute'] }
-`
 
 const CONSUMER_TSCONFIG = JSON.stringify(
   {
@@ -723,8 +673,17 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       )}\n`,
       'utf8',
     )
-    await writeFile(join(soleDir, 'consumer.mjs'), CONTRACTS_ONLY_SCRIPT, 'utf8')
-    await writeFile(join(soleDir, 'consumer.ts'), CONTRACTS_ONLY_TYPES, 'utf8')
+    // THE README IS IN THE TARBALL, and this is the cheapest clause on the page:
+    // it fails the day someone adds a `files` array that excludes it, or renames
+    // the file, or deletes it. Read from the ARCHIVE rather than from the
+    // worktree, because the claim is about what a consumer receives.
+    const readme = packed.get('contracts')?.get('package/README.md')
+    expect(readme, '@panda/contracts shipped no README.md in its tarball').toBeDefined()
+    // Extracted, not copied. The page a third party reads is the page compiled
+    // and executed below; a drift between them is not possible because there is
+    // only one of them.
+    await writeFile(join(soleDir, 'consumer.mjs'), fencedBlock(readme ?? '', 'js') + PAYLOAD_TAIL, 'utf8')
+    await writeFile(join(soleDir, 'consumer.ts'), fencedBlock(readme ?? '', 'ts'), 'utf8')
     await writeFile(join(soleDir, 'tsconfig.json'), `${CONSUMER_TSCONFIG}\n`, 'utf8')
 
     // `--offline` is the assertion that nothing else was wanted: a runtime

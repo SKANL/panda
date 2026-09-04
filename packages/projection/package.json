@@ -1,6 +1,12 @@
 {
   "name": "@panda/projection",
   "version": "0.0.0",
+  "description": "Projects Registry entries into executors' native configuration, and owns the ledger that can take them back.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SKANL/panda.git",
+    "directory": "packages/projection"
+  },
   "private": true,
   "license": "MIT",
   "type": "module",

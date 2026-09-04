@@ -1,6 +1,12 @@
 {
   "name": "@panda/workspace-local",
   "version": "0.0.0",
+  "description": "The local-directory WorkspaceProvider: a workspace is a subdirectory of rootDir.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SKANL/panda.git",
+    "directory": "packages/workspace-local"
+  },
   "private": true,
   "license": "MIT",
   "type": "module",
