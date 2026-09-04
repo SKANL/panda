@@ -96,9 +96,15 @@ node --conditions=panda-source packages/cli/bin/panda.ts <args>   # drive the bi
   run that dies in `test` never lints. When it stops early, run the rest per
   package with `./node_modules/.bin/vitest run` — `pnpm --filter` does not work
   here because of the node_modules junctions.
-- Excluding live suites needs `**/*live.test.ts` — **no dot**. Both
-  `skills-discovery.live.test.ts` and `confinement-live.test.ts` exist, and
-  `**/*.live.test.ts` silently misses the second.
+- Excluding live suites needs `**/*live*.test.ts` — **stars on both sides**.
+  Three naming styles exist: `confinement-live.test.ts`, a dot in
+  `skills-discovery.live.test.ts`, and a PREFIX in `live-smoke.test.ts`. A
+  suffix glob cannot cover a prefix, and this sentence twice taught a pattern
+  that missed one — first `**/*.live.test.ts`, then `**/*live.test.ts`, each
+  recorded as fixed while a live suite kept running inside "live excluded" runs.
+  *Gate: `packages/contracts/test/live-suite-naming.test.ts`, which holds the
+  roster and fails BOTH ways — a live suite the glob misses, and an ordinary
+  suite the glob would swallow (`live` is a substring of `delivery`).*
 - On Windows, native binaries need Windows paths (`cygpath -w`). A native tool
   handed an MSYS path silently misbehaves.
 
