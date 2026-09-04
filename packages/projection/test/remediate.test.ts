@@ -784,11 +784,29 @@ describe('discard removes panda`s own prior output and nothing else (correction-
     const at = await fixture()
     const path = join(at.homeDir, 'opencode.json')
     await writeFile(path, LEGACY_JSON, 'utf8')
-    // 0o444 maps to the read-only attribute and takes on BOTH platforms, which
-    // 0o600 does not — a lesson this repository already paid for with a clause
-    // that asserted 0o666 === 0o666 and exercised nothing.
+    // THE PRECONDITION IS PLATFORM-SPECIFIC AND BOTH HALVES ARE NEEDED, which
+    // cost this clause a red CI run to learn. `atomicWriteText` writes a temp
+    // file and RENAMES over the target. On Windows the read-only ATTRIBUTE on
+    // the file blocks that rename. On POSIX it does not: `rename(2)` is
+    // permitted by write access to the containing DIRECTORY, and the target
+    // file's own mode is irrelevant — so `chmod 0o444` alone let the discard
+    // apply and the clause asserted a refusal that never happened.
+    //
+    // The ledger's existing lesson is that `0o600` is a no-op on Windows, so use
+    // `0o444`. It takes on both platforms for WRITE. It does not for RENAME.
+    // Both are set, and each is what actually bites on one platform.
+    const before = await readFile(path, 'utf8')
     await chmod(path, 0o444)
+    await chmod(at.homeDir, 0o555)
     try {
+      // THE PRECONDITION, PROVED BEFORE THE SUBJECT RUNS. Without this, an
+      // environment where the permissions do not bite (a root CI container, an
+      // exotic filesystem) reports `expected undefined` and reads as though the
+      // production code regressed. Verified in real Linux as uid 1000: file
+      // 0444 alone leaves the rename PERMITTED, and it is the directory that
+      // blocks it.
+      await expect(writeFile(path, 'precondition probe', 'utf8')).rejects.toThrow()
+
       const outcome = await runRemediation({
         remediation: 'discard',
         legacy: { targetId: 'opencode-config', filePath: path, fileFormat: 'jsonc', rootPath: at.homeDir },
@@ -796,11 +814,16 @@ describe('discard removes panda`s own prior output and nothing else (correction-
       })
       expect(outcome.refusal?.code).toBe('PANDA_PROJECTION_REMEDIATION_REFUSED')
       expect(outcome.applied).toBe(false)
+      // THE PRECONDITION, ASSERTED RATHER THAN ASSUMED: the file is byte-identical.
+      // A refusal that arrived after a partial write would satisfy every clause
+      // above and would be the worse defect.
+      expect(await readFile(path, 'utf8')).toBe(before)
       // The temporary path is panda's own business and names a uuid the user
       // cannot act on; the refusal says what happened and what it means.
       expect(outcome.refusal?.message).not.toContain('.tmp')
-      // CONTROL: the same fixture WITHOUT the read-only attribute applies, so a
+      // CONTROL: the same fixture with both permissions restored APPLIES, so a
       // run that refused for an unrelated reason cannot satisfy the clause above.
+      await chmod(at.homeDir, 0o755)
       await chmod(path, 0o666)
       const ok = await runRemediation({
         remediation: 'discard',
@@ -810,6 +833,7 @@ describe('discard removes panda`s own prior output and nothing else (correction-
       expect(ok.applied).toBe(true)
       expect(ok.refusal).toBeUndefined()
     } finally {
+      await chmod(at.homeDir, 0o755).catch(() => {})
       await chmod(path, 0o666).catch(() => {})
     }
   })
