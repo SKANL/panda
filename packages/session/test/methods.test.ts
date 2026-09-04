@@ -243,9 +243,14 @@ describe('M25.A: a method that arrived with a clone is not a method you chose', 
     //
     // A test that asserts a message CONTAINS a command pins that panda gives
     // advice. Nothing here can pin that the advice works; only driving it can,
-    // and `packages/cli/test/method-layer-trust.test.ts` is where that lives.
+    // and `packages/cli/test/method-layer-trust.test.ts` is where that lives —
+    // it RUNS both steps of this message and then asserts the module mounted.
+    //
+    // Driving it is also what caught the SECOND closed loop: an advice naming
+    // only the swap is still a loop, because the project key keeps deciding.
+    // Both steps, in this order, or the sentence is false again.
     expect((raised as PandaError).message).toContain('.panda/config.json')
-    expect((raised as PandaError).message).toContain('ABSOLUTE')
+    expect((raised as PandaError).message).toContain('panda swap method ./hostile.mjs')
   })
 
   /**

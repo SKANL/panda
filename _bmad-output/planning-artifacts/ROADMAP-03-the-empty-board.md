@@ -160,10 +160,29 @@ decisions are open.* M25.A closed the live one — a cloned repository's
 `.panda/config.json` no longer executes — and named what it deliberately did
 not build.
 
-- **30.A — ownership on config writes.** It is the principled version of
-  M25.A's fix: honour a project-layer method **panda itself wrote** via `project
-  swap method`, rather than refusing the layer wholesale. Measured:
-  `config-write.ts` records no ownership at all.
+- **30.A — REJECTED, measured, with a reopen condition.** It read as "the
+  principled version of M25.A's fix: honour a project-layer method panda itself
+  wrote". Driven, it adds three mechanisms rather than removing a restriction: a
+  record, a reader inside the mount guard, and a package edge —
+  `packages/session/test/guard.test.ts:51-57` pins session's dependencies to
+  five packages and `@panda/projection` is not one of them. And the record would
+  prove the wrong thing: it hashes the config STRING, while the danger is the
+  module BYTES, which any `git pull` replaces. AD-6's records authorise REMOVAL
+  (`contracts/src/projection.ts:70-76`), never EXECUTION. direnv's public regret
+  is this exact shape — hashing only the entry file left everything it sourced
+  untrusted-but-executed, hence `watch_file` — and here that hole cannot be
+  closed at all, because M25.A measured that a module is not inspectable without
+  being loaded. So 30.A is 30.C wearing an ownership record's clothes.
+- **30.D — the project refusal is FATAL, and that is the live defect.** A cloned
+  repository carrying a `method` key denies service to a method the machine's
+  OWNER selected. Driven with a control: project doc present → refused; project
+  doc removed, same machine method → reached the executor. panda's own `project
+  swap method` creates that state, which is why its success message now has to
+  warn that the write breaks `panda run` in that directory. Fix: `selectMethod`
+  skips the project layer and takes the next, the run REPORTS what it declined,
+  and `assertMethodMayMount` keeps its project clause as second-line defence —
+  M25.A's T3 measured that a guard in the wrong place passes its own test.
+  It renegotiates E1's frozen `exit 2`, so it is a story, not a rider.
 - **30.B — FR-21's CI secret scan**, whose acceptance criterion says
   "CI-scanned" and which has never existed. The design is recorded whole
   (M24.A's ledger) with three measurements that demolished its original
@@ -175,8 +194,12 @@ not build.
   store invented at speed under a security finding is how a bad trust store
   ships.
 
-**Order matters here and nowhere else on this page:** 30.A first, because it is
-the only one that removes a restriction rather than adding a mechanism.
+**The ordering sentence here was wrong, and it is the sixth correction on this
+page.** It read *"30.A first, because it is the only one that removes a
+restriction rather than adding a mechanism"* — written from what shipping had
+just taught rather than from driving it. 30.A adds three mechanisms. The real
+order is **30.D first**: it is the only item that removes a restriction, it is
+the only one with a user losing a run today, and it needs no new store.
 
 ### The decision that is not a milestone
 
@@ -195,12 +218,14 @@ README whose code blocks CI compiles and runs, all twelve manifests carry
 `description` and `repository`, and a gate refuses a version that disagrees with
 its siblings or a package that quietly loses `private`.
 
-## Why this document has been wrong five times, and what that means for the next one
+## Why this document has been wrong six times, and what that means for the next one
 
 Corrected so far, all by driving rather than reading: the `atomicWriteText`
 trigger fired once and not three times; the `EPERM` escaped falsely coded
 rather than uncoded; 27.C was already rejected on evidence with a reopen
-condition; 28.B cannot fire; and 29.A was wrong in both halves.
+condition; 28.B cannot fire; 29.A was wrong in both halves; and 30.A's ordering
+rationale was backwards — it adds mechanisms, and the record it would add proves
+the pointer rather than the payload.
 
 The cause is not carelessness, and naming it is the point: **this document was
 written from ledger summaries and from what shipping had just taught, not from

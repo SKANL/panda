@@ -30,6 +30,9 @@ async function readConfig(root: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(configPath(root), 'utf8')) as Record<string, unknown>
 }
 
+/** The smallest module `resolveMethod` accepts, so the write is what fails or not. */
+const VALID_METHOD = 'export default { id: "m", version: "1.0.0", phases: [], artifacts: [], commands: [] }'
+
 interface Captured {
   readonly code: number
   readonly out: string
@@ -202,49 +205,103 @@ describe('M30.B: what the machine document stores must mean the same thing every
   /**
    * `swap` VALIDATED one file and STORED a specifier meaning a different one.
    *
-   * `swap-command.ts:104` computes `projectDir` from cwd for the MACHINE scope
-   * too, and `:118` validates `resolveMethod(id, projectDir)`. So
-   * `panda swap method ./mine.mjs` run from a project validated THAT project's
-   * `mine.mjs` and then wrote the raw `./mine.mjs` into the HOME document —
-   * where `runSession` resolves it against whatever directory the next run
-   * happens to stand in.
+   * `swap-command.ts` computes `projectDir` from cwd for the MACHINE scope too
+   * and validates `resolveMethod(id, projectDir)`. So `panda swap method
+   * ./mine.mjs` run from a project validated THAT project's `mine.mjs` and then
+   * wrote the raw `./mine.mjs` into the HOME document — where `runSession`
+   * resolves it against whatever directory the next run happens to stand in.
    *
    * Driven before this clause existed, with a control: standing in a directory
    * carrying only a `mine.mjs` and NO `.panda` config at all, that module's
    * top-level code RAN; the same directory with an empty HOME did not run it.
-   * A wildcard over every repository on the machine, reachable by following the
-   * refusal's own printed advice.
+   * A wildcard over every repository on the machine.
    *
-   * The run-time guard now refuses such a selection. This clause closes the
-   * other half: a verb whose success message is a lie about what it stored.
+   * THE FIRST FIX HERE WAS A REFUSAL, AND THE REFUSAL WAS THE WRONG SHAPE.
+   * It made the run-time guard's own advice — "name the module by ABSOLUTE path
+   * in your own machine document" — cost the user a path they had to spell
+   * themselves, while panda was standing in the very directory that resolves it.
+   * A refusal that a one-line resolution removes is a refusal that exists to
+   * spare the implementer, not the user.
+   *
+   * So the specifier is resolved HERE, where the user is standing and can see
+   * what was stored, and the stored value is the one that was validated. The
+   * run-time guard stays: a relative machine specifier can still reach the
+   * document by hand or from an older build, and there it means nothing.
    */
-  it('refuses to store a relative method specifier in the machine document', async () => {
+  it('resolves a relative machine specifier against cwd and stores the absolute path', async () => {
     const at = await fixture()
-    await writeFile(join(at.projectDir, 'mine.mjs'), 'export default {}\n', 'utf8')
+    const absolute = join(at.projectDir, 'mine.mjs')
+    await writeFile(absolute, VALID_METHOD, 'utf8')
 
     const said = await panda(['swap', 'method', './mine.mjs'], at)
 
-    expect(said.code).toBe(2)
+    expect(said.code, said.err).toBe(0)
+    // The STORED value is the assertion that matters: a success line naming the
+    // absolute path over a document holding './mine.mjs' would read identically.
+    expect((await readConfig(at.homeDir))['method']).toBe(absolute)
+    // And the user is told, because the thing they typed is not the thing panda
+    // kept — a resolution the user cannot see is the same lie as a bad store.
+    expect(said.err).toContain(absolute)
     expect(said.err).toContain('./mine.mjs')
-    expect(said.err).toContain('ABSOLUTE')
-    // Nothing written: a refused selection must not leave a document behind for
-    // the next run to trip over.
-    await expect(readConfig(at.homeDir)).rejects.toThrow()
   })
 
-  it('CONTROL: still stores an absolute specifier, and a project-scope relative one', async () => {
-    // Without this the clause above is satisfied by a verb that refuses every
-    // method, which would remove the feature instead of the ambiguity.
+  it('CONTROL: an absolute machine specifier is stored unchanged', async () => {
+    // Without this the clause above is satisfied by a verb that rewrites every
+    // specifier, which would break a package specifier the same way.
     const at = await fixture()
     const absolute = join(at.projectDir, 'mine.mjs')
-    await writeFile(absolute, 'export default { id: "m", version: "1.0.0", phases: [], artifacts: [], commands: [] }\n', 'utf8')
+    await writeFile(absolute, VALID_METHOD, 'utf8')
 
     const machine = await panda(['swap', 'method', absolute], at)
+
     expect(machine.code, machine.err).toBe(0)
     expect((await readConfig(at.homeDir))['method']).toBe(absolute)
+  })
+})
 
-    const project = await panda(['project', 'swap', 'method', './mine.mjs'], at)
-    expect(project.code, project.err).toBe(0)
+describe('M30.C: a verb that writes what no run will honour must say so', () => {
+  /**
+   * `panda project swap method X` exits 0, prints `selected:`, writes the key —
+   * and EVERY subsequent run refuses it, because `assertMethodMayMount` refuses
+   * the LAYER unconditionally, whatever the specifier. Driven at 7148c9a with a
+   * control: same project, key removed, `panda run` reaches the executor.
+   *
+   * THE WRITE IS NOT THE DEFECT AND MUST NOT BE REMOVED. Spec M25.A froze row
+   * E4 — "`project swap method X` still writes the project document (M5.D row
+   * 6)" — and M5.D designed the project-scope write. Deleting a designed,
+   * frozen behaviour to fix a printed word is the worst trade available here.
+   *
+   * The defect is the word `selected`, which claims an effect the value will
+   * never have. So the write stands and the sentence tells the truth, including
+   * the one command that DOES take effect — measured to work, not assumed:
+   * `panda swap method <spec>` from the project directory now resolves and
+   * stores the absolute path, and the run mounts it.
+   */
+  it('says the project document RECOMMENDS a method, and names the command that selects one', async () => {
+    const at = await fixture()
+    await writeFile(join(at.projectDir, 'mine.mjs'), VALID_METHOD, 'utf8')
+
+    const said = await panda(['project', 'swap', 'method', './mine.mjs'], at)
+
+    expect(said.code, said.err).toBe(0)
+    // Row E4 stands: the document is still written.
     expect((await readConfig(at.projectDir))['method']).toBe('./mine.mjs')
+    // And the word that was a lie is gone.
+    expect(said.err).not.toContain('selected:')
+    expect(said.err).toContain('recommend')
+    expect(said.err).toContain('panda swap method ./mine.mjs')
+  })
+
+  it('CONTROL: project swap EXECUTOR still says selected, because that one takes effect', async () => {
+    // The asymmetry is the point. Without this clause the change above is
+    // satisfied by making every project write hedge, which would be false for
+    // the executor: nothing refuses a project-layer executor.
+    const at = await fixture()
+
+    const said = await panda(['project', 'swap', 'executor', 'codex'], at)
+
+    expect(said.code, said.err).toBe(0)
+    expect(said.err).toContain('selected:')
+    expect(said.err).not.toContain('recommend')
   })
 })

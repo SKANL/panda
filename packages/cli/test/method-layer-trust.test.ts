@@ -54,7 +54,7 @@ async function clonedProject(document: unknown): Promise<{ readonly dir: string;
   await mkdir(join(dir, '.panda'), { recursive: true })
   await writeFile(
     join(dir, 'arrived.mjs'),
-    `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, 'top-level code ran')\nexport default { id: 'arrived' }\n`,
+    `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, 'top-level code ran')\nexport default { id: 'arrived', version: '1.0.0', phases: [], artifacts: [], commands: [] }\n`,
     'utf8',
   )
   await writeFile(join(dir, '.panda', 'config.json'), `${JSON.stringify(document, null, 2)}\n`, 'utf8')
@@ -90,8 +90,41 @@ describe('a method the project layer named is never imported', () => {
     // ADVICE. Nothing here can pin that the advice WORKS. It now names the two
     // facts a user can act on: which file holds the key, and that a machine
     // selection must be ABSOLUTE.
-    expect(said).toContain('.panda/config.json')
-    expect(said).toContain('ABSOLUTE')
+    expect(said).toContain('panda swap method ./arrived.mjs')
+    // And the step that command needs FIRST, which a draft of the clause below
+    // proved is not optional.
+    expect(said).toContain(".panda/config.json")
+  })
+
+  it('and the command that refusal names ACTUALLY WORKS, which no toContain can say', async () => {
+    // THE CLAUSE ABOVE USED TO END AT `toContain`, AND THAT WAS THE DEFECT.
+    // A first version of this guard advised `panda swap method <spec>` and the
+    // command was a CLOSED LOOP: exit 0, wrote the machine document, changed
+    // nothing, because layer precedence kept `project` deciding and the same
+    // refusal fired byte for byte. Every assertion about the message stayed
+    // green the whole time. Asserting that panda gives ADVICE cannot assert
+    // that the advice is a way out -- only running it can.
+    const { dir, marker } = await clonedProject({ method: './arrived.mjs' })
+    const homeDir = await mkdtemp(join(tmpdir(), 'panda-adopting-home-'))
+    const io = capture()
+
+    // BOTH STEPS THE REFUSAL NAMES, IN ITS ORDER, AND THE FIRST ONE IS THE
+    // FINDING. A draft of this clause ran only the swap, and it FAILED: the
+    // project key still decides, so the machine document changed nothing and the
+    // same refusal fired again. That draft is the closed loop reappearing in the
+    // one place able to see it — which is the whole reason this clause runs the
+    // advice instead of asserting the message contains it.
+    await writeFile(join(dir, '.panda', 'config.json'), JSON.stringify({}), 'utf8')
+    const adopted = await runPanda(['swap', 'method', './arrived.mjs'], { ...io, cwd: dir, homeDir })
+    expect(adopted, io.err.join(' ')).toBe(0)
+
+    const after = await runPanda(['run', 'hi'], { ...capture(), cwd: dir, homeDir, createAdapter: stubAdapter })
+
+    // The module runs NOW, and that is the correct outcome rather than a
+    // regression: the machine's owner typed the command, which is the consent a
+    // file that arrived with a clone could never give.
+    expect(existsSync(marker), 'the adopted method was still not mounted').toBe(true)
+    expect(after).toBe(0)
   })
 
   it('CONTROL: the same run with no method key reaches the executor', async () => {

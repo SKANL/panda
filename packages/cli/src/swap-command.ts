@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { resolve, sep as SEP } from 'node:path'
 
 import { setConfigValue } from '@panda/environment'
 import { resolveExecutor, resolveMethod } from '@panda/session'
@@ -110,21 +111,25 @@ export async function runSwap(
   // the raw './mine.mjs' into the HOME document — where `runSession` resolves it
   // against whatever directory the next run stands in. Driven, with a control: a
   // directory carrying only a `mine.mjs` and NO `.panda` config had that module's
-  // top-level code RUN; the same directory with an empty HOME did not.
+  // top-level code RUN; the same directory with an empty HOME did not. A wildcard
+  // over every repository on the machine.
   //
-  // A wildcard over every repository on the machine, and reachable by following
-  // the run-time refusal's own printed advice. The run-time guard refuses such a
-  // selection now; this refuses WRITING one, so the verb's success stops being a
-  // lie about what it stored.
-  if (noun === 'method' && scope === 'machine') {
-    const relative = ['./', '../', '.\\', '..\\'].some((prefix) => id.startsWith(prefix))
-    if (relative) {
-      err(
-        `'${id}' is relative, and a machine-wide selection resolves against the directory you run in — so it would name a different module in every project. Give an ABSOLUTE path, or a package specifier.`,
-      )
-      return 2
-    }
-  }
+  // THE FIRST FIX HERE WAS A REFUSAL, AND A REFUSAL WAS THE WRONG SHAPE. It made
+  // the run-time guard's own advice — "name the module by ABSOLUTE path in your
+  // own machine document" — cost the user a path they had to spell themselves,
+  // while panda was standing in the directory that resolves it. A refusal that
+  // one line of resolution removes is a refusal that spares the implementer.
+  //
+  // So it is resolved HERE, where the user is standing and can be shown what was
+  // kept, and the value validated below is the value that is stored. The RUN-TIME
+  // guard stays: a relative specifier can still reach a machine document by hand
+  // or from an older build, and there it names no file.
+  const RELATIVE_PREFIXES = ['./', '../', '.' + SEP, '..' + SEP]
+  const resolvedFrom =
+    noun === 'method' && scope === 'machine' && RELATIVE_PREFIXES.some((prefix) => id.startsWith(prefix))
+      ? id
+      : undefined
+  const selection = resolvedFrom === undefined ? id : resolve(projectDir, id)
 
   try {
     // Nothing is written before this returns, for either noun: a selection panda
@@ -132,13 +137,13 @@ export async function runSwap(
     // applies before it makes a workspace directory.
     if (noun === 'executor') {
       // Throws PANDA_EXECUTOR_NOT_FOUND naming every available id.
-      await resolveExecutor({ executorId: id, homeDir, projectDir })
+      await resolveExecutor({ executorId: selection, homeDir, projectDir })
     } else {
       // Loading IS the check. It also means `panda swap method` fails at the
       // moment the user can still fix it, rather than at the next `panda run`
       // when they have moved on — the same reason the executor id is resolved
       // here instead of trusted.
-      await resolveMethod(id, projectDir)
+      await resolveMethod(selection, projectDir)
     }
   } catch (error) {
     err(describe(error))
@@ -152,18 +157,40 @@ export async function runSwap(
       homeDir,
       projectDir,
       key: noun,
-      value: id,
+      value: selection,
     })
   } catch (error) {
     err(describe(error))
     return 2
   }
 
-  err(
-    written.previous === id
-      ? `already selected: '${id}' in '${written.filePath}'`
-      : `selected: '${id}' in '${written.filePath}'${written.previous === undefined ? '' : ` (was '${written.previous}')`}`,
-  )
+  // A METHOD IN THE PROJECT DOCUMENT IS A RECOMMENDATION, NOT A SELECTION, AND
+  // THE VERB HAS TO SAY WHICH. `assertMethodMayMount` refuses the `project`
+  // LAYER unconditionally — whatever the specifier, absolute or not — so every
+  // `project swap method` wrote a value no run would ever honour while printing
+  // `selected:`. Driven with a control: same project, key removed, the run
+  // reaches the executor.
+  //
+  // The WRITE is not the defect and is not removed: row E4 of `spec-m25a…`
+  // freezes it and M5.D row 6 designed it. Deleting a designed, frozen behaviour
+  // to fix a printed word is the worse trade. The word is what changes.
+  //
+  // EXECUTOR IS DELIBERATELY UNCHANGED. Nothing refuses a project-layer
+  // executor, so `selected:` is true there, and hedging both would trade one
+  // false sentence for another.
+  const where = `'${selection}' in '${written.filePath}'`
+  if (noun === 'method' && scope === 'project') {
+    err(
+      `recommended: ${where} — a note for whoever clones this project, NOT a selection. panda refuses to mount a method a project names, so while this key is here \`panda run\` REFUSES in this project, even for a method you selected machine-wide. To use it yourself: delete the key and run \`panda swap method ${id}\` from here.`,
+    )
+  } else {
+    const from = resolvedFrom === undefined ? '' : ` (resolved from '${resolvedFrom}' here)`
+    err(
+      written.previous === selection
+        ? `already selected: ${where}${from}`
+        : `selected: ${where}${from}${written.previous === undefined ? '' : ` (was '${written.previous}')`}`,
+    )
+  }
 
   // THE HALF THAT IS NOT THE FILE WRITE. Writing the machine document while the
   // project one names something else changes nothing a run will do, and a

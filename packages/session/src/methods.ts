@@ -159,16 +159,32 @@ export async function resolveMethod(specifier: string, baseDir?: string): Promis
  * check moved there would still pass its own test — which is why the test for
  * it is falsified by moving it, not only by deleting it.
  *
- * What this does NOT do, deliberately: honour a project selection panda ITSELF
- * wrote via `project swap method`. That needs ownership tracking on config
- * writes, which `packages/projection/src/config-write.ts` does not have, and it
- * is the principled shape rather than this one. Recorded in `deferred-work.md`.
+ * WHAT THIS DOES NOT DO, AND THE REASON CHANGED AFTER IT WAS DRIVEN: honour a
+ * project selection panda ITSELF wrote via `project swap method`. That was
+ * recorded here as merely deferred — "needs ownership tracking on config writes"
+ * — and the roadmap ordered it first because it "removes a restriction rather
+ * than adding a mechanism". Both sentences are wrong.
+ *
+ * An ownership record would prove panda wrote the NAME. The danger is the module
+ * BYTES, which no record covers and which any `git pull` replaces — and AD-6's
+ * records authorise REMOVAL (`ownedPaths` is "what makes a record authority for a
+ * removal"), never EXECUTION. Reading one here would also need
+ * `@panda/session -> @panda/projection`, an edge `packages/session/test/guard.test.ts`
+ * pins closed. So it is a mechanism, and it is a trust store wearing an ownership
+ * record's clothes; the honest version of it is the deferred per-directory trust
+ * decision, not a rider on this guard.
+ *
+ * What IS still open, and it is smaller and realer: this refusal is fatal, so a
+ * cloned repository carrying a `method` key denies service to a method the
+ * machine's owner selected for themselves. Falling back to the next layer and
+ * SAYING so would fix that — it renegotiates E1's frozen exit code, which is a
+ * story rather than a rider. Recorded in `deferred-work.md`.
  */
 export function assertMethodMayMount(selected: { readonly specifier: string; readonly layer: string }): void {
   if (selected.layer === 'project') {
     throw new PandaError(
       PANDA_ERROR_CODES.configurationUnusable,
-      `the 'project' layer selects the method '${selected.specifier}', and panda will not import a module a project directory named: running it is running that project's code. To use this methodology, remove the 'method' key from this project's '.panda/config.json' and name the module by ABSOLUTE path in your own machine document`,
+      `the 'project' layer selects the method '${selected.specifier}', and panda will not import a module a project directory named: running it is running that project's code. That key is a RECOMMENDATION and adopting it is yours to do. Remove 'method' from this project's '.panda/config.json' — this refusal stands while it is there, even for a method you selected machine-wide — then run \`panda swap method ${selected.specifier}\` from this directory`,
     )
   }
   // A RELATIVE SPECIFIER IN A MACHINE-WIDE DOCUMENT IS NOT A SELECTION.
