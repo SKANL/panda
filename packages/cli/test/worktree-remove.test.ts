@@ -20,6 +20,62 @@ import type { WorkspaceHandle } from '@panda/contracts'
 // the identical removal the killed process was running.
 
 const run = promisify(execFile)
+
+/**
+ * Blocks until the holder named in a removal intent is PROVABLY gone.
+ *
+ * THE SUITE USED TO BET ON THIS AND CI COLLECTED THE BET. `gates (24)` went red
+ * on `panda workspace remove` exiting 1 -- the sweep refusing, exactly as
+ * designed, because `isStale` (`workspace-git-worktree/src/ledger.ts:444`)
+ * asked `process.kill(intent.pid, 0)` and got an answer meaning "alive". A
+ * re-run of the SAME commit was green on both legs, which is what makes it a
+ * flaky gate rather than a regression, and a flaky gate makes every later red
+ * ambiguous.
+ *
+ * The premise these clauses state is "the holder is provably gone". What they
+ * waited for was the child's promise, which settles on stdio CLOSE -- a
+ * different event from the parent reaping the process, and on POSIX a killed
+ * child sits in the table until it is reaped. Never reproduced on Windows in
+ * five local runs, which has no such state at all; only ever seen on Linux CI.
+ * That asymmetry is the evidence, and it is not a proof: WSL was unusable on
+ * this machine, so the exact mechanism stays a hypothesis in `deferred-work.md`.
+ *
+ * It does not need to be settled, because the fix is correct either way: wait on
+ * the SAME value the production code reads, until it says what the premise
+ * claims. This is the second time this file has been fixed for betting instead
+ * of forcing a precondition -- the first is written up at the top of
+ * `interrupted-removal-child.ts`, in the same words.
+ */
+async function holderGone(intentPath: string): Promise<void> {
+  // Derived, not spelled twice: the message said "after 10s" as a literal, and a
+  // falsification run that shortened the budget printed a sentence that was
+  // false about its own test. A number a message repeats is a number it can lie
+  // about.
+  const budgetMs = 10_000
+  const deadline = Date.now() + budgetMs
+  for (;;) {
+    let pid: unknown
+    try {
+      pid = (JSON.parse(await readFile(intentPath, 'utf8')) as { pid?: unknown }).pid
+    } catch {
+      // The intent is gone or mid-write: nothing left to wait for.
+      return
+    }
+    if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return
+    try {
+      process.kill(pid, 0)
+    } catch {
+      // ESRCH -- the only answer that makes the premise true.
+      return
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `the killed holder (pid ${pid}) named by '${intentPath}' is still resolvable after ${budgetMs}ms`,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
 const GIT_TIMEOUT_MS = 180_000
 
 function capture(): RunCommandOptions & { out: string[]; err: string[] } {
@@ -207,7 +263,8 @@ describe('an interrupted removal is completed by the sweep, not compounded (AC2)
       expect(interrupted.interrupted.map((entry) => entry.id)).toEqual([victim.id])
 
       // ONE sweep, through the verb, and it calls the same removal the killed
-      // process was running.
+      // process was running -- after the premise it rests on is forced, not bet.
+      await holderGone(marker)
       const io = capture()
       const code = await runPanda(['workspace', 'remove'], { ...io, cwd: repoPath })
       expect(code, io.err.join('\n')).toBe(0)
@@ -243,6 +300,8 @@ describe('panda project doctor reports a leftover with a way out (D4 / E11)', ()
         join(repoPath, 'interrupted-at.json'),
       ]).catch(() => undefined)
       expect(existsSync(join(stateDir, 'records', `${victim.id}.removing.json`))).toBe(true)
+
+      await holderGone(join(stateDir, 'records', `${victim.id}.removing.json`))
 
       const before = capture()
       const code = await runPanda(['project', 'doctor'], { ...before, cwd: repoPath })
