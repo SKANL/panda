@@ -35,7 +35,17 @@ function provider(command: string): ToolProvider {
 }
 
 describe('provider ingestion projected end to end', () => {
-  it('re-projects byte-identically while the contribution is unchanged, and only then', async () => {
+  // An explicit budget, because the default 5s is a BET this test loses under
+  // load. It does real filesystem work AND, since M32.A, acquires a cross-process
+  // file lock with polling — while the live discovery suite runs in parallel and
+  // drives three vendor binaries for ~30s. Measured: green on one full-suite run
+  // and timed out on the next, with nothing between them but scheduling. A test
+  // that bets fails when it should not and passes when it should not.
+  //
+  // Per-test rather than package-wide (`workspace-git-worktree` raises its whole
+  // package to 60s because ALL of it drives real git): the other projection
+  // suites are fast, and raising them together would hide a genuine hang.
+  it('re-projects byte-identically while the contribution is unchanged, and only then', { timeout: 30_000 }, async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'panda-ingest-projection-'))
     tempRoots.push(homeDir)
     const store = new RegistryStore({ homeDir })

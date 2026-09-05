@@ -36,7 +36,12 @@ import type { SkillsTargetTraits } from '../src/targets/skills.ts'
 //                because claude falls back to the directory name. Membership of
 //                the parsed block, name AND description, is the real check.
 //   codex        `codex debug prompt-input` renders the model-visible prompt as
-//                JSON and names each skill with the absolute SKILL.md it loaded.
+//                JSON. It names each skill with a SHORT reference plus a table
+//                of skill roots (`r0` = <dir>), NOT an absolute path — it used
+//                to print the absolute path and the clause below matched it as
+//                a substring, which went red for several sessions and was read
+//                as an environmental "local-only Windows" failure. It was a
+//                vendor format change, and discovery never broke.
 //   opencode     `opencode debug skill` lists every skill with the exact
 //                `location` it came from.
 //
@@ -337,11 +342,33 @@ describe.skipIf(!codexAvailable)('codex discovers a skill panda materialised', (
       const { homeDir, root, cwd } = await plant(CODEX_SKILLS_TRAITS, 'codex')
       const answered = await run('codex', ['debug', 'prompt-input'], envFor(homeDir), cwd, RUN_TIMEOUT_MS)
       expect(answered.code, `codex debug prompt-input failed: ${answered.output.slice(0, 400)}`).toBe(0)
-      // The absolute path, not merely the name: this is the assertion that would
-      // fail if panda wrote a perfectly shaped skill one directory away.
-      expect(answered.output.replaceAll('\\\\', '/').replaceAll('\\', '/')).toContain(
-        join(root, PLANTED, 'SKILL.md').replaceAll('\\', '/'),
-      )
+      // THROUGH CODEX'S OWN ROOTS TABLE, and the rewrite is the finding.
+      //
+      // This clause used to match an absolute path as a substring. Codex now
+      // prints a roots table plus short references instead:
+      //
+      //     ### Skill roots
+      //     - `r0` = `C:/.../.codex/skills`
+      //     - panda-live-planted-skill: ... (file: r0/panda-live-planted-skill/SKILL.md)
+      //
+      // so the substring stopped being present while DISCOVERY STILL WORKED --
+      // measured by driving codex directly: exit 0, the planted skill listed
+      // under its own root. A vendor changed its output format; panda's
+      // materialisation did not break. The red was read as environmental for
+      // several sessions ("local-only Windows"), and it is neither.
+      //
+      // Resolving the alias against panda's own root is STRICTLY stronger than
+      // the substring it replaces: it proves codex resolved the reference to
+      // the directory PANDA WROTE rather than to one of the other roots it also
+      // scans, which is the property the old comment claimed and a substring
+      // could not establish.
+      const forward = (value: string) => value.replaceAll('\\', '/')
+      const output = forward(answered.output)
+      const alias = [...output.matchAll(/`(r\d+)` = `([^`]+)`/g)].find(
+        (match) => forward(match[2] ?? '') === forward(root),
+      )?.[1]
+      expect(alias, `codex listed no skill root equal to ${forward(root)}`).toBeDefined()
+      expect(output).toContain(`${alias}/${PLANTED}/SKILL.md`)
       // And the description, so a SKILL.md whose frontmatter is gone goes red.
       expect(answered.output).toContain(MARKER)
       expect(answered.output).not.toContain(CONTROL)
@@ -387,15 +414,34 @@ if (!opencodeAvailable) notMeasured.push('opencode (binary absent or could not a
 
 describe('what this run actually measured', () => {
   it('says so, so a green suite that measured nothing cannot pass for a verified one', () => {
+    // THREE states, not two, and AD-5 is the reason: unavailable is not failed.
+    // A binary that was present and whose clause went RED used to land in
+    // NEITHER bucket, so one real failure produced TWO red clauses and the
+    // second one said "the remaining cases did not report a reason" -- which
+    // reads as a hole in the accounting when the truth was "codex failed".
+    // Derived rather than pushed, because a clause that throws never reaches a
+    // line after the throw.
+    const failed = (
+      [
+        ['claude-code', claudeAvailable],
+        ['codex', codexAvailable],
+        ['opencode', opencodeAvailable],
+      ] as const
+    )
+      .filter(([name, available]) => available && !measured.some((entry) => entry.startsWith(name)))
+      .map(([name]) => `${name} (present, but its clause failed -- read that failure, not this line)`)
+
     const line =
       measured.length === 3
         ? `[M4.B skills] measured all 3 executors: ${measured.join(', ')}`
-        : `[M4.B skills] measured ${measured.length} of 3 executors -- ${notMeasured.join('; ') || 'the remaining cases did not report a reason'}`
+        : `[M4.B skills] measured ${measured.length} of 3 executors -- ${[...notMeasured, ...failed].join('; ') || 'the remaining cases did not report a reason'}`
     // `process.stdout.write`, not `console.log`: vitest's DEFAULT reporter — the
     // one `pnpm test` and therefore CI runs — swallows console output from a
     // passing test, so the honest line was invisible exactly where it matters,
     // on a runner that has none of the three binaries.
     process.stdout.write(`${line}\n`)
-    expect(measured.length + notMeasured.length).toBe(3)
+    // TOTAL over the three, including the failed state. Without `failed` this
+    // reddened alongside every real failure and hid its own meaning.
+    expect(measured.length + notMeasured.length + failed.length).toBe(3)
   })
 })
