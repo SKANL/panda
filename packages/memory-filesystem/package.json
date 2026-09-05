@@ -1,14 +1,16 @@
 {
   "name": "@panda/memory-filesystem",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The filesystem MemoryProvider: one directory, one format stamp, one append-only log.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/memory-filesystem"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

@@ -110,6 +110,27 @@ describe('panda run', () => {
     // --help must not spawn anything.
   })
 
+  it('answers --version with the version its own manifest carries, in both layouts', async () => {
+    // The first thing anyone types after `npm i -g @panda/cli`, and it did not
+    // exist until M37.A -- the absence surfaced the moment the consumer proof
+    // INSTALLED the packaged binary instead of only packing it, and the run
+    // printed the usage block and exited non-zero.
+    const io = capture()
+    const code = await runPanda(['--version'], { ...io, cwd: await tempCwd() })
+    expect(code).toBe(0)
+    // DERIVED from the manifest on disk, never a literal. A test that spells the
+    // number out has to be edited during a release, which is when it will be
+    // edited wrong -- and a hardcoded expectation would agree with a hardcoded
+    // constant while both were stale.
+    const manifest = JSON.parse(
+      readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'),
+    ) as { version: string }
+    expect(io.out.join('\n').trim()).toBe(manifest.version)
+    // CONTROL: the version must not be the usage block, which is what the binary
+    // printed before this flag existed.
+    expect(io.out.join('\n')).not.toContain('usage: panda run')
+  })
+
   it('rejects unrecognized -- flags as usage errors instead of prompt text', async () => {
     const io = capture()
     const code = await runPanda(['run', '--model', 'sonnet'], { ...io, cwd: await tempCwd() })

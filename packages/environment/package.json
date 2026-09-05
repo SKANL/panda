@@ -1,14 +1,16 @@
 {
   "name": "@panda/environment",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Executor detection, projection orchestration, and the diagnosis `panda doctor` prints.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/environment"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

@@ -131,7 +131,16 @@ afterAll(async () => {
   // Best-effort: on Windows a finished child's descendants can hold the
   // workspace for a while, and that must not fail the measurement.
   await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {})
-})
+  // An explicit budget, because vitest's default 10s hook timeout DEFEATS the
+  // `.catch` above: the catch handles `rm` refusing, and nothing handles the
+  // hook running out of time while it retries. Measured under a full `pnpm
+  // check`, where this package runs beside twelve others: the hook timed out at
+  // 10s and failed a run in which all 168 tests had already passed, and two
+  // standalone runs of the same suite were clean. Same shape as the
+  // `ingest-projection` bet M35.A gave a budget to -- a fixed timeout on real
+  // filesystem work is a wager on scheduling, and this one wagers on how long a
+  // finished vendor process keeps a handle open.
+}, 60_000)
 
 async function settleWithin(child: SpawnedChild, timeoutMs: number): Promise<SpawnOutcome | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined

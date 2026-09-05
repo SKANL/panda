@@ -37,6 +37,7 @@ interface Manifest {
   readonly name?: unknown
   readonly version?: unknown
   readonly private?: unknown
+  readonly publishConfig?: { readonly access?: unknown }
 }
 
 /** Every directory under `packages/` that actually holds sources. */
@@ -88,12 +89,29 @@ describe('the Contracts version together (NFR-8)', () => {
     expect(versionDisagreements(versions)).toEqual([])
   })
 
-  it('keeps `private` on every package, because publishing is a decision nobody has taken', () => {
-    // Not versioning, but the same file and the same failure mode: a package
-    // that quietly loses `private` becomes publishable by accident, and
-    // `spec-m3a-distribution-and-a-falsifiable-sdk-proof.md` lists removing it
-    // as Ask First. This says so where it fails rather than in prose.
-    expect(packages.filter((name) => manifestOf(name).private !== true)).toEqual([])
+  it('keeps every package PUBLISHABLE, because publishing is a decision that was taken', () => {
+    // This clause used to assert the OPPOSITE — `private === true` on all of
+    // them — and it was right to: `spec-m3a` listed removing `private` as Ask
+    // First, and this is what stopped it being removed by accident. The owner
+    // answered the question in M37.A, so the gate now pins the new decision
+    // instead of being deleted. A guarantee that changes direction still needs
+    // something that fails when it is violated.
+    //
+    // Two properties, each wrong on its own:
+    //   - `private` present at all -> npm refuses the publish outright, loudly.
+    //   - `publishConfig.access` not 'public' -> a SCOPED package defaults to
+    //     restricted, so the publish SUCCEEDS and the package is unusable. That
+    //     is the quiet one, and the reason it is asserted beside the loud one.
+    const problems = packages.flatMap((name) => {
+      const manifest = manifestOf(name)
+      const found: string[] = []
+      if (manifest.private !== undefined) found.push(`${name}: still carries \`private\``)
+      if (manifest.publishConfig?.access !== 'public') {
+        found.push(`${name}: publishConfig.access is ${String(manifest.publishConfig?.access)}, not 'public'`)
+      }
+      return found
+    })
+    expect(problems, problems.join('\n')).toEqual([])
   })
 
   it.each([

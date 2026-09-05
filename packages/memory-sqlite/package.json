@@ -1,14 +1,16 @@
 {
   "name": "@panda/memory-sqlite",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The embedded-SQLite MemoryProvider, on node:sqlite's DatabaseSync.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/memory-sqlite"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

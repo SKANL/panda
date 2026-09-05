@@ -1,14 +1,16 @@
 {
   "name": "@panda/registry",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The canonical environment Registry: scoped storage, portable bundles, and ingest from what is already installed.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/registry"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

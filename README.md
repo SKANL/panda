@@ -18,16 +18,31 @@ panda export / import      # move an environment between machines, secrets left 
 panda status               # what is installed, and how much quota is left where a vendor publishes it
 ```
 
-## Not published, and that is a decision
+## Install
 
-Every package is `private` at version `0.0.0` and nothing has been pushed to a
-registry. The source is public and MIT-licensed; publishing claims a name
-permanently and has not been decided.
+```bash
+npm i -g @panda/cli      # the binary
+npm i -D @panda/contracts # implementing a port
+```
 
-That does not mean it is unusable. `pnpm pack` produces real tarballs, and a CI
-job on every push installs them into a project **outside** this repository,
-offline, and runs a session there — so the packaged artifact is proven, not
-assumed. To consume panda today, pack from source and install the tarball.
+Thirteen packages ship under the `@panda` scope at one shared version. That is
+NFR-8's "Contracts semver together" taken literally: one semver decision per
+release rather than thirteen, so a breaking change is one number moving, not a
+coordination problem.
+
+`0.x` is deliberate. Semver permits breaking changes in a `0.x` minor, and panda
+is still changing its contracts; the version says so rather than a paragraph
+promising it.
+
+**The packaged artifact is proven, not assumed.** A CI job on every push packs
+all thirteen, installs them into a project **outside** this repository, offline,
+runs a real session there, installs the `@panda/cli` tarball and runs the binary
+a user would get. It also refuses to let a package stop being publishable — a
+manifest that regains `private`, drifts off the shared version, or loses
+`publishConfig.access` fails the build by name.
+
+Building from source still works and needs no registry: `pnpm pack` produces the
+same tarballs the release publishes.
 
 ## Build it
 

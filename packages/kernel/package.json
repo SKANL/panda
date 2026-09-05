@@ -1,14 +1,16 @@
 {
   "name": "@panda/kernel",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The plugin kernel: manifests, service graph, typed events and ordered teardown, with zero runtime dependencies.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/kernel"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

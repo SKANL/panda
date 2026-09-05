@@ -6,10 +6,15 @@ tell them whether they got it right.
 Everything an author needs is on this page and in the types this package exports.
 You should never have to read panda's source.
 
-> **Not on a registry.** Every package here is `private` and nothing has been
-> published. Install it by packing from source — `pnpm pack` in
-> `packages/contracts` produces a tarball, and `npm i ./panda-contracts-<version>.tgz`
-> installs it. See the repository root's `README.md` for why.
+```bash
+npm i -D @panda/contracts
+```
+
+> **This package alone is enough to implement a port**, and that is under test
+> rather than promised: a CI job installs this tarball into a project with
+> nothing else in it, compiles a `WorkspaceProvider` against the shipped
+> declarations, and runs the published clause suite from the archive. If a
+> dependency ever appeared here, that job fails.
 
 ## The ports
 

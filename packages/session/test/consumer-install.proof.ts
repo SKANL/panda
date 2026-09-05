@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -65,11 +66,26 @@ const PACKAGE_DIRS = [
 ] as const
 
 /**
+ * The version every workspace package carries, READ rather than written.
+ *
+ * This file hardcoded `0.0.0` in eleven places until M37.A, which was true for
+ * as long as nothing was publishable and became false the moment a version was
+ * chosen. A proof that has to be edited to survive a release is a proof that
+ * will be edited WRONG during one, so the number is derived from the manifests
+ * and the manifests are asserted to agree -- which is also NFR-8's "Contracts
+ * semver together" made executable rather than stated.
+ */
+const WORKSPACE_VERSION: string = JSON.parse(
+  readFileSync(join(repoRoot, 'packages', 'contracts', 'package.json'), 'utf8'),
+).version
+
+/**
  * The five packages `@panda/session` pulls in. Every one is declared as a DIRECT
  * `file:` dependency of the consumer project, exactly as a third party handed a
  * set of tarballs would have to declare them: the packed manifest says
- * `"@panda/contracts": "0.0.0"`, a version no registry has, and npm satisfies
- * that requirement from the top-level `file:` install of the same version.
+ * `"@panda/contracts": "<the workspace version>"`, which for an unreleased
+ * build is a version no registry has, and npm satisfies that requirement from
+ * the top-level `file:` install of the same version.
  *
  * This list used to feed `pnpm.overrides`, and that is what broke CI — see the
  * Spec Change Log #26. A missing entry here fails the install loudly, which is
@@ -83,6 +99,39 @@ const SESSION_DEPENDENCIES = [
   'workspace-git-worktree',
   'workspace-local',
 ] as const
+
+/**
+ * Every workspace package `@panda/cli` needs at RUNTIME, walked from the
+ * manifests rather than listed.
+ *
+ * Derived because the roster above it was hand-written and held nine of ten for
+ * a whole milestone. A closure that is typed out is a closure that goes stale
+ * the next time a package gains a dependency, and the failure would be this
+ * clause passing while the real one is bigger.
+ */
+function runtimeClosureOf(rootDir: string): readonly string[] {
+  const dirOf = new Map<string, string>()
+  for (const dir of PACKAGE_DIRS) {
+    const manifest = JSON.parse(
+      readFileSync(join(repoRoot, 'packages', dir, 'package.json'), 'utf8'),
+    ) as { name: string }
+    dirOf.set(manifest.name, dir)
+  }
+  const seen = new Set<string>()
+  const walk = (dir: string): void => {
+    if (seen.has(dir)) return
+    seen.add(dir)
+    const manifest = JSON.parse(
+      readFileSync(join(repoRoot, 'packages', dir, 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> }
+    for (const name of Object.keys(manifest.dependencies ?? {})) {
+      const child = dirOf.get(name)
+      if (child !== undefined) walk(child)
+    }
+  }
+  walk(rootDir)
+  return [...seen].sort()
+}
 
 /**
  * The one skip, and it announces itself. `process.stderr.write`, not
@@ -484,10 +533,10 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
         RUN_TIMEOUT_MS,
       )
       expect(packedResult.code, `pnpm pack failed for packages/${packageDir}:\n${packedResult.output}`).toBe(0)
-      packed.set(packageDir, await readTarball(join(tarballDir, `panda-${packageDir}-0.0.0.tgz`)))
+      packed.set(packageDir, await readTarball(join(tarballDir, `panda-${packageDir}-${WORKSPACE_VERSION}.tgz`)))
     }
 
-    const tarball = (packageDir: string): string => `file:./tarballs/panda-${packageDir}-0.0.0.tgz`
+    const tarball = (packageDir: string): string => `file:./tarballs/panda-${packageDir}-${WORKSPACE_VERSION}.tgz`
     await writeFile(
       join(projectDir, 'package.json'),
       `${JSON.stringify(
@@ -569,6 +618,29 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     expect([...PACKAGE_DIRS].sort()).toStrictEqual(workspacePackages)
   })
 
+  // The publishability gate is NOT here. It lives in
+  // `packages/contracts/test/versions.test.ts`, where the clause it replaced
+  // lived and where it fails in seconds under `pnpm check` instead of after a
+  // full pack-and-install. Asserting it in both places would be the duplication
+  // this repo's own review lens is named for.
+
+  it('ships the LICENSE it declares, in every tarball', async () => {
+    // All thirteen declared `"license": "MIT"` and NONE carried the file until
+    // M37.A. npm only auto-includes a LICENSE sitting in the packed directory,
+    // so the declaration was a claim with nothing behind it in the artifact a
+    // user receives.
+    const missing = [...packed.entries()]
+      .filter(([, entries]) => !entries.has('package/LICENSE'))
+      .map(([dir]) => dir)
+    // CONTROL, in the same shape as the clause: every tarball must carry its
+    // manifest, so a `packed` map that were empty or malformed fails here first.
+    const withoutManifest = [...packed.entries()]
+      .filter(([, entries]) => !entries.has('package/package.json'))
+      .map(([dir]) => dir)
+    expect(withoutManifest, `tarballs with no manifest: ${withoutManifest.join(', ')}`).toEqual([])
+    expect(missing, `tarballs with no LICENSE: ${missing.join(', ')}`).toEqual([])
+  })
+
   it('lives outside the repository, and resolves the package out of its own node_modules', () => {
     expect(relative(repoRoot, projectDir).startsWith(`..${sep}`)).toBe(true)
     // Not "a path that looks right" — the URL Node itself resolved. A symlink or
@@ -638,11 +710,11 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       },
     })
     expect(installedManifest['dependencies']).toEqual({
-      '@panda/adapter-cli': '0.0.0',
-      '@panda/contracts': '0.0.0',
-      '@panda/kernel': '0.0.0',
-      '@panda/workspace-git-worktree': '0.0.0',
-      '@panda/workspace-local': '0.0.0',
+      '@panda/adapter-cli': WORKSPACE_VERSION,
+      '@panda/contracts': WORKSPACE_VERSION,
+      '@panda/kernel': WORKSPACE_VERSION,
+      '@panda/workspace-git-worktree': WORKSPACE_VERSION,
+      '@panda/workspace-local': WORKSPACE_VERSION,
     })
   })
 
@@ -650,6 +722,77 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     const tsc = join(dirname(createRequire(import.meta.url).resolve('typescript')), 'tsc.js')
     const typechecked = await node([tsc, '-p', 'tsconfig.json'], projectDir, RUN_TIMEOUT_MS)
     expect(typechecked.code, `consumer typecheck failed:\n${typechecked.output}`).toBe(0)
+  })
+
+
+  it('installs the @panda/cli TARBALL alone and runs the binary a user would get', async () => {
+    // THE PRODUCT'S OWN PROOF, and this file named its absence itself: the pack
+    // clause above says a package can be "packed, proven well-formed, and still
+    // be unreachable from the binary", and `@panda/cli` was exactly that -- the
+    // only package with a `bin`, packed on every CI run and installed by
+    // nothing. Everything else here proves a LIBRARY consumer works; this is
+    // the only clause that proves a USER can get panda at all.
+    //
+    // Its own project, sharing only the tarball directory, because installing
+    // into the session consumer would prove nothing: the closure is already
+    // there and the claim is that npm resolves it from the CLI's own manifest.
+    // The CLI TARBALL PLUS ITS CLOSURE, declared as `file:` deps exactly as the
+    // session arm declares its five. Installing the cli tarball ALONE is not
+    // provable before the first publish and that was driven, not assumed: npm
+    // answers `ENOTCACHED ... request to registry.npmjs.org/@panda%2fenvironment`
+    // because the dependency it declares exists in no registry yet. What this
+    // proves is the half that CAN be proved today -- the packaged binary runs
+    // from tarballs and its closure is complete. Registry resolution is provable
+    // only after a publish, and pretending otherwise would be a green that means
+    // nothing.
+    const closure = runtimeClosureOf('cli')
+    // CONTROL: a closure walk that found only the root would satisfy the install
+    // trivially, because npm would have nothing to resolve.
+    expect(closure.length).toBeGreaterThan(5)
+    const cliDir = join(temporaryRoot, 'cli-only')
+    await mkdir(cliDir, { recursive: true })
+    await writeFile(
+      join(cliDir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: 'panda-cli-consumer',
+          version: '0.0.0',
+          private: true,
+          type: 'module',
+          dependencies: Object.fromEntries(
+            closure.map((dir) => [
+              JSON.parse(readFileSync(join(repoRoot, 'packages', dir, 'package.json'), 'utf8')).name,
+              `file:../project/tarballs/panda-${dir}-${WORKSPACE_VERSION}.tgz`,
+            ]),
+          ),
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    const installed = await run('npm', ['install', '--offline'], cliDir, RUN_TIMEOUT_MS)
+    expect(installed.code, `npm install of the cli tarball failed:\n${installed.output}`).toBe(0)
+
+    // The BINARY, through the bin link npm created -- not `node dist/...`.
+    // A `bin` entry that points at a file the tarball does not carry installs
+    // fine and fails here, which is the failure this clause is for.
+    const binary = join(cliDir, 'node_modules', '.bin', process.platform === 'win32' ? 'panda.cmd' : 'panda')
+    const version = await run(binary, ['--version'], cliDir, RUN_TIMEOUT_MS)
+    expect(version.code, `panda --version failed:\n${version.output}`).toBe(0)
+    // It prints the version it was PUBLISHED as, so a binary built from a
+    // manifest that was never bumped is visible here rather than at a user.
+    expect(version.output).toContain(WORKSPACE_VERSION)
+
+    // And a verb, because `--version` can be answered before any of panda's own
+    // code loads. `doctor` composes the kernel, the registry and the projection
+    // layer, so it fails if any of the ten closure packages did not arrive.
+    const doctor = await run(binary, ['doctor'], cliDir, RUN_TIMEOUT_MS)
+    // Exit 1 is a REPORT (findings exist on a machine with no panda state), not
+    // a failure; what must not happen is a module-resolution crash.
+    expect([0, 1], `panda doctor exited ${doctor.code}:\n${doctor.output}`).toContain(doctor.code)
+    expect(doctor.output).not.toContain('ERR_MODULE_NOT_FOUND')
+    expect(doctor.output).not.toContain('Cannot find package')
   })
 
   it('installs and imports @panda/contracts ALONE, and a port compiles against it', async () => {
@@ -667,7 +810,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
           version: '0.0.0',
           private: true,
           type: 'module',
-          dependencies: { '@panda/contracts': 'file:../project/tarballs/panda-contracts-0.0.0.tgz' },
+          dependencies: { '@panda/contracts': `file:../project/tarballs/panda-contracts-${WORKSPACE_VERSION}.tgz` },
         },
         null,
         2,
@@ -797,14 +940,14 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
 
   it('declares @panda/* dependency ranges the packed versions actually satisfy', () => {
     // The consumer installs every `@panda/*` as a direct `file:` dependency,
-    // and npm satisfies each packed `"0.0.0"` requirement from the top-level
+    // and npm satisfies each packed workspace-version requirement from the top-level
     // install of that same version. That is a real resolution, but it is a
     // LENIENT one: a manifest requiring `"@panda/kernel": "^9.9.9"` beside a
     // top-level kernel would still be handed the tarball here and would hand a
     // registry consumer an `ETARGET`. This is what stops that drift travelling.
     //
     // ponytail: exact equality, not semver range satisfaction. Every package is
-    // `0.0.0` and every declared range is that literal, so a range parser would
+    // one shared version and every declared range is that literal, so a range parser would
     // be a dependency bought for a case that does not exist yet. Upgrade path:
     // real ranges arrive with a versioning policy, and that is when a semver
     // check earns its place.

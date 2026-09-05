@@ -1,0 +1,69 @@
+name: Release
+
+# The tag is the trigger, and the gate runs AGAIN here rather than trusting the
+# push that made it. A tag can be moved, cut from a branch, or pushed by hand at
+# a commit CI never saw; publishing is the one action in this repository that
+# cannot be taken back, so it re-earns its green instead of inheriting one.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm provenance: the published tarball carries a signed link back to this
+      # workflow and this commit, so a consumer can check where it came from.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # version comes from package.json packageManager field
+
+      - uses: actions/setup-node@v4
+        with:
+          # The floor `engines` declares. A release built on a newer runtime than
+          # the one it claims to support is a claim nothing checked.
+          node-version: 24
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check (typecheck + test + lint)
+        run: pnpm check
+
+      - name: Build
+        run: pnpm build
+
+      # This is the release gate, not a formality. It packs all thirteen
+      # packages, installs them offline into projects OUTSIDE the repository,
+      # runs a real session, installs the `@panda/cli` tarball and runs the
+      # binary a user would get -- and it refuses a package that stopped being
+      # publishable. A broken tarball fails BEFORE the publish, which is the only
+      # moment it can still be fixed cheaply.
+      - name: Consumer-install proof
+        run: pnpm proof:consumer-install
+
+      # The tag is the source of truth for the version, and the manifests must
+      # already agree with it. A tag that does not match is a release someone
+      # cut without bumping, and it stops here rather than publishing a version
+      # nobody can reproduce from this commit.
+      - name: The tag and the manifests agree
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -p "require('./packages/contracts/package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match the workspace version ${VERSION}" >&2
+            exit 1
+          fi
+          echo "releasing ${VERSION}"
+
+      - name: Publish
+        run: pnpm publish -r --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'

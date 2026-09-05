@@ -1,14 +1,16 @@
 {
   "name": "@panda/workspace-git-worktree",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A WorkspaceProvider over real git worktrees: every workspace is a detached checkout panda can prove it made.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/workspace-git-worktree"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

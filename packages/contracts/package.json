@@ -1,14 +1,16 @@
 {
   "name": "@panda/contracts",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The ports a third party implements to extend panda, and the published suites that prove an implementation conforms.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
     "directory": "packages/contracts"
   },
-  "private": true,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"
