@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 export { PandaError, PANDA_ERROR_CODES, type PandaErrorCode } from './errors.ts'
 export {
   type StandardSchemaIssue,
@@ -158,3 +161,55 @@ export {
   type RunOptions,
   type SuiteReport,
 } from './contract-suite/index.ts'
+
+/**
+ * The version all thirteen packages carry, read from this package's manifest.
+ *
+ * WHY HERE. `panda --version` is what needs it, and `@panda/cli` is FORBIDDEN to
+ * read files at all -- eslint's thin-binding pin, whose comment records that a
+ * reviewer once planted a whole executor-selection capability inside `run.ts`
+ * and the entire gate stayed green, because owning it needed only `node:fs` and
+ * no new import specifier. The blunt rule is the point, so the CLI is not where
+ * this can live. `@panda/environment` was tried next and its OWN guard test
+ * refused it: that package may import `mkdir` and `stat` from the filesystem and
+ * nothing else. Both refusals are correct, and they are why this sits in the one
+ * package that owns version VOCABULARY -- `STORE_VERSION`, `BUNDLE_VERSION`,
+ * `PROJECTION_LEDGER_VERSION` are all here, and so is the lockstep gate in
+ * `test/versions.test.ts` that makes one package's version answer for all of
+ * them.
+ *
+ * THE COST, stated rather than hidden: `@panda/contracts` is the SDK leaf a port
+ * author installs alone, and it now performs one synchronous read at import.
+ * That is microseconds against NFR-9's 300ms cold-start budget, and it is a
+ * genuine widening of what this package does at load time. The alternative was
+ * widening an architectural pin for a convenience, which is the worse trade.
+ *
+ * WALKED rather than a fixed relative path, and that was measured: the two
+ * layouts this module runs in sit at different depths -- `src/` in development,
+ * `dist/src/` in the published tarball -- so a single `../package.json` resolves
+ * to the manifest in exactly one of them and to `dist/package.json`, a file no
+ * tarball carries, in the other. The wrong one is the one a USER gets.
+ */
+function readOwnVersion(): string {
+  let dir = dirname(fileURLToPath(import.meta.url))
+  for (let up = 0; up < 4; up += 1) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+        name?: string
+        version?: string
+      }
+      if (manifest.name === '@panda/contracts' && typeof manifest.version === 'string') {
+        return manifest.version
+      }
+    } catch {
+      // Not here, or not readable: keep walking.
+    }
+    dir = dirname(dir)
+  }
+  // Loud rather than a plausible '0.0.0'. A version this cannot find is a
+  // packaging defect, and inventing one hides it behind a number a user quotes
+  // into a bug report.
+  throw new Error('@panda/contracts could not read its own version from any package.json above this module')
+}
+
+export const PANDA_VERSION: string = readOwnVersion()

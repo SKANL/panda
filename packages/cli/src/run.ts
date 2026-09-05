@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { PANDA_VERSION } from '@panda/contracts'
 import {
   REGISTRY_ENTRY_TYPES,
   REMEDIATION_KINDS,
@@ -87,44 +85,7 @@ export interface RunCommandOptions
 const ADD_TYPES = `<${REGISTRY_ENTRY_TYPES.join('|')}>`
 const REMOVE_TYPES = `<${REMOVABLE_ENTRY_TYPES.join('|')}>`
 
-/**
- * The version the binary reports, READ from the manifest npm installed it from.
- *
- * Not a constant anyone has to remember to bump: a hand-written version is a
- * lie the first time a release does not touch this file, and a user typing
- * `panda --version` to open a bug report would quote it.
- *
- * `--version` did not exist until M37.A, and its absence surfaced the moment the
- * FR-29 proof first INSTALLED the packaged binary instead of only packing it --
- * the run printed the usage block and exited non-zero. It is the first thing
- * anyone types after `npm i -g @panda/cli`.
- */
-function readOwnVersion(): string {
-  // WALKED, not a fixed relative path, because the two layouts this module runs
-  // in sit at different depths: `src/run.ts` in development is one level below
-  // the package root, `dist/src/run.js` in the published tarball is two. A
-  // single `../package.json` is correct in exactly one of them -- measured, it
-  // resolves to `dist/package.json`, a file no tarball carries -- and the wrong
-  // one is the one a USER gets. Same shape as this repo's `chmod` clause that
-  // asserted 0o666 === 0o666 on Windows: a path that works where it was written
-  // and nowhere else.
-  let dir = dirname(fileURLToPath(import.meta.url))
-  for (let up = 0; up < 4; up += 1) {
-    const candidate = join(dir, 'package.json')
-    try {
-      const manifest = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string; version?: string }
-      if (manifest.name === '@panda/cli' && typeof manifest.version === 'string') return manifest.version
-    } catch {
-      // Not here, or not readable: keep walking.
-    }
-    dir = dirname(dir)
-  }
-  // Loud rather than a plausible '0.0.0'. A version this cannot find is a
-  // packaging defect, and inventing one hides it behind a number a user quotes.
-  throw new Error('@panda/cli could not read its own version from any package.json above this module')
-}
 
-export const PANDA_VERSION: string = readOwnVersion()
 
 export const USAGE = [
   'usage: panda run [--executor <id>] [--trace] "<prompt>"',
