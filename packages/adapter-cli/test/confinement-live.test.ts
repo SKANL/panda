@@ -260,11 +260,32 @@ async function probe(command: string): Promise<Availability> {
  * the variable is unset the opencode cases SKIP and say so, which is the same
  * typed-absence rule panda applies to its own diagnostics (AD-5).
  */
-const DEFAULT_OPENCODE_MODEL = 'opencode/muse-spark-1.2-contributor-free'
-
-const PINNED_MODEL: Readonly<Record<string, string>> = {
-  opencode: process.env['PANDA_LIVE_OPENCODE_MODEL']?.trim() || DEFAULT_OPENCODE_MODEL,
+const PINNED_MODEL: Readonly<Record<string, string | undefined>> = {
+  opencode: process.env['PANDA_LIVE_OPENCODE_MODEL']?.trim() || undefined,
 }
+
+/**
+ * The skip reason when nothing is pinned, and it NAMES the free option instead
+ * of choosing it.
+ *
+ * Until 2026-09-04 the line above read `|| DEFAULT_OPENCODE_MODEL`, pinning
+ * `opencode/muse-spark-1.2-contributor-free` -- while the comment directly
+ * above it said "No default is baked in ... the opencode cases SKIP and say
+ * so". The code did the opposite of the paragraph explaining it, and the
+ * variable is unset on an ordinary machine, so the suite pinned the training
+ * tier its own comment warns about.
+ *
+ * It was not carelessness. TWO RECORDED INTENTIONS were in conflict: the
+ * session handoff says to keep a free default so that "a contributor cloning
+ * the repo must not need a paid plan for the suite to behave", and this comment
+ * says nobody's prompts may go somewhere unchosen. Both survive here: the run
+ * SKIPS by default, and the skip tells a contributor exactly which free model
+ * to opt into. Choosing it for them is what neither intention asked for.
+ */
+const UNPINNED_OPENCODE =
+  'opencode is not pinned to a model, so nothing was measured. Set PANDA_LIVE_OPENCODE_MODEL to a model you are entitled to. ' +
+  'An unpinned run reaches the last resolution rule opencode applies and lands on the free tier, whose models TRAIN ON REQUEST DATA. ' +
+  'The free contributor model is `opencode/muse-spark-1.2-contributor-free`: it is named here rather than chosen for you.'
 
 function argvFor(traits: ExecutorTraits, prompt: string): string[] {
   const model = PINNED_MODEL[traits.executorId]
@@ -379,6 +400,10 @@ describe('executor confinement, measured against the real binaries', () => {
           notMeasured.push(`${traits.executorId} (${availability.reason})`)
           ctx.skip(`${traits.executorId} confinement skipped: ${availability.reason}`)
         }
+        if (traits.executorId === 'opencode' && PINNED_MODEL['opencode'] === undefined) {
+          notMeasured.push(`opencode (not pinned to a model)`)
+          ctx.skip(UNPINNED_OPENCODE)
+        }
 
         const workspace = await mkdtemp(join(sandbox, `ws-${traits.executorId}-`))
         // A unique name, so a stray file found anywhere is attributable to THIS
@@ -454,6 +479,10 @@ describe('executor confinement, measured against the real binaries', () => {
       if (!availability.available) {
         notMeasured.push(`opencode concurrency (${availability.reason})`)
         ctx.skip(`concurrent opencode confinement skipped: ${availability.reason}`)
+      }
+      if (PINNED_MODEL['opencode'] === undefined) {
+        notMeasured.push(`opencode concurrency (not pinned to a model)`)
+        ctx.skip(UNPINNED_OPENCODE)
       }
 
       const sessions = await Promise.all(

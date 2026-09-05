@@ -257,8 +257,31 @@ function verifyVendor(check: VendorCheck): void {
   })
 }
 
+/**
+ * The TERMINAL record of claude's stream, selected the way its SIBLINGS below
+ * already select theirs (`codexUsage` takes `turn.completed`).
+ *
+ * This file parsed whole stdout as ONE object until 2026-09-04, and it was
+ * right when it was written: claude's `--output-format json` emits exactly one
+ * object, and STILL DOES -- measured against `claude 2.1.261` on the day this
+ * was fixed, one line, `usage` and `modelUsage` both present. THE VENDOR NEVER
+ * DRIFTED. Panda changed the argv IT sends: `3209fc7` (M15.A) moved
+ * `CLAUDE_CODE_TRAITS` to `--output-format stream-json --verbose`, which is
+ * JSONL, and left this oracle parsing the old shape. Thirty-two commits shipped
+ * with the gate red on a developer machine, and the red was attributed first to
+ * Windows and then to the vendor. Both attributions were wrong.
+ *
+ * `'result'` is written here as a LITERAL and deliberately not imported from
+ * `CLAUDE_CODE_TRAITS.usageWhen`: the whole point of this oracle is to be
+ * independent of the trait, so that a trait that drifts disagrees with it
+ * instead of dragging it along.
+ */
+function claudeResult(stdout: string): Record<string, unknown> | undefined {
+  return jsonlRecords(stdout).find((record) => record['type'] === 'result')
+}
+
 function claudeUsage(stdout: string): Record<string, unknown> | undefined {
-  return (JSON.parse(stdout) as { usage?: Record<string, unknown> }).usage
+  return claudeResult(stdout)?.['usage'] as Record<string, unknown> | undefined
 }
 
 const CLAUDE_COMPONENTS = [
@@ -278,8 +301,8 @@ verifyVendor({
   // If the trait drifts to a different field, or claude renames one, the two
   // halves stop agreeing.
   expected: (stdout) => {
-    const parsed = JSON.parse(stdout) as { modelUsage?: Record<string, Record<string, unknown>> }
-    const models = Object.values(parsed.modelUsage ?? {})
+    const parsed = claudeResult(stdout) as { modelUsage?: Record<string, Record<string, unknown>> } | undefined
+    const models = Object.values(parsed?.modelUsage ?? {})
     if (models.length === 0) return undefined
     const perModel = models.map((model) =>
       numbersOf(model, ['inputTokens', 'outputTokens', 'cacheCreationInputTokens', 'cacheReadInputTokens']),
@@ -311,11 +334,19 @@ verifyVendor({
       },
     },
   ],
-  withoutUsage: (stdout) => {
-    const parsed = JSON.parse(stdout) as Record<string, unknown>
-    delete parsed['usage']
-    return JSON.stringify(parsed)
-  },
+  // Strips `usage` from the TERMINAL record and re-emits the stream, because
+  // the stream is what panda now receives. Stripping it from a whole-document
+  // parse would have thrown here rather than producing a usage-free run, which
+  // is a control that cannot fail for the reason it was written.
+  withoutUsage: (stdout) =>
+    jsonlRecords(stdout)
+      .map((record) => {
+        if (record['type'] !== 'result') return JSON.stringify(record)
+        const rest = { ...record }
+        delete rest['usage']
+        return JSON.stringify(rest)
+      })
+      .join('\n'),
 })
 
 function codexUsage(stdout: string): Record<string, unknown> | undefined {
