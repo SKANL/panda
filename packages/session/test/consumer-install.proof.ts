@@ -54,6 +54,7 @@ const PACKAGE_DIRS = [
   'contracts',
   'environment',
   'kernel',
+  'lock',
   'memory-filesystem',
   'memory-sqlite',
   'projection',

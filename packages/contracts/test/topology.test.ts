@@ -39,30 +39,38 @@ const packagesDir = join(import.meta.dirname, '..', '..')
  *   IS AD-1: `dependencyTier >= tier` is true for every possible import, so the
  *   kernel's empty allowlist needs no special case. The kernel's own guard keeps
  *   its richer clauses; this one agrees with it rather than replacing it.
- * - tier 1 — the spine's `IMPL["adapter-* · memory-* · workspace-* · projection"]`,
+ * - tier 1 — `@panda/lock`, a PRIMITIVE: the portable lockfile protocol, on
+ *   `@panda/contracts` and nothing else. It earns a tier of its own rather than
+ *   a place beside the implementations because two of them import it, and two
+ *   packages at one tier importing each other is exactly what "strictly"
+ *   downward forbids. The spine's `flowchart BT` predates it; the order below is
+ *   the executable statement, and this is the layer it gained when the lock
+ *   stopped being `@panda/registry`'s private machinery.
+ * - tier 2 — the spine's `IMPL["adapter-* · memory-* · workspace-* · projection"]`,
  *   plus `registry`, which is an implementation of the Registry ports in exactly
  *   the same sense and imports exactly the same set.
- * - tier 2 — the CONSUMER packages that compose implementations. The spine does
+ * - tier 3 — the CONSUMER packages that compose implementations. The spine does
  *   not name them individually; `packages/environment/test/guard.test.ts` does,
  *   in its own words: "`@panda/environment` is CONSUMER tier, exactly like
  *   `@panda/session`". Two consumer packages at the same tier may not import each
  *   other, which is what "strictly" downward buys.
- * - tier 3 — `CLI --> KERNEL`, `CLI --> CONTRACTS`, `CLI --> IMPL`: the CLI sits
+ * - tier 4 — `CLI --> KERNEL`, `CLI --> CONTRACTS`, `CLI --> IMPL`: the CLI sits
  *   on everything.
  */
 const TIER: Readonly<Record<string, number>> = {
   kernel: 0,
   contracts: 0,
-  'adapter-cli': 1,
-  'memory-filesystem': 1,
-  'memory-sqlite': 1,
-  projection: 1,
-  registry: 1,
-  'workspace-git-worktree': 1,
-  'workspace-local': 1,
-  environment: 2,
-  session: 2,
-  cli: 3,
+  lock: 1,
+  'adapter-cli': 2,
+  'memory-filesystem': 2,
+  'memory-sqlite': 2,
+  projection: 2,
+  registry: 2,
+  'workspace-git-worktree': 2,
+  'workspace-local': 2,
+  environment: 3,
+  session: 3,
+  cli: 4,
 }
 
 function collectSourceFiles(dir: string): string[] {
@@ -163,7 +171,7 @@ describe('package topology is strictly downward (AD-2)', () => {
   it('flags an upward import, a sibling import, and an unknown package', () => {
     // Every failure mode of the matrix, driven rather than described.
     expect(violationsFor('contracts', ['session'])).toEqual([
-      '@panda/contracts (tier 0) imports @panda/session (tier 2) — imports must be strictly downward',
+      '@panda/contracts (tier 0) imports @panda/session (tier 3) — imports must be strictly downward',
     ])
     expect(violationsFor('contracts', ['kernel'])).toEqual([
       '@panda/contracts (tier 0) imports @panda/kernel (tier 0) — imports must be strictly downward',
@@ -174,9 +182,17 @@ describe('package topology is strictly downward (AD-2)', () => {
       '@panda/kernel (tier 0) imports @panda/contracts (tier 0) — imports must be strictly downward',
     ])
     expect(violationsFor('cli', ['not-a-package'])).toEqual([
-      '@panda/cli (tier 3) imports @panda/not-a-package, which the declared order does not name',
+      '@panda/cli (tier 4) imports @panda/not-a-package, which the declared order does not name',
     ])
     expect(violationsFor('brand-new', ['contracts'])).toEqual(['@panda/brand-new has no declared tier'])
+    // The tier the lock's extraction added, driven in both directions: the
+    // primitive may reach contracts and nothing above it, and the two packages
+    // that import it are above it rather than beside it.
+    expect(violationsFor('lock', ['contracts'])).toEqual([])
+    expect(violationsFor('lock', ['registry'])).toEqual([
+      '@panda/lock (tier 1) imports @panda/registry (tier 2) — imports must be strictly downward',
+    ])
+    expect(violationsFor('projection', ['contracts', 'lock'])).toEqual([])
     // And the shape that must NOT fire, or every row above proves only that the
     // function returns strings.
     expect(violationsFor('cli', ['contracts', 'kernel', 'session'])).toEqual([])

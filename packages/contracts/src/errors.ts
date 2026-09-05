@@ -86,6 +86,21 @@ export const PANDA_ERROR_CODES = {
   // exact failure executor selection exists to remove — it runs a DIFFERENT
   // agent than the user configured, silently, wearing the disguise of robustness.
   configurationUnusable: 'PANDA_CONFIGURATION_UNUSABLE',
+  // `@panda/lock`, the portable lockfile protocol, owned by no domain. Its two
+  // codes are NEUTRAL on purpose: the lock was extracted out of `@panda/registry`
+  // so `@panda/projection` could serialize its ledger across PROCESSES without
+  // the `projection -> registry` edge AD-2 forbids, and a shared leaf that kept
+  // raising `PANDA_REGISTRY_*` would have leaked one package's vocabulary out of
+  // the other's API — the exact AD-7 breach that made the edge unacceptable the
+  // first time. Every consumer translates these two at its own boundary.
+  //
+  // `lockContention`: someone else holds the lock and the bounded wait expired.
+  // Nothing was written and nothing is broken — the fix is to wait or to find
+  // the holder, which the message names as `pid@host`.
+  lockContention: 'PANDA_LOCK_CONTENTION',
+  // `lockUnavailable`: the lockfile itself could not be created, written, read,
+  // stat-ed or released. The medium failed, not the protocol.
+  lockUnavailable: 'PANDA_LOCK_UNAVAILABLE',
   registryInvalidEntry: 'PANDA_REGISTRY_INVALID_ENTRY',
   registryContention: 'PANDA_REGISTRY_CONTENTION',
   registryStoreUnavailable: 'PANDA_REGISTRY_STORE_UNAVAILABLE',
@@ -112,6 +127,14 @@ export const PANDA_ERROR_CODES = {
   projectionTargetFailed: 'PANDA_PROJECTION_TARGET_FAILED',
   projectionTraitsInvalid: 'PANDA_PROJECTION_TRAITS_INVALID',
   projectionLedgerUnavailable: 'PANDA_PROJECTION_LEDGER_UNAVAILABLE',
+  // Another panda PROCESS holds the ledger's cross-process lock and the bounded
+  // wait expired. Its own code rather than `projectionLedgerUnavailable`,
+  // because nothing is unavailable and nothing is damaged: the document is
+  // intact, panda simply did not get its turn, and the fix is to wait or to
+  // stop the other run — not to repair a file. A caller told the LEDGER was
+  // unavailable goes looking at a healthy document for a fault that is not
+  // there.
+  projectionLedgerContention: 'PANDA_PROJECTION_LEDGER_CONTENTION',
   projectionNativeUnclaimable: 'PANDA_PROJECTION_NATIVE_UNCLAIMABLE',
   // `runProjection` was asked to run in a mode it does not have. Coded, and
   // rejected rather than defaulted, because the one thing that mode decides is

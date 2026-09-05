@@ -4,6 +4,8 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError, PROJECTION_LEDGER_VERSION, isRecord } from '@panda/contracts'
 import type { ProjectionLedgerRecord, ProjectionWarning } from '@panda/contracts'
+import { acquireLock } from '@panda/lock'
+import type { StaleLockBreak } from '@panda/lock'
 import { atomicWriteText } from './atomic-write.ts'
 import { strictFaultLocation } from './document-fault.ts'
 
@@ -134,6 +136,16 @@ export interface ProjectionLedgerOptions {
   readonly homeDir?: string
   /** Overrides the whole path; the default is `<home>/.panda/projection-ledger.json`. */
   readonly filePath?: string
+  /** Bounded wait for the cross-process lock before a coded CONTENTION refusal. */
+  readonly lockTimeoutMs?: number
+  /**
+   * Observes every stale/corrupt-lock break performed on the way to a write.
+   *
+   * A break is panda deciding that a lock left behind by a dead process no
+   * longer protects anything. That decision is REPORTED rather than silent,
+   * because it is the one moment where the outer boundary steps aside.
+   */
+  readonly onStaleLockBreak?: (broken: StaleLockBreak) => void
 }
 
 /**
@@ -207,22 +219,56 @@ function detailOf(error: unknown): string {
  * every caller that constructs its own — `initMachine` and `initProject` run
  * concurrently, for instance — gets its own object over the SAME file.
  *
- * ponytail: in-process only, so two panda PROCESSES can still interleave and
- * lose a claim. A cross-process lock cannot be borrowed from @panda/registry
- * (AD-2/AD-7: that edge was removed in Story 2.8 and leaked PANDA_REGISTRY_*
- * codes out of a projection API); extracting a leaf lock package with its own
- * codes is the upgrade path, recorded in deferred-work.md.
+ * This is the INNER boundary and it covers one process. The outer one is the
+ * `<ledger>.lock` file taken in `#locked`, which covers two panda PROCESSES —
+ * that gap used to lose 10 of 24 claims across three measured rounds, silently,
+ * with every writer exiting 0. The queue is kept rather than replaced: it is
+ * cheaper than a lockfile and it is exactly right for its own case, so the file
+ * lock only ever contends between processes.
  */
 const LEDGER_QUEUES = new Map<string, Promise<unknown>>()
+
+/**
+ * The leaf lock's neutral codes, translated at this package's boundary (AD-7).
+ * `@panda/lock` may not raise a projection code and this package may not
+ * publish a `PANDA_LOCK_*` one, so the mapping lives exactly here.
+ */
+function asLedgerFailure(filePath: string, error: unknown): unknown {
+  if (!(error instanceof PandaError)) return error
+  if (error.code === PANDA_ERROR_CODES.lockContention) {
+    return new PandaError(
+      PANDA_ERROR_CODES.projectionLedgerContention,
+      `projection ledger '${filePath}' is held by another panda process: ${error.message}`,
+      { cause: error },
+    )
+  }
+  if (error.code === PANDA_ERROR_CODES.lockUnavailable) {
+    return new PandaError(
+      PANDA_ERROR_CODES.projectionLedgerUnavailable,
+      `projection ledger '${filePath}' could not be locked for writing: ${error.message}`,
+      { cause: error },
+    )
+  }
+  return error
+}
 
 export class ProjectionLedger {
   readonly filePath: string
   readonly #queueKey: string
+  readonly #lockPath: string
+  readonly #lockTimeoutMs: number | undefined
+  readonly #onStaleLockBreak: ((broken: StaleLockBreak) => void) | undefined
 
   constructor(options: ProjectionLedgerOptions = {}) {
     this.filePath = options.filePath ?? join(options.homeDir ?? homedir(), '.panda', LEDGER_FILE_NAME)
     const resolved = resolveOwnedPath(this.filePath)
     this.#queueKey = process.platform === 'win32' ? resolved.toLowerCase() : resolved
+    // Beside the document, like the registry store's. Derived from the RESOLVED
+    // path so two processes spelling the same ledger differently — a relative
+    // argv, a different drive-letter case on win32 — still contend for one file.
+    this.#lockPath = `${resolved}.lock`
+    this.#lockTimeoutMs = options.lockTimeoutMs
+    this.#onStaleLockBreak = options.onStaleLockBreak
   }
 
   /** Never throws: the three states are what callers must distinguish. */
@@ -372,7 +418,7 @@ export class ProjectionLedger {
 
   /** The read-modify-write queue, keyed by ledger path and shared by instances. */
   async #queued(work: () => Promise<void>): Promise<void> {
-    const run = (LEDGER_QUEUES.get(this.#queueKey) ?? Promise.resolve()).then(work)
+    const run = (LEDGER_QUEUES.get(this.#queueKey) ?? Promise.resolve()).then(() => this.#locked(work))
     // The chain must survive a rejection, or one failed target would deadlock
     // every later one.
     const settled = run.catch(() => undefined)
@@ -386,11 +432,47 @@ export class ProjectionLedger {
     }
   }
 
+  /**
+   * The OUTER boundary: the whole read-modify-write happens while this process
+   * holds `<ledger>.lock`, so a sibling PROCESS cannot read the document, be
+   * overtaken, and persist a set that never saw the other's claim. Merging alone
+   * never closed that window — the read is what interleaves, and only mutual
+   * exclusion over the read AND the write can close it.
+   *
+   * `finally { release }` mirrors `RegistryStore.#persist` exactly: the lock is
+   * given back whether the write succeeded or threw, and a release failure is
+   * itself coded rather than swallowed.
+   */
+  async #locked(work: () => Promise<void>): Promise<void> {
+    // The lockfile is created inside this directory; on a fresh machine nothing
+    // has created ~/.panda yet, and an exclusive create into a missing directory
+    // is an ENOENT the lock would report as an unavailable medium.
+    try {
+      await mkdir(dirname(this.filePath), { recursive: true })
+    } catch (error) {
+      throw new PandaError(
+        PANDA_ERROR_CODES.projectionLedgerUnavailable,
+        `projection ledger '${this.filePath}' could not be written: ${detailOf(error)}`,
+        { cause: error },
+      )
+    }
+    const lock = await acquireLock(this.#lockPath, {
+      timeoutMs: this.#lockTimeoutMs,
+      onStaleBreak: this.#onStaleLockBreak,
+    }).catch((error: unknown) => {
+      throw asLedgerFailure(this.filePath, error)
+    })
+    try {
+      await work()
+    } finally {
+      await lock.release().catch((error: unknown) => {
+        throw asLedgerFailure(this.filePath, error)
+      })
+    }
+  }
+
   async #persist(records: readonly ProjectionLedgerRecord[]): Promise<void> {
     try {
-      // The temp file is created inside this directory; on a fresh machine
-      // nothing has created ~/.panda yet.
-      await mkdir(dirname(this.filePath), { recursive: true })
       await atomicWriteText(this.filePath, serialiseLedgerDocument(records))
     } catch (error) {
       throw new PandaError(

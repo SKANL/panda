@@ -1,11 +1,11 @@
 {
-  "name": "@panda/registry",
+  "name": "@panda/lock",
   "version": "0.0.0",
-  "description": "The canonical environment Registry: scoped storage, portable bundles, and ingest from what is already installed.",
+  "description": "The portable lockfile protocol: machine-scoped write serialization for any package, with neutral codes and no sibling dependency.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
-    "directory": "packages/registry"
+    "directory": "packages/lock"
   },
   "private": true,
   "license": "MIT",
@@ -27,10 +27,7 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*",
-    "@panda/kernel": "workspace:*",
-    "@panda/lock": "workspace:*",
-    "jsonc-parser": "^3.3.1"
+    "@panda/contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
