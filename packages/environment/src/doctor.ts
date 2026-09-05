@@ -60,6 +60,16 @@ export type DiagnosisFindingKind =
   /** Panda's own registry document exists and cannot be read. */
   | 'registry-unreadable'
   /**
+   * The registry document was written by a build NEWER than this one.
+   *
+   * Not `registry-unreadable`, and the split is the whole of spec M31.A: that
+   * kind's exit says *"Repair or remove that document"*, and this document is
+   * healthy — following the instruction destroys intact data. Panda knows both
+   * version numbers, so it can name the one action that works. Routed on the
+   * store's CODE, never on its message text (AD-7).
+   */
+  | 'registry-version-ahead'
+  /**
    * A stored entry whose TYPE panda has retired (story M4.E).
    *
    * Not `unprojectable`: that one is about an entry panda still declares which
@@ -168,6 +178,7 @@ export const RESOLUTION: Record<DiagnosisFindingKind, string> = {
   'not-initialised': "`panda init` (or `panda project init`) creates panda's state here; doctor creates nothing",
   'no-executor': 'panda projects into configurations that already exist and creates none, so `panda init` would write nothing here and exits 2',
   'registry-unreadable': 'panda never replaces a registry document it cannot read; `panda init` fails on it and projects nothing, so no entry is deleted from any vendor file',
+  'registry-version-ahead': 'the document is not damaged: this build is simply older than the one that wrote it, and panda refuses a format it does not speak rather than reading half of it. `panda init` fails on it and projects nothing, so no entry is deleted from any vendor file and not one byte of the document is changed',
   'retired-type': 'panda reads and lists the entry but hands it to no target, so projecting again neither writes nor removes anything for it; panda never deletes a registry entry by itself, because removing one is a decision and a decision is yours',
   'ledger-damaged': 'panda leaves the ledger exactly as it is and claims nothing it cannot read; until it is readable again panda reports its own entries as foreign and touches none of them',
   'projection-warning': 'panda surfaced this from the projection run and resolves none of it by itself; `panda init` runs through the same condition',
@@ -268,6 +279,15 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
     detail:
       "Repair or remove that document. Panda's ownership ledger is a different file and is not involved, so nothing it already claims is at risk while you do",
   },
+  // The ONE action, and it is the opposite of the sibling's above. The premise —
+  // the document is intact and panda refuses it whole — is `RESOLUTION`'s
+  // sentence; this half carries only what the user does about it, which is the
+  // part that other one cannot give.
+  'registry-version-ahead': {
+    by: 'outside-panda',
+    detail:
+      'Install a panda at least as new as the build that wrote it; the detail above names both versions. The document itself needs nothing done to it, and deleting it or editing it back into a shape this older build accepts is how the entries in it get lost',
+  },
   'not-writable': {
     by: 'outside-panda',
     detail: 'panda cannot grant itself permission; the location has to become writable',
@@ -360,6 +380,12 @@ const SEVERITY: Record<DiagnosisFindingKind, DiagnosisFindingSeverity> = {
   'not-initialised': 'problem',
   'no-executor': 'problem',
   'registry-unreadable': 'problem',
+  // A PROBLEM, and the `unprojectable` test is what earns it: the light CAN be
+  // got back to green, by installing the build the document was already written
+  // for. It also names a condition OF THIS MACHINE — an older panda in front of
+  // a newer document — rather than a standing architectural fact, so it fires on
+  // approximately no runs instead of on every one (spec M4.A's test, passed).
+  'registry-version-ahead': 'problem',
   // A PROBLEM rather than info, and the exit code is again the reason. The test
   // is whether a user can get the light back to green: `unprojectable` is info
   // because no target can express the entry and deleting one the user
@@ -408,6 +434,15 @@ export const DIAGNOSIS_FINDING_KINDS = Object.keys(RESOLUTION) as readonly Diagn
  */
 const WARNING_KIND: Partial<Record<PandaErrorCode, DiagnosisFindingKind>> = {
   [PANDA_ERROR_CODES.projectionLedgerUnavailable]: 'ledger-damaged',
+}
+
+/**
+ * How a failed registry read is read, keyed on the store's own CODE — never on
+ * its message text (AD-7). Every code the store can raise that is NOT listed
+ * here is a document panda could not read, which is what the fallback says.
+ */
+const REGISTRY_ERROR_KIND: Partial<Record<PandaErrorCode, DiagnosisFindingKind>> = {
+  [PANDA_ERROR_CODES.registryStoreVersionMismatch]: 'registry-version-ahead',
 }
 
 /** What happened to ONE executor's configuration, in the read-only reading. */
@@ -596,9 +631,11 @@ async function findingsFor(
   const findings: DiagnosisFinding[] = []
   if (registryError !== undefined) {
     findings.push(
-      finding('registry-unreadable', `${registryError.code}: ${registryError.message}`, {
-        filePath: diagnosis.registryPath,
-      }),
+      finding(
+        REGISTRY_ERROR_KIND[registryError.code] ?? 'registry-unreadable',
+        `${registryError.code}: ${registryError.message}`,
+        { filePath: diagnosis.registryPath },
+      ),
     )
   } else if (!(await isFile(diagnosis.registryPath))) {
     // The REGISTRY DOCUMENT is the initialised signal, not panda's directory:

@@ -140,6 +140,7 @@ describe('canonical registry entry envelopes', () => {
     expect(PANDA_ERROR_CODES.registryInvalidEntry).toBe('PANDA_REGISTRY_INVALID_ENTRY')
     expect(PANDA_ERROR_CODES.registryContention).toBe('PANDA_REGISTRY_CONTENTION')
     expect(PANDA_ERROR_CODES.registryStoreUnavailable).toBe('PANDA_REGISTRY_STORE_UNAVAILABLE')
+    expect(PANDA_ERROR_CODES.registryStoreVersionMismatch).toBe('PANDA_REGISTRY_STORE_VERSION_MISMATCH')
     expect(PANDA_ERROR_CODES.registryInactive).toBe('PANDA_REGISTRY_INACTIVE')
   })
 })

@@ -343,6 +343,20 @@ export class RegistryStore {
     }
     if (!isRecord(parsed)) throw unavailable('validate', path, 'store document is not an object')
     const foundVersion = parsed['version']
+    // Two codes because two different things are wrong, and only one of them is
+    // the user's cue to upgrade — the same split, and the same wording,
+    // `parseBundle` reached for a bundle. A document written by a NEWER build is
+    // intact data this build cannot classify, and the instruction its owner used
+    // to get ("repair or remove that document") destroys a healthy registry.
+    // Everything else — a version below this one, a string, a fraction, an
+    // absent field — is a document this build cannot recognise at all and keeps
+    // the old code. The store refuses either way: version by REJECT is unchanged.
+    if (typeof foundVersion === 'number' && Number.isInteger(foundVersion) && foundVersion > STORE_VERSION) {
+      throw new PandaError(
+        PANDA_ERROR_CODES.registryStoreVersionMismatch,
+        `registry store validate failed on '${path}': it was written by a newer panda (store schema version ${foundVersion}); this build reads version ${STORE_VERSION}`,
+      )
+    }
     if (foundVersion !== STORE_VERSION) {
       throw unavailable(
         'validate',

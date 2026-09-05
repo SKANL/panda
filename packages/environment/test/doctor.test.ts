@@ -713,6 +713,67 @@ describe('panda-s own two state files are diagnosed the same way', () => {
     // `panda init` still refuses outright: it must not project against it.
     await expect(initMachine({ homeDir })).rejects.toMatchObject({ code: 'PANDA_REGISTRY_STORE_UNAVAILABLE' })
   })
+
+  it('does not call a document a NEWER panda wrote broken, and never tells its owner to remove it', async () => {
+    // The defect (spec M31.A): one kind covered damage AND a document written by
+    // a build this one is older than, so `panda doctor` printed "Repair or
+    // remove that document" at a perfectly healthy registry. Following that
+    // instruction destroys it.
+    const { root, homeDir } = await fixture()
+    await withClaude(homeDir)
+    const registryPath = join(homeDir, '.panda', 'registry.json')
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
+    const stored = JSON.parse(await readFile(registryPath, 'utf8')) as Record<string, unknown>
+    await writeFile(registryPath, JSON.stringify({ ...stored, version: 2 }), 'utf8')
+    const before = await snapshot(root)
+
+    const diagnosis = await diagnose({ homeDir })
+
+    const found = only(diagnosis, 'registry-version-ahead')
+    expect(found).toMatchObject({ filePath: registryPath, severity: 'problem' })
+    // Routed on the CODE, which is the whole of AD-7 here.
+    expect(found.detail).toContain('PANDA_REGISTRY_STORE_VERSION_MISMATCH')
+    // BOTH numbers, so the user knows which build to install and which they have.
+    // Spelled with their surrounding words: a bare `version 1` is a substring of
+    // `version 12` and would pass against a document it never read.
+    expect(found.detail).toContain('store schema version 2')
+    expect(found.detail).toContain('this build reads version 1')
+    // The instruction the split exists to stop printing at an intact document.
+    // Case-INSENSITIVE: an assertion that only a capital R would fail is a bet,
+    // and `registry-unreadable`'s own sentence is what it has to stay away from.
+    expect(`${found.detail} ${found.resolution}`.toLowerCase()).not.toContain('repair or remove')
+    expect(found.resolution).toContain('Install a panda at least as new')
+    // Nothing else changed: it is still a refusal, still writes nothing, and the
+    // damaged-document kind is NOT also reported.
+    expect(diagnosis.findings.filter((row) => row.kind === 'registry-unreadable')).toEqual([])
+    expect(diagnosis.targets).toEqual([])
+    expect(await snapshot(root)).toEqual(before)
+    await expect(initMachine({ homeDir })).rejects.toMatchObject({
+      code: 'PANDA_REGISTRY_STORE_VERSION_MISMATCH',
+    })
+  })
+
+  it('CONTROL: a version this build does not recognise is still the damaged-document kind', async () => {
+    // Without this the row above measures the happy arm alone. A version BELOW
+    // this build's, a string and a fraction are documents panda cannot read at
+    // all -- there is no newer build to install for them -- so they keep
+    // `registry-unreadable` and its repair-or-remove exit.
+    for (const version of [0, '1', 1.5]) {
+      const { homeDir } = await fixture()
+      await withClaude(homeDir)
+      const registryPath = join(homeDir, '.panda', 'registry.json')
+      await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
+      const stored = JSON.parse(await readFile(registryPath, 'utf8')) as Record<string, unknown>
+      await writeFile(registryPath, JSON.stringify({ ...stored, version }), 'utf8')
+
+      const diagnosis = await diagnose({ homeDir })
+
+      expect(only(diagnosis, 'registry-unreadable').detail, String(version)).toContain(
+        'PANDA_REGISTRY_STORE_UNAVAILABLE',
+      )
+      expect(diagnosis.findings.filter((row) => row.kind === 'registry-version-ahead'), String(version)).toEqual([])
+    }
+  })
 })
 
 describe('every finding names what it is about', () => {
@@ -725,6 +786,9 @@ describe('every finding names what it is about', () => {
   const PANDA_STATE: DiagnosisFindingKind[] = [
     'not-initialised',
     'registry-unreadable',
+    // Panda's own registry document again, and the same file: a document a NEWER
+    // build wrote is about that document and no executor.
+    'registry-version-ahead',
     'ledger-damaged',
     'retired-type',
     // Panda's own store again: the file it names is the TREE an interrupted

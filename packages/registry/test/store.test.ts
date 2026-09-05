@@ -275,20 +275,45 @@ describe('RegistryStore', () => {
     }
   })
 
-  it('rejects a future-version store document instead of guessing', async () => {
+  /** One store, one document, one read. The two arms below differ only in `version`. */
+  async function refuseVersion(version: unknown): Promise<PandaError> {
     const dirs = await makeDirs()
     const pandaDir = join(dirs.homeDir, '.panda')
     await mkdir(pandaDir)
-    await writeFile(join(pandaDir, 'registry.json'), JSON.stringify({ version: 999, entries: [] }), 'utf8')
-
+    await writeFile(join(pandaDir, 'registry.json'), JSON.stringify({ version, entries: [] }), 'utf8')
     try {
       await makeStore(dirs).get('mcp-server', 'anything')
-      expect.unreachable()
     } catch (error) {
-      expect((error as PandaError).code).toBe(PANDA_ERROR_CODES.registryStoreUnavailable)
-      expect((error as PandaError).message).toContain('999')
-      expect((error as PandaError).message).toContain(String(1))
+      return error as PandaError
     }
+    expect.unreachable()
+  }
+
+  it('rejects a future-version store document as a NEWER panda-s, naming both versions', async () => {
+    // Rejection is unchanged (version by REJECT, never migrate); what changed is
+    // that the refusal is CODED apart from a damaged document, because the two
+    // have opposite actions -- install a newer panda, versus repair or remove
+    // the file. `panda doctor` used to print the latter at this intact document.
+    const error = await refuseVersion(999)
+    expect(error.code).toBe(PANDA_ERROR_CODES.registryStoreVersionMismatch)
+    expect(error.message).toContain('written by a newer panda')
+    expect(error.message).toContain('store schema version 999')
+    expect(error.message).toContain('this build reads version 1')
+  })
+
+  it.each([
+    ['a version BELOW this build-s', 0],
+    ['a version that is a string', '1'],
+    ['a version that is fractional', 1.5],
+    ['a version that is absent', undefined],
+  ])('CONTROL: refuses %s as unrecognised rather than as newer', async (_label, version) => {
+    // Without these the row above measures the happy arm alone: every one of
+    // these is a document this build cannot read AT ALL, and no newer panda
+    // exists to install for it.
+    const error = await refuseVersion(version)
+    expect(error.code).toBe(PANDA_ERROR_CODES.registryStoreUnavailable)
+    expect(error.message).not.toContain('newer panda')
+    expect(error.message).toContain('this build expects 1')
   })
 
   it('never flows hand-edited malformed entries out of get/list', async () => {

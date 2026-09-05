@@ -89,6 +89,18 @@ export const PANDA_ERROR_CODES = {
   registryInvalidEntry: 'PANDA_REGISTRY_INVALID_ENTRY',
   registryContention: 'PANDA_REGISTRY_CONTENTION',
   registryStoreUnavailable: 'PANDA_REGISTRY_STORE_UNAVAILABLE',
+  // A store document stamped with a format version NEWER than this build reads.
+  // Its own code, for the same reason `contractMemoryStoreVersionMismatch` above
+  // has one: the document is INTACT and the action is different — install a
+  // panda at least as new as the one that wrote it, versus repair or remove the
+  // file. Told only that the store is unavailable, the owner of a perfectly
+  // healthy registry follows the repair instruction and destroys it.
+  //
+  // Version by REJECT, never migrate, is unchanged; only what panda SAYS about
+  // the refusal changes. A version BELOW this build's, a string, a fraction or
+  // an absent field is not this — that document is one this build cannot
+  // recognise at all, and keeps `registryStoreUnavailable`.
+  registryStoreVersionMismatch: 'PANDA_REGISTRY_STORE_VERSION_MISMATCH',
   registryInactive: 'PANDA_REGISTRY_INACTIVE',
   registryProviderRejected: 'PANDA_REGISTRY_PROVIDER_REJECTED',
   registryOriginConflict: 'PANDA_REGISTRY_ORIGIN_CONFLICT',
