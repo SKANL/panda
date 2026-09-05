@@ -170,7 +170,7 @@ and `packages/cli/test/guard.test.ts` encode import restrictions no manifest
 expresses, and a previous story put code in the wrong package by trusting the
 manifest.
 
-The ledger is read through whatever `@panda/registry` is already permitted to
+The ledger is read through whatever `@skanl/panda-registry` is already permitted to
 reach. If its guard test forbids reaching the ledger, that is the answer: the
 exclusion moves to the caller and the source takes an injected predicate. **Do
 not weaken a guard test to make this compile** — file a renegotiation.

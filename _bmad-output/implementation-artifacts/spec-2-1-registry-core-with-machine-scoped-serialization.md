@@ -16,7 +16,7 @@ context:
 
 **Problem:** There is no single source of truth for the environment: tools, skills, MCP servers, and profiles have nowhere canonical to live, and nothing prevents two panda processes from silently clobbering each other's writes.
 
-**Approach:** Canonical entry envelopes in `@panda/contracts` (tool | skill | mcp-server | profile) plus a Registry service mounted as the first REAL kernel plugin: scoped storage (global | project | agent), machine-scoped write serialization via a portable lockfile protocol, atomic persistence, and typed contention errors naming the holder.
+**Approach:** Canonical entry envelopes in `@skanl/panda-contracts` (tool | skill | mcp-server | profile) plus a Registry service mounted as the first REAL kernel plugin: scoped storage (global | project | agent), machine-scoped write serialization via a portable lockfile protocol, atomic persistence, and typed contention errors naming the holder.
 
 ## Boundaries & Constraints
 
@@ -43,7 +43,7 @@ context:
 
 - `packages/contracts/src/registry.ts` -- NEW: entry envelopes (tool/skill/mcp-server/profile), scope vocabulary, Standard Schema definitions, extensions-namespace rule
 - `packages/contracts/src/errors.ts` -- codes (`PANDA_REGISTRY_*`: INVALID_ENTRY, CONTENTION, ...) + parity pins
-- `packages/registry/` -- NEW package `@panda/registry`: store layout, lockfile protocol, serialized mutation API, kernel plugin manifest wiring (first real plugin on the Story 1.2 lifecycle)
+- `packages/registry/` -- NEW package `@skanl/panda-registry`: store layout, lockfile protocol, serialized mutation API, kernel plugin manifest wiring (first real plugin on the Story 1.2 lifecycle)
 - `packages/registry/test/` -- suites incl. multi-process contention test (spawn child script taking the lock)
 - Root scaffold -- new package wired (glob covers it)
 

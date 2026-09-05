@@ -2,7 +2,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { parse as parseJsonc } from 'jsonc-parser'
 import type { ParseError } from 'jsonc-parser'
-import { PANDA_ERROR_CODES, PandaError, isRecord, projectionTargetLocation } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError, isRecord, projectionTargetLocation } from '@skanl/panda-contracts'
 import type {
   ProjectionClaim,
   ProjectionLedgerRecord,
@@ -12,7 +12,7 @@ import type {
   RemediationKind,
   RemediationOutcome,
   RemediationRefusal,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import { atomicWriteText } from './atomic-write.ts'
 import { hasFileChangedSince, resolveProjectionMode } from './engine.ts'
 import type { NativeFileSnapshot, ProjectionMode } from './engine.ts'
@@ -82,7 +82,7 @@ export interface LegacyBlockLocation {
 interface RemediationBase {
   /**
    * Defaults to `'inspect'` — the OPPOSITE default from `runProjection`, and the
-   * same one `remediate` in `@panda/environment` uses.
+   * same one `remediate` in `@skanl/panda-environment` uses.
    *
    * Two exported layers of one operation with opposite defaults is how the
    * describe-before-act guarantee becomes true of the command and false of the

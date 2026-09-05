@@ -63,17 +63,17 @@ NFR-10: Provenance & auditability — memory entries carry writer/workspace/time
 
 From ARCHITECTURE-SPINE.md (implementation-shaping requirements):
 - Monorepo pnpm 11 layout packages/* exactly as Structural Seed (kernel, contracts, adapter-claude/codex/opencode, memory-fs/sqlite, workspace-local/git, projection, cli).
-- @panda/kernel: zero runtime dependencies; generic container; never imports @panda/contracts or implementations (AD-1/AD-2).
+- @skanl/panda-kernel: zero runtime dependencies; generic container; never imports @skanl/panda-contracts or implementations (AD-1/AD-2).
 - Runtime consumption mirrors package topology: derived-state generators consume only canonical-state inputs (AD-2 tightened).
 - Registry write serialization machine-scoped advisory lock keyed to store path; typed contention error (AD-4).
 - Observability log = kernel-owned core service started before any plugin (AD-4).
 - All persistent mutations of panda-owned state flow through owning component's serialized API; plugin direct-writes prohibited and detected by doctor (AD-4).
-- Canonical Registry entry envelopes (tool/skill/mcp-server/profile) owned by @panda/contracts, enforced by Registry service; provider payloads only under reserved `extensions` namespace (AD-4).
+- Canonical Registry entry envelopes (tool/skill/mcp-server/profile) owned by @skanl/panda-contracts, enforced by Registry service; provider payloads only under reserved `extensions` namespace (AD-4).
 - On-disk record = creation-of-record for materialized entities; Registry mirror same transaction; recovery sweep after crash (AD-6).
 - Content-hash identity derivation; permanent name retirement (AD-6).
-- Typed error hierarchy with stable PANDA_<DOMAIN>_<REASON> codes in @panda/contracts (AD-7).
+- Typed error hierarchy with stable PANDA_<DOMAIN>_<REASON> codes in @skanl/panda-contracts (AD-7).
 - Event bus: synchronous ordered fan-out; lifecycle-transition events join handler continuations; no synchronous re-emit during fan-out; shutdown drains handlers before unwinding (AD-8).
-- Config deep-merge with versioned namespaced sentinel grammar owned by @panda/contracts; unknown/legacy sentinels classify as Drift (AD-9).
+- Config deep-merge with versioned namespaced sentinel grammar owned by @skanl/panda-contracts; unknown/legacy sentinels classify as Drift (AD-9).
 - Kernel tool-call interception pipeline (pre→guard→around→post); declarative policy enforcement only (AD-10).
 - Liveness hooks injected ONLY via projection engine merge path (conventions row).
 - Credential-mode safety policy validated at config-resolution time (conventions row).
@@ -118,7 +118,7 @@ FR-27: Epic 5 - environment status
 FR-28: Epic 5 - method hot-swap
 FR-29: Epic 2 - SDK surface parity (added 2026-08-25; see prds/.../addendum-prd.md).
   Every capability the binary exposes is reachable by importing packages, without
-  @panda/cli. Satisfied incrementally, one command at a time. Story 2.0 satisfies it
+  @skanl/panda-cli. Satisfied incrementally, one command at a time. Story 2.0 satisfies it
   for `panda run`.
 
 ## Epic List
@@ -197,11 +197,11 @@ So that any adapter implementation can be validated against the same clauses.
 
 **Acceptance Criteria:**
 
-**Given** the ExecutorAdapter port defined in @panda/contracts with Standard Schema interfaces
+**Given** the ExecutorAdapter port defined in @skanl/panda-contracts with Standard Schema interfaces
 **When** a stub adapter implements it partially
 **Then** the contract suite fails naming each violated clause
 **And** the workspace-local provider passes the workspace contract clauses (create/acquire/release/dispose, persistent state across sessions)
-**And** @panda/kernel remains zero-dependency and imports neither contracts nor implementations (FR-6 partial, FR-9 infra, FR-17, AD-1, AD-2)
+**And** @skanl/panda-kernel remains zero-dependency and imports neither contracts nor implementations (FR-6 partial, FR-9 infra, FR-17, AD-1, AD-2)
 
 ### Story 1.5: First execution — Claude Code driven headlessly
 
@@ -230,7 +230,7 @@ So that there is exactly one source of truth for my environment.
 
 **Acceptance Criteria:**
 
-**Given** entry envelope schemas owned by @panda/contracts
+**Given** entry envelope schemas owned by @skanl/panda-contracts
 **When** any entry is registered
 **Then** the Registry service validates against the canonical envelope and rejects invalid payloads with coded errors
 **And** provider-specific payloads are accepted only under the reserved `extensions` namespace
@@ -247,7 +247,7 @@ So that sharing tools requires zero manual config editing.
 **Given** a native Claude settings file containing non-panda content
 **When** projection runs twice
 **Then** outputs are byte-identical and foreign content is preserved byte-for-byte
-**And** panda-owned sections carry versioned namespaced sentinels from @panda/contracts
+**And** panda-owned sections carry versioned namespaced sentinels from @skanl/panda-contracts
 **And** a malformed native file fails only the Claude target with a per-target error (FR-12, FR-13, AD-9)
 
 ### Story 2.3: Codex and OpenCode targets via trait data
@@ -331,7 +331,7 @@ So that agent context survives sessions without corruption risk.
 
 **Acceptance Criteria:**
 
-**Given** the MemoryProvider port in @panda/contracts
+**Given** the MemoryProvider port in @skanl/panda-contracts
 **When** entries are written from two different workspace ids
 **Then** provenance (writer id, workspace id, timestamp) is preserved and queryable
 **And** overwrite-style operations raise a typed unsupported error
@@ -647,9 +647,9 @@ So that the kernel is genuinely usable from my own project and not only through 
 
 **Acceptance Criteria:**
 
-**Given** a third-party Node project that has installed panda's packages but NOT `@panda/cli`
+**Given** a third-party Node project that has installed panda's packages but NOT `@skanl/panda-cli`
 **When** it composes a session — workspace, executor, prompt, cancellation
 **Then** it obtains the same result envelope `panda run` produces, with no code copied from the CLI
-**And** `@panda/cli` contains only argv parsing, output formatting and exit-code mapping — a test fails if composition logic returns to it
+**And** `@skanl/panda-cli` contains only argv parsing, output formatting and exit-code mapping — a test fails if composition logic returns to it
 **And** the executor invocation flows through the Story 1.7 interception pipeline, so the no-bypass guarantee stops being kernel-scoped and holds end to end
 **And** `panda run` behaves identically: same envelope, same exit codes, same cancellation on interrupt, same workspace cleanup (FR-7, FR-17, NFR-2)

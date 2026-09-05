@@ -1,5 +1,5 @@
 {
-  "name": "@panda/memory-sqlite",
+  "name": "@skanl/panda-memory-sqlite",
   "version": "0.1.0",
   "description": "The embedded-SQLite MemoryProvider, on node:sqlite's DatabaseSync.",
   "repository": {
@@ -29,7 +29,7 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*"
+    "@skanl/panda-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

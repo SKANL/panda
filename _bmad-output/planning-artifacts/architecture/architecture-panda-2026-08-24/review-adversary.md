@@ -18,13 +18,13 @@ The spine is sound at its altitude (paradigm, topology, trust model are well-cho
 
 **ADs implicated:** AD-1, AD-4, AD-2 · **Also touches:** FR-13b, FR-13c
 
-**Construction A:** `@panda/contracts` defines the canonical `ToolDefinition`/`SkillEntry` schema interfaces; the Registry *service* validates every incoming entry against those schemas at registration time. Providers submit data; the store enforces shape.
+**Construction A:** `@skanl/panda-contracts` defines the canonical `ToolDefinition`/`SkillEntry` schema interfaces; the Registry *service* validates every incoming entry against those schemas at registration time. Providers submit data; the store enforces shape.
 
-**Construction B:** Because AD-1 forbids the Kernel from importing `@panda/contracts`, the Registry is a *generic* container: validation is delegated to the providing plugin (via its manifest config schema). A third-party `ToolProvider` therefore registers entries whose payload is `{ kind: "tool", mcp: { url, headers } }` while a first-party one registers `{ kind: "tool", transport: { type: "stdio", command } }`. Both registrations succeed; neither violated any AD.
+**Construction B:** Because AD-1 forbids the Kernel from importing `@skanl/panda-contracts`, the Registry is a *generic* container: validation is delegated to the providing plugin (via its manifest config schema). A third-party `ToolProvider` therefore registers entries whose payload is `{ kind: "tool", mcp: { url, headers } }` while a first-party one registers `{ kind: "tool", transport: { type: "stdio", command } }`. Both registrations succeed; neither violated any AD.
 
 **Why they're incompatible:** The projection engine and `doctor` consume "Registry entries" generically. Built against A's assumption, they crash or silently drop B's entries; built against B, they cannot render A's. Contract-test suites (AD-7) assert codes per contract but there is no contract that says *who validates the shared stored shape*.
 
-**Proposed AD:** The canonical envelope for every Registry entry kind (tool/skill/mcp-server/profile), its schema, and the validation point (contracts-owned schemas enforced by the Registry service, never by the contributing provider) are defined in `@panda/contracts`, with provider-specific payloads permitted only under a reserved `extensions` namespace.
+**Proposed AD:** The canonical envelope for every Registry entry kind (tool/skill/mcp-server/profile), its schema, and the validation point (contracts-owned schemas enforced by the Registry service, never by the contributing provider) are defined in `@skanl/panda-contracts`, with provider-specific payloads permitted only under a reserved `extensions` namespace.
 
 ---
 
@@ -76,7 +76,7 @@ The spine is sound at its altitude (paradigm, topology, trust model are well-cho
 
 **Construction A:** The projection plugin consumes only the Registry read-port and resolved config; outputs are a pure function of canonical state, so FR-12 idempotence holds globally.
 
-**Construction B:** The projection plugin *soft*-consumes `MemoryProvider` (AD-5 explicitly supports soft reads) and injects memory-derived context keys into each Executor's projection — e.g., stamping recent-workspace summaries into agent settings. Package topology is untouched: `projection` imports only `@panda/contracts` (AD-2 governs package imports, not the runtime service graph). Vendor config is still written via a ProjectionTarget merge (AD-4 honored letter-for-letter).
+**Construction B:** The projection plugin *soft*-consumes `MemoryProvider` (AD-5 explicitly supports soft reads) and injects memory-derived context keys into each Executor's projection — e.g., stamping recent-workspace summaries into agent settings. Package topology is untouched: `projection` imports only `@skanl/panda-contracts` (AD-2 governs package imports, not the runtime service graph). Vendor config is still written via a ProjectionTarget merge (AD-4 honored letter-for-letter).
 
 **Why they're incompatible:** Projections are no longer a function of Registry state alone: re-projection after a memory append produces different bytes, breaking the byte-idempotence guarantee FR-12 tests encode, and Bundle export/import (F6) cannot reproduce projections on a machine whose memory differs. AD-2's strictly-downward *imports* do not stop this; only a runtime consumption rule would.
 
@@ -102,13 +102,13 @@ The spine is sound at its altitude (paradigm, topology, trust model are well-cho
 
 **ADs implicated:** AD-9, AD-2, AD-4 · **Also touches:** FR-12, FR-14, PRD §9 assumption on sentinel survival
 
-**Construction A:** One versioned sentinel grammar lives in `@panda/contracts` (e.g., `PANDA:<v>:BEGIN … PANDA:<v>:END`), with each ProjectionTarget supplying only a format encoding (JSONC vs TOML comment syntax); drift detection compares against known versions.
+**Construction A:** One versioned sentinel grammar lives in `@skanl/panda-contracts` (e.g., `PANDA:<v>:BEGIN … PANDA:<v>:END`), with each ProjectionTarget supplying only a format encoding (JSONC vs TOML comment syntax); drift detection compares against known versions.
 
 **Construction B:** Each ProjectionTarget invents its own marker syntax appropriate to its format — the natural reading of FR-13's "format-specific merge logic isolated behind the target interface." Two third-party targets independently choose colliding marker strings; a native config carries sentinels written by an older panda major that nobody current recognizes. Meanwhile AD-4 speaks of "ownership markers/sentinels" for *vendor configs* and AD-9 of "ownership sentinels" for *layered config keys* — two distinct vocabularies, and no AD assigns an owner to either.
 
-**Why they're incompatible:** Doctor (FR-14) must classify every section of every native config as panda-owned or foreign; under B it cannot — unrecognized sentinels are indistinguishable from vendor content, so foreign content gets overwritten (violating byte-for-byte preservation *by accident*) or panda content is reported as permanent Drift. AD-2 makes this worse: a third-party target installs with only `@panda/contracts`, so its private vocabulary is invisible to everything else by design.
+**Why they're incompatible:** Doctor (FR-14) must classify every section of every native config as panda-owned or foreign; under B it cannot — unrecognized sentinels are indistinguishable from vendor content, so foreign content gets overwritten (violating byte-for-byte preservation *by accident*) or panda content is reported as permanent Drift. AD-2 makes this worse: a third-party target installs with only `@skanl/panda-contracts`, so its private vocabulary is invisible to everything else by design.
 
-**Proposed AD:** `@panda/contracts` owns a single versioned, namespaced sentinel grammar whose per-format encodings are the only thing ProjectionTargets may implement, sentinels from unknown/legacy versions classify as Drift requiring explicit migration, and the layered-config and vendor-config sentinel systems are explicitly distinguished in the AD text.
+**Proposed AD:** `@skanl/panda-contracts` owns a single versioned, namespaced sentinel grammar whose per-format encodings are the only thing ProjectionTargets may implement, sentinels from unknown/legacy versions classify as Drift requiring explicit migration, and the layered-config and vendor-config sentinel systems are explicitly distinguished in the AD text.
 
 ---
 

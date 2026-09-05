@@ -91,7 +91,7 @@ in five places as preserving state, with a PUBLISHED clause
 (`dispose-idempotent-preserves-state`) asserting it, so making it the removal
 would invert a shipped contract — and removal is already deliberately off the
 port, as `removeWorktree(stateDir, id)`, a free function the CLI calls by name.
-The local twin belongs in `@panda/workspace-local`, leaving `@panda/contracts`
+The local twin belongs in `@skanl/panda-workspace-local`, leaving `@skanl/panda-contracts`
 and its nine clauses untouched.
 
 What makes it dangerous is measured, not feared: the local provider hands out
@@ -173,7 +173,7 @@ not build.
   wrote". Driven, it adds three mechanisms rather than removing a restriction: a
   record, a reader inside the mount guard, and a package edge —
   `packages/session/test/guard.test.ts:51-57` pins session's dependencies to
-  five packages and `@panda/projection` is not one of them. And the record would
+  five packages and `@skanl/panda-projection` is not one of them. And the record would
   prove the wrong thing: it hashes the config STRING, while the danger is the
   module BYTES, which any `git pull` replaces. AD-6's records authorise REMOVAL
   (`contracts/src/projection.ts:70-76`), never EXECUTION. direnv's public regret
@@ -225,7 +225,7 @@ Everything else on this page is reversible and can be decided by whoever is
 working. This one cannot, and no roadmap should pretend otherwise.
 
 What is already true if the answer is yes: the FR-29 proof packs and installs
-every tarball offline outside the repo on every push, `@panda/contracts` ships a
+every tarball offline outside the repo on every push, `@skanl/panda-contracts` ships a
 README whose code blocks CI compiles and runs, all twelve manifests carry
 `description` and `repository`, and a gate refuses a version that disagrees with
 its siblings or a package that quietly loses `private`.

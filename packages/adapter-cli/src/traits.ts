@@ -1,6 +1,6 @@
-import { PandaError, PANDA_ERROR_CODES, USAGE_ABSENCE_REASONS } from '@panda/contracts'
-import { isRecord, usageAbsence, usageObservation, validateRunRequest } from '@panda/contracts'
-import type { ExecutorAdapter, ResultEnvelope, RunRequest, UsageReport, UsageWindow } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES, USAGE_ABSENCE_REASONS } from '@skanl/panda-contracts'
+import { isRecord, usageAbsence, usageObservation, validateRunRequest } from '@skanl/panda-contracts'
+import type { ExecutorAdapter, ResultEnvelope, RunRequest, UsageReport, UsageWindow } from '@skanl/panda-contracts'
 import { createNodeChildSpawner, routesThroughCmdShim } from './node-child-spawner.ts'
 import type { ChildProcessSpawner, SpawnedChild, SpawnOutcome } from './spawn-seam.ts'
 

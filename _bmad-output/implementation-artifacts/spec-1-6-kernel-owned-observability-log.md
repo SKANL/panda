@@ -23,7 +23,7 @@ context:
 
 ## Boundaries & Constraints
 
-**Always:** the log is a required input to the plugin load path, so no code path can load a plugin without one — proven mechanically, not by comment; records are append-only and never mutated or reordered; a write failure produces a TYPED degraded state that is observable by the caller and counts dropped records, and the kernel keeps running; the record shape is closed and versioned; writes are serialised so two records can never interleave; secrets never enter a record, and the record shape gives them nowhere to hide; `@panda/kernel` keeps ZERO runtime dependencies and still never imports `@panda/contracts` (AD-1); error codes come from `KERNEL_ERROR_CODES`.
+**Always:** the log is a required input to the plugin load path, so no code path can load a plugin without one — proven mechanically, not by comment; records are append-only and never mutated or reordered; a write failure produces a TYPED degraded state that is observable by the caller and counts dropped records, and the kernel keeps running; the record shape is closed and versioned; writes are serialised so two records can never interleave; secrets never enter a record, and the record shape gives them nowhere to hide; `@skanl/panda-kernel` keeps ZERO runtime dependencies and still never imports `@skanl/panda-contracts` (AD-1); error codes come from `KERNEL_ERROR_CODES`.
 
 **Ask First:** any log rotation, retention or size policy; any sink other than the in-process one this story defines; emitting log records onto the scoped event bus.
 

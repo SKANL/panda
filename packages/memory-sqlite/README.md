@@ -1,13 +1,13 @@
-# @panda/memory-sqlite
+# @skanl/panda-memory-sqlite
 
 The embedded-SQLite `MemoryProvider`, on `node:sqlite`'s `DatabaseSync`.
 
 **No new dependency.** `node:sqlite` is the platform, measured working on Node 24.14.1 and Node
-26.8.1 — the exact two versions CI runs. Panda ships exactly one non-`@panda/*` runtime dependency
-in total (`jsonc-parser`, in `@panda/projection`) and this package does not make it two.
+26.8.1 — the exact two versions CI runs. Panda ships exactly one non-`@skanl/panda-*` runtime dependency
+in total (`jsonc-parser`, in `@skanl/panda-projection`) and this package does not make it two.
 
 ```ts
-import { SqliteMemoryProvider } from '@panda/memory-sqlite'
+import { SqliteMemoryProvider } from '@skanl/panda-memory-sqlite'
 
 const provider = await SqliteMemoryProvider.open({ databasePath: '/tmp/panda-memory.db' })
 await provider.save({
@@ -41,4 +41,4 @@ MUST survive the confinement.
 
 `packages/contracts/src/contract-suite/memory-clauses.ts` holds the clauses, and
 `test/contract.test.ts` runs every one of them against this provider. The identical array runs
-against `@panda/memory-filesystem`; that swap is FR-16 and scenario S2.
+against `@skanl/panda-memory-filesystem`; that swap is FR-16 and scenario S2.

@@ -1,4 +1,4 @@
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { CLAUDE_CODE_TRAITS, createClaudeCodeAdapter } from './executors/claude-code.ts'
 import { CODEX_TRAITS, createCodexAdapter } from './executors/codex.ts'
 import { OPENCODE_TRAITS, createOpenCodeAdapter } from './executors/opencode.ts'
@@ -35,11 +35,11 @@ const SHIPPED: readonly ShippedExecutor[] = [
  * codex's traits to opencode's constructor — so `packages/session/test/executors.test.ts`
  * builds every entry and asserts the ADAPTER answers with the key it was found under.
  *
- * It lives HERE rather than in `@panda/session` since M3.B: the executor plugin
+ * It lives HERE rather than in `@skanl/panda-session` since M3.B: the executor plugin
  * turns a configured id into an adapter, and a plugin whose package could not
  * perform its own lookup would have to be handed a constructor by whoever
  * mounted it — which is the direct construction this story exists to remove.
- * `@panda/session` re-exports the whole set, so its callers see no move.
+ * `@skanl/panda-session` re-exports the whole set, so its callers see no move.
  */
 export const EXECUTOR_CATALOGUE: ReadonlyMap<string, ShippedExecutor> = new Map(
   SHIPPED.map((executor) => [executor.traits.executorId, executor]),

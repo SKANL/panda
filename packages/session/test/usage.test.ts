@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { USAGE_ABSENCE_REASONS, usageObservation } from '@panda/contracts'
-import type { UsageReport } from '@panda/contracts'
+import { USAGE_ABSENCE_REASONS, usageObservation } from '@skanl/panda-contracts'
+import type { UsageReport } from '@skanl/panda-contracts'
 import { readUsageReports, recordUsageObservation, usageObservationsPath } from '../src/usage.ts'
 
 // The recorded side of D7: the run writes the reading down, the report reads it.

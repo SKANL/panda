@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { RegistryStore } from '../src'
 
 // Real cross-process contention: a child node process takes the registry lock

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
-import type { WorkspaceCapability, WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
+import type { WorkspaceCapability, WorkspaceHandle, WorkspaceProvider } from '@skanl/panda-contracts'
 
 const LOCAL_CAPABILITIES: readonly WorkspaceCapability[] = ['read', 'write']
 

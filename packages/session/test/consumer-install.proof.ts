@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, posix, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { gunzipSync } from 'node:zlib'
-import { WORKSPACE_CLAUSES } from '@panda/contracts'
+import { WORKSPACE_CLAUSES } from '@skanl/panda-contracts'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 /**
@@ -39,7 +39,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
  * test file. Here it is typechecked, linted and runnable by wiring that already
  * exists, and it sits beside the in-workspace proof it makes falsifiable.
  * It IMPORTS nothing from any package (AD-2 is about imports and manifests):
- * every `@panda/*` name below is a directory to pack or a tarball to read.
+ * every `@skanl/panda-*` name below is a directory to pack or a tarball to read.
  */
 
 const PROBE_TIMEOUT_MS = 60_000
@@ -80,10 +80,27 @@ const WORKSPACE_VERSION: string = JSON.parse(
 ).version
 
 /**
- * The five packages `@panda/session` pulls in. Every one is declared as a DIRECT
+ * The filename `pnpm pack` produces, DERIVED from the manifest name.
+ *
+ * It used to be spelled `panda-<dir>-<version>.tgz` and that was correct for as
+ * long as every package was `@panda/<dir>`. The scope moved to `@skanl` when
+ * `@panda` turned out to belong to someone else, and pnpm names a tarball after
+ * the PACKAGE, not the directory -- so every one of those literals became wrong
+ * at once. Derived here so the next rename costs nothing.
+ */
+function tarballName(packageDir: string): string {
+  const manifest = JSON.parse(
+    readFileSync(join(repoRoot, 'packages', packageDir, 'package.json'), 'utf8'),
+  ) as { name: string }
+  return `${manifest.name.replace('@', '').replace('/', '-')}-${WORKSPACE_VERSION}.tgz`
+}
+
+
+/**
+ * The five packages `@skanl/panda-session` pulls in. Every one is declared as a DIRECT
  * `file:` dependency of the consumer project, exactly as a third party handed a
  * set of tarballs would have to declare them: the packed manifest says
- * `"@panda/contracts": "<the workspace version>"`, which for an unreleased
+ * `"@skanl/panda-contracts": "<the workspace version>"`, which for an unreleased
  * build is a version no registry has, and npm satisfies that requirement from
  * the top-level `file:` install of the same version.
  *
@@ -101,7 +118,7 @@ const SESSION_DEPENDENCIES = [
 ] as const
 
 /**
- * Every workspace package `@panda/cli` needs at RUNTIME, walked from the
+ * Every workspace package `@skanl/panda-cli` needs at RUNTIME, walked from the
  * manifests rather than listed.
  *
  * Derived because the roster above it was hand-written and held nine of ten for
@@ -156,7 +173,7 @@ interface Ran {
  * `shell: true` is needed for `pnpm` on win32 (it is a `.CMD` shim), and it is
  * exactly why the status is what gets read: with a shell in between, "a process
  * started" only says a SHELL started. The sibling live smoke in
- * `@panda/projection` shipped a probe that asked the weaker question and let CI
+ * `@skanl/panda-projection` shipped a probe that asked the weaker question and let CI
  * run red for seven commits against a runner with no binary.
  */
 function run(command: string, args: readonly string[], cwd: string, timeoutMs: number): Promise<Ran> {
@@ -247,7 +264,7 @@ function relativeSpecifiers(source: string): string[] {
  * This is what an entry-point-only check misses, and the frozen matrix asks for:
  * a `files` list of `["dist/index.js","dist/index.d.ts"]` ships an entry point
  * that re-exports four modules the archive does not contain, so
- * `import '@panda/registry'` throws on its FIRST line while every
+ * `import '@skanl/panda-registry'` throws on its FIRST line while every
  * entry-point assertion stays green.
  *
  * Declarations are followed with their own rule, because
@@ -280,7 +297,7 @@ function unreachable(entries: ReadonlyMap<string, string>, entry: string): strin
 /**
  * What the consumer project runs. Plain JavaScript in the installed project, so
  * nothing about it can be answered by this repository's toolchain: it resolves
- * `@panda/session` by Node's own rules, out of `node_modules`.
+ * `@skanl/panda-session` by Node's own rules, out of `node_modules`.
  *
  * The spawner is a fake, so no executor binary is required, but everything
  * BETWEEN the entry point and the child is production code — catalogue lookup,
@@ -294,7 +311,7 @@ function unreachable(entries: ReadonlyMap<string, string>, entry: string): strin
 const PAYLOAD_BEGIN = 'PANDA-PROOF-PAYLOAD-BEGIN'
 const PAYLOAD_END = 'PANDA-PROOF-PAYLOAD-END'
 
-const CONSUMER_SCRIPT = `import { createMemoryLogSink, resolveExecutor, runSession } from '@panda/session'
+const CONSUMER_SCRIPT = `import { createMemoryLogSink, resolveExecutor, runSession } from '@skanl/panda-session'
 
 const STDOUT = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'Wrote panda-ok.txt' })
 
@@ -356,7 +373,7 @@ console.log(
     })),
     events: log.records.map((record) => record.event),
     subjects: log.records.map((record) => record.subject),
-    resolvedFrom: import.meta.resolve('@panda/session'),
+    resolvedFrom: import.meta.resolve('@skanl/panda-session'),
   }),
 )
 console.log('${PAYLOAD_END}')
@@ -369,8 +386,8 @@ console.log('${PAYLOAD_END}')
  * assignable, the directive would be unused, and tsc would report THAT — so a
  * clean exit means the types arrived and are real.
  */
-const CONSUMER_TYPES = `import { runSession } from '@panda/session'
-import type { ResultEnvelope, SessionOptions } from '@panda/session'
+const CONSUMER_TYPES = `import { runSession } from '@skanl/panda-session'
+import type { ResultEnvelope, SessionOptions } from '@skanl/panda-session'
 
 const options: SessionOptions = { prompt: 'list files' }
 
@@ -385,7 +402,7 @@ export const wrong: SessionOptions = { prompt: 42 }
 /**
  * The OTHER promise, and the one nothing tested until now.
  * `ARCHITECTURE-SPINE.md` (AD-2): "Third parties implement any port installing
- * only `@panda/contracts`." The session arm above installs six tarballs, so it
+ * only `@skanl/panda-contracts`." The session arm above installs six tarballs, so it
  * proves the session BUNDLE is installable and says nothing about this.
  *
  * BOTH HALVES ARE EXTRACTED FROM `packages/contracts/README.md`, OUT OF THE
@@ -394,7 +411,7 @@ export const wrong: SessionOptions = { prompt: 42 }
  * repository, and invisible to every human who will ever consume the package.
  *
  * The promise is stated three times and was gated nowhere. `AGENTS.md` says a
- * port is implementable installing ONLY `@panda/contracts`; FR-9 says a
+ * port is implementable installing ONLY `@skanl/panda-contracts`; FR-9 says a
  * "published suite validates any ExecutorAdapter"; NFR-8 says "public
  * contract-test suite per Contract". The word in all three is PUBLISHED, and
  * every in-repo run of these suites resolves through pnpm's workspace links —
@@ -422,7 +439,7 @@ console.log(
     handle,
     rejectedCode,
     expectedCode: PANDA_ERROR_CODES.contractEnvelopeInvalid,
-    resolvedFrom: import.meta.resolve('@panda/contracts'),
+    resolvedFrom: import.meta.resolve('@skanl/panda-contracts'),
     suiteName: suite.suite,
     suiteClauses: suite.clauses,
     suitePassing: suite.outcomes.filter((outcome) => outcome.passed).map((outcome) => outcome.clause),
@@ -466,7 +483,7 @@ const CONSUMER_TSCONFIG = JSON.stringify(
       noEmit: true,
       // STRICT, not lenient. `skipLibCheck: true` skips every `.d.ts` —
       // including the ones this story ships — so it hid that
-      // `@panda/contracts/dist/executor.d.ts` needs an ambient `AbortSignal`
+      // `@skanl/panda-contracts/dist/executor.d.ts` needs an ambient `AbortSignal`
       // nothing supplied. Measured with `lib: ["es2023"]` alone: `TS2304:
       // Cannot find name 'AbortSignal'`. So the check is doing work.
       skipLibCheck: false,
@@ -518,7 +535,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     expect(built.code, `pnpm -r build failed:\n${built.output}`).toBe(0)
 
     // The ONE directory this repository is allowed to write outside itself, and
-    // the entire point: inside the workspace, pnpm answers `@panda/session` from
+    // the entire point: inside the workspace, pnpm answers `@skanl/panda-session` from
     // `src/` whatever the tarball says.
     temporaryRoot = await mkdtemp(join(tmpdir(), 'panda-installed-consumer-'))
     projectDir = join(temporaryRoot, 'project')
@@ -533,10 +550,10 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
         RUN_TIMEOUT_MS,
       )
       expect(packedResult.code, `pnpm pack failed for packages/${packageDir}:\n${packedResult.output}`).toBe(0)
-      packed.set(packageDir, await readTarball(join(tarballDir, `panda-${packageDir}-${WORKSPACE_VERSION}.tgz`)))
+      packed.set(packageDir, await readTarball(join(tarballDir, tarballName(packageDir))))
     }
 
-    const tarball = (packageDir: string): string => `file:./tarballs/panda-${packageDir}-${WORKSPACE_VERSION}.tgz`
+    const tarball = (packageDir: string): string => `file:./tarballs/${tarballName(packageDir)}`
     await writeFile(
       join(projectDir, 'package.json'),
       `${JSON.stringify(
@@ -545,12 +562,12 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
           version: '0.0.0',
           private: true,
           type: 'module',
-          // Every `@panda/*` in the closure, DIRECT, each on its own tarball —
+          // Every `@skanl/panda-*` in the closure, DIRECT, each on its own tarball —
           // and nothing else at all, so the install has no registry package to
           // want and `--offline` is a fact rather than a hope.
           dependencies: Object.fromEntries(
             ['session', ...SESSION_DEPENDENCIES].map((packageDir) => [
-              `@panda/${packageDir}`,
+              `@skanl/panda-${packageDir}`,
               tarball(packageDir),
             ]),
           ),
@@ -578,7 +595,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     expect(installed.code, `npm install failed in the consumer project:\n${installed.output}`).toBe(0)
 
     installedManifest = JSON.parse(
-      await readFile(join(projectDir, 'node_modules', '@panda', 'session', 'package.json'), 'utf8'),
+      await readFile(join(projectDir, 'node_modules', '@skanl', 'panda-session', 'package.json'), 'utf8'),
     ) as Record<string, unknown>
 
     const ran = await node(['consumer.mjs'], projectDir, RUN_TIMEOUT_MS)
@@ -608,7 +625,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     //
     // It asserts membership only. It does NOT assert that anything imports a
     // packed package: the install-and-import arm below is scoped to
-    // `@panda/session` and its dependency closure, so a package can be packed,
+    // `@skanl/panda-session` and its dependency closure, so a package can be packed,
     // proven well-formed, and still be unreachable from the binary. That gap is
     // Story 4.2's, not this assertion's.
     const workspacePackages = (await readdir(join(repoRoot, 'packages'), { withFileTypes: true }))
@@ -653,9 +670,9 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
   })
 
   it('runs a real session and returns the envelope panda run prints', () => {
-    // Byte-for-byte the object `@panda/cli` hands to `JSON.stringify(_, null, 2)`,
+    // Byte-for-byte the object `@skanl/panda-cli` hands to `JSON.stringify(_, null, 2)`,
     // and the input to its exit-code ternary — asserted from a project that has
-    // no `@panda/cli` installed and no access to this workspace.
+    // no `@skanl/panda-cli` installed and no access to this workspace.
     expect(consumer.envelope).toEqual({
       status: 'ok',
       data: { result: 'Wrote panda-ok.txt', subtype: 'success' },
@@ -710,11 +727,11 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       },
     })
     expect(installedManifest['dependencies']).toEqual({
-      '@panda/adapter-cli': WORKSPACE_VERSION,
-      '@panda/contracts': WORKSPACE_VERSION,
-      '@panda/kernel': WORKSPACE_VERSION,
-      '@panda/workspace-git-worktree': WORKSPACE_VERSION,
-      '@panda/workspace-local': WORKSPACE_VERSION,
+      '@skanl/panda-adapter-cli': WORKSPACE_VERSION,
+      '@skanl/panda-contracts': WORKSPACE_VERSION,
+      '@skanl/panda-kernel': WORKSPACE_VERSION,
+      '@skanl/panda-workspace-git-worktree': WORKSPACE_VERSION,
+      '@skanl/panda-workspace-local': WORKSPACE_VERSION,
     })
   })
 
@@ -725,10 +742,10 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
   })
 
 
-  it('installs the @panda/cli TARBALL alone and runs the binary a user would get', async () => {
+  it('installs the @skanl/panda-cli TARBALL alone and runs the binary a user would get', async () => {
     // THE PRODUCT'S OWN PROOF, and this file named its absence itself: the pack
     // clause above says a package can be "packed, proven well-formed, and still
-    // be unreachable from the binary", and `@panda/cli` was exactly that -- the
+    // be unreachable from the binary", and `@skanl/panda-cli` was exactly that -- the
     // only package with a `bin`, packed on every CI run and installed by
     // nothing. Everything else here proves a LIBRARY consumer works; this is
     // the only clause that proves a USER can get panda at all.
@@ -762,7 +779,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
           dependencies: Object.fromEntries(
             closure.map((dir) => [
               JSON.parse(readFileSync(join(repoRoot, 'packages', dir, 'package.json'), 'utf8')).name,
-              `file:../project/tarballs/panda-${dir}-${WORKSPACE_VERSION}.tgz`,
+              `file:../project/tarballs/${tarballName(dir)}`,
             ]),
           ),
         },
@@ -773,7 +790,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     )
     // PRIME THE CACHE for the closure's EXTERNAL dependencies, derived rather
     // than listed. `--offline` is the point of this whole file -- it is what
-    // makes a `@panda/*` name unable to resolve from a registry -- but the
+    // makes a `@skanl/panda-*` name unable to resolve from a registry -- but the
     // closure also carries third-party packages, and an offline install cannot
     // invent one.
     //
@@ -792,7 +809,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
               }
             ).dependencies ?? {},
           )
-            .filter(([name]) => !name.startsWith('@panda/'))
+            .filter(([name]) => !name.startsWith('@skanl/panda-'))
             .map(([name, range]) => `${name}@${range}`),
         ),
       ),
@@ -826,7 +843,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     expect(doctor.output).not.toContain('Cannot find package')
   })
 
-  it('installs and imports @panda/contracts ALONE, and a port compiles against it', async () => {
+  it('installs and imports @skanl/panda-contracts ALONE, and a port compiles against it', async () => {
     // Its OWN project, beside the session one and sharing only the tarball
     // directory `beforeAll` packed. Installing into the session consumer would
     // prove nothing: five other packages are already there, and the claim is
@@ -841,7 +858,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
           version: '0.0.0',
           private: true,
           type: 'module',
-          dependencies: { '@panda/contracts': `file:../project/tarballs/panda-contracts-${WORKSPACE_VERSION}.tgz` },
+          dependencies: { '@skanl/panda-contracts': `file:../project/tarballs/${tarballName('contracts')}` },
         },
         null,
         2,
@@ -853,7 +870,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     // the file, or deletes it. Read from the ARCHIVE rather than from the
     // worktree, because the claim is about what a consumer receives.
     const readme = packed.get('contracts')?.get('package/README.md')
-    expect(readme, '@panda/contracts shipped no README.md in its tarball').toBeDefined()
+    expect(readme, '@skanl/panda-contracts shipped no README.md in its tarball').toBeDefined()
     // Extracted, not copied. The page a third party reads is the page compiled
     // and executed below; a drift between them is not possible because there is
     // only one of them.
@@ -862,14 +879,14 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     await writeFile(join(soleDir, 'tsconfig.json'), `${CONSUMER_TSCONFIG}\n`, 'utf8')
 
     // `--offline` is the assertion that nothing else was wanted: a runtime
-    // dependency appearing on `@panda/contracts` fails HERE, loudly, instead of
+    // dependency appearing on `@skanl/panda-contracts` fails HERE, loudly, instead of
     // quietly dialling out to a registry and passing.
     const installed = await run('npm', ['install', '--offline'], soleDir, RUN_TIMEOUT_MS)
     expect(installed.code, `npm install failed in the contracts-only project:\n${installed.output}`).toBe(0)
 
     // ALONE, asserted from the installed tree rather than from the manifest that
-    // asked: one `@panda/*` package arrived, not a closure.
-    expect((await readdir(join(soleDir, 'node_modules', '@panda'))).sort()).toEqual(['contracts'])
+    // asked: one `@skanl/panda-*` package arrived, not a closure.
+    expect((await readdir(join(soleDir, 'node_modules', '@skanl'))).sort()).toEqual(['panda-contracts'])
 
     const ran = await node(['consumer.mjs'], soleDir, RUN_TIMEOUT_MS)
     expect(ran.code, `the contracts-only consumer script failed:\n${ran.output}`).toBe(0)
@@ -919,7 +936,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
   it('packs a binary that is emitted JavaScript with its shebang intact', () => {
     // Read out of the TARBALL, not out of the workspace: the claim is about what
     // a consumer receives, and `files` could stop shipping `dist` without any
-    // workspace-side assertion noticing. No import of `@panda/cli` is involved,
+    // workspace-side assertion noticing. No import of `@skanl/panda-cli` is involved,
     // so the session package's tier is untouched — this is a file, not a
     // dependency.
     const entries = packed.get('cli')!
@@ -950,7 +967,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     //
     // Entry points alone are not enough, and that is not hypothetical: a
     // reviewer set `"files": ["dist/index.js","dist/index.d.ts"]` on
-    // `@panda/registry` and got a green 7/7 beside an import that threw. So the
+    // `@skanl/panda-registry` and got a green 7/7 beside an import that threw. So the
     // whole module graph is walked, in the archive, from every target the
     // PACKED manifest names — `types` included, which an earlier version read
     // past.
@@ -959,21 +976,21 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       const entries = packed.get(packageDir)!
       const manifest = JSON.parse(entries.get('package/package.json')!) as Record<string, unknown>
       const targets = manifestTargets(manifest)
-      expect(targets.length, `@panda/${packageDir} names no shippable target`).toBeGreaterThan(0)
+      expect(targets.length, `@skanl/panda-${packageDir} names no shippable target`).toBeGreaterThan(0)
       for (const target of targets) {
         for (const absent of unreachable(entries, packedPath(target))) {
-          missing.push(`@panda/${packageDir} does not ship ${absent}, reached from ${target}`)
+          missing.push(`@skanl/panda-${packageDir} does not ship ${absent}, reached from ${target}`)
         }
       }
     }
     expect(missing, `packed manifests reach files their tarballs do not contain:\n${missing.join('\n')}`).toEqual([])
   })
 
-  it('declares @panda/* dependency ranges the packed versions actually satisfy', () => {
-    // The consumer installs every `@panda/*` as a direct `file:` dependency,
+  it('declares @skanl/panda-* dependency ranges the packed versions actually satisfy', () => {
+    // The consumer installs every `@skanl/panda-*` as a direct `file:` dependency,
     // and npm satisfies each packed workspace-version requirement from the top-level
     // install of that same version. That is a real resolution, but it is a
-    // LENIENT one: a manifest requiring `"@panda/kernel": "^9.9.9"` beside a
+    // LENIENT one: a manifest requiring `"@skanl/panda-kernel": "^9.9.9"` beside a
     // top-level kernel would still be handed the tarball here and would hand a
     // registry consumer an `ETARGET`. This is what stops that drift travelling.
     //
@@ -985,7 +1002,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     const version = new Map<string, string>()
     for (const [packageDir, entries] of packed) {
       const manifest = JSON.parse(entries.get('package/package.json')!) as { name: string; version: string }
-      expect(manifest.name, `packages/${packageDir} packed under an unexpected name`).toBe(`@panda/${packageDir}`)
+      expect(manifest.name, `packages/${packageDir} packed under an unexpected name`).toBe(`@skanl/panda-${packageDir}`)
       version.set(manifest.name, manifest.version)
     }
 
@@ -994,10 +1011,10 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       const manifest = JSON.parse(entries.get('package/package.json')!) as Record<string, unknown>
       const dependencies = (manifest['dependencies'] ?? {}) as Record<string, string>
       for (const [name, range] of Object.entries(dependencies)) {
-        if (!name.startsWith('@panda/')) continue
+        if (!name.startsWith('@skanl/panda-')) continue
         const packedVersion = version.get(name)
         if (range !== packedVersion) {
-          wrong.push(`@panda/${packageDir} requires ${name}@${range}, but it packs as ${String(packedVersion)}`)
+          wrong.push(`@skanl/panda-${packageDir} requires ${name}@${range}, but it packs as ${String(packedVersion)}`)
         }
       }
     }

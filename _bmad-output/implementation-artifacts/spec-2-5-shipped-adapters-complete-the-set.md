@@ -28,7 +28,7 @@ context:
 
 **Ask First:** a fourth shipped executor; any change to the `ResultEnvelope` schema; wiring adapter selection into the CLI beyond keeping `panda run` working.
 
-**Never:** no live-binary smoke test added to `pnpm check` (the existing env-gated one stays env-gated); no bespoke per-executor error taxonomy — the coded vocabulary in `@panda/contracts` is closed; no session/resume features; no liveness detection (Story 2.6).
+**Never:** no live-binary smoke test added to `pnpm check` (the existing env-gated one stays env-gated); no bespoke per-executor error taxonomy — the coded vocabulary in `@skanl/panda-contracts` is closed; no session/resume features; no liveness detection (Story 2.6).
 
 ## I/O & Edge-Case Matrix
 
@@ -49,7 +49,7 @@ context:
 
 ## Code Map
 
-- `packages/adapter-claude/` -- RENAMED to `packages/adapter-cli` (`@panda/adapter-cli`). It already owns the spawn seam and the Node spawner; the package name is what stops being true, not its contents. Single consumer to update: `packages/cli` (`package.json` + `src/run.ts`).
+- `packages/adapter-claude/` -- RENAMED to `packages/adapter-cli` (`@skanl/panda-adapter-cli`). It already owns the spawn seam and the Node spawner; the package name is what stops being true, not its contents. Single consumer to update: `packages/cli` (`package.json` + `src/run.ts`).
 - `packages/adapter-cli/src/traits.ts` -- NEW: `ExecutorTraits` types + the generic engine (`createCliExecutorAdapter`), extracted behavior-neutrally from `claude-code-adapter.ts`
 - `packages/adapter-cli/src/executors/{claude-code,codex,opencode}.ts` -- THIN trait records
 - `packages/adapter-cli/src/{spawn-seam,node-child-spawner}.ts` -- unchanged

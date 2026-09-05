@@ -1,4 +1,4 @@
-// Canonical in-repo Standard Schema v1 surface. @panda/contracts has zero runtime
+// Canonical in-repo Standard Schema v1 surface. @skanl/panda-contracts has zero runtime
 // dependencies, so the spec's interfaces are reproduced structurally here; schema
 // libraries (Zod 4, Valibot, ...) interoperate through `~standard` without this
 // package depending on any of them.

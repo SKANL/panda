@@ -22,25 +22,25 @@ made the other decision. This spec makes the repo tell the truth about it.
 Two position papers argued the publish surface and **agreed on every measured
 fact**, disagreeing only on shape.
 
-**Decided: all 13 packages, one scope `@panda/*`, lockstep at `0.1.0`.**
+**Decided: all 13 packages, one scope `@skanl/panda-*`, lockstep at `0.1.0`.**
 
 ### Why the "minimal surface" option does not exist
 
-`@panda/cli`'s runtime closure is **11 of 13 packages** — measured by walking
+`@skanl/panda-cli`'s runtime closure is **11 of 13 packages** — measured by walking
 `dependencies` across all thirteen manifests: `environment`, `session`,
 `contracts`, `kernel`, `projection`, `registry`, `lock`, `adapter-cli`,
 `workspace-git-worktree`, `workspace-local`, and itself. Only the two memory
 providers sit outside it, and nothing in the workspace imports them (control:
-`@panda/contracts` appears in 12 manifests).
+`@skanl/panda-contracts` appears in 12 manifests).
 
-A published `@panda/cli` whose dependencies are unpublished workspace packages
+A published `@skanl/panda-cli` whose dependencies are unpublished workspace packages
 **cannot be installed.** So the minimal option requires bundling, and bundling
 costs three things this repo has decided against:
 
 1. **There is no bundler here.** Measured: `esbuild|rollup|webpack|ncc|tsup`
    across the root and all 13 manifests returns nothing; control, `typescript`
    returns a hit in each. Adding one is net-new toolchain.
-2. **The built `dist` emits bare `@panda/*` specifiers** (measured in
+2. **The built `dist` emits bare `@skanl/panda-*` specifiers** (measured in
    `packages/environment/dist/index.js`), so bundling is not a flag — it is a
    different build.
 3. **A bundle has no tiers.** `packages/contracts/test/topology.test.ts` pins
@@ -75,7 +75,7 @@ session — a smaller published surface is not.
 - **This spec does NOT publish.** `npm whoami` is empty on this machine, so the
   scope's ownership is unverified and no credential exists. The deliverable is a
   repo where the first publish is one command, run by the owner.
-- **`panda` unscoped is TAKEN** (0.6.5, measured). The scope is `@panda/*`; the
+- **`panda` unscoped is TAKEN** (0.6.5, measured). The scope is `@skanl/panda-*`; the
   BIN stays `panda`, which is unaffected by the registry name.
 - **`publishConfig.access: public` is required on every package.** Scoped
   packages default to `restricted`; without it every publish is a private
@@ -92,8 +92,8 @@ session — a smaller published surface is not.
 
 | situation | expected |
 |---|---|
-| `npm i -g @panda/cli` | installs; `panda --version` runs |
-| `npm i -D @panda/contracts` | one package arrives, no closure |
+| `npm i -g @skanl/panda-cli` | installs; `panda --version` runs |
+| `npm i -D @skanl/panda-contracts` | one package arrives, no closure |
 | a package published without `publishConfig` | would be restricted — prevented by the manifest gate below |
 | a package published with `private: true` | npm refuses — prevented by the same gate |
 | `workspace:*` reaching a published manifest | already asserted against by the consumer proof |
@@ -121,7 +121,7 @@ session — a smaller published surface is not.
    pack clause is the model, and its own comment records the regression that
    made it derived ("the list held nine of ten").
 2. **AC2 — the CLI tarball is INSTALLED, not merely packed.** The proof names
-   this gap itself: `@panda/cli` is packed and never installed, so it can be
+   this gap itself: `@skanl/panda-cli` is packed and never installed, so it can be
    "proven well-formed and still be unreachable from the binary". Install the
    CLI tarball into a throwaway consumer and run the binary. **This is the
    product; nothing else proves a user can get it.**
@@ -164,7 +164,7 @@ pack-and-install, and the duplicate this spec had put in the proof was removed -
 asserting it twice is the duplication this repo's own review lens is named for.
 
 **AC2 — GREEN, with its claim NARROWED by measurement.** The clause installs the
-`@panda/cli` tarball WITH its runtime closure, derived by walking the manifests,
+`@skanl/panda-cli` tarball WITH its runtime closure, derived by walking the manifests,
 and runs the binary. Installing the CLI tarball ALONE is **not provable before
 the first publish** and that was driven, not assumed: npm answers
 `ENOTCACHED ... registry.npmjs.org/@panda%2fenvironment`, because the dependency
@@ -175,13 +175,13 @@ rather than asserting a smaller thing quietly.
 control beside it so an empty `packed` map fails first.
 
 **AC4 — GREEN, both halves falsified separately.** `private: true` restored on
-`@panda/lock` reddens naming `lock`; `publishConfig` dropped from
-`@panda/registry` reddens naming `registry`.
+`@skanl/panda-lock` reddens naming `lock`; `publishConfig` dropped from
+`@skanl/panda-registry` reddens naming `registry`.
 
 **AC5 — GREEN.** No file claims panda is unpublished (control: the word `panda`
 is findable in the same files). `README.md`'s "Not published, and that is a
 decision" section is now the install line, and `packages/contracts/README.md`'s
-"Not on a registry" block is now `npm i -D @panda/contracts`.
+"Not on a registry" block is now `npm i -D @skanl/panda-contracts`.
 
 **AC6 — the gate, stated honestly.** `pnpm check` exits 1 on ONE clause, and it
 is not this change's: `stream-mode-live.test.ts` compares the envelopes of two
@@ -191,18 +191,18 @@ file was not touched by M37.A. It is the live-suite placement problem already
 recorded in `deferred-work.md`: a gate that depends on a third party's afternoon.
 Everything else: typecheck 0, lint 0, bytes 0, build 0,
 `proof:consumer-install` 13 passed / 1 skipped, and 167 of 168 in
-`@panda/adapter-cli` with 7 skipped.
+`@skanl/panda-adapter-cli` with 7 skipped.
 
 ### What the act of proving installability surfaced
 
 - **`panda --version` did not exist.** It appeared the moment the proof INSTALLED
   the binary instead of only packing it: the run printed the usage block and
-  exited non-zero. It is the first thing anyone types after `npm i -g @panda/cli`.
+  exited non-zero. It is the first thing anyone types after `npm i -g @skanl/panda-cli`.
 - **Its first implementation was wrong in the layout that matters.** A fixed
   `../package.json` resolves to the manifest from `src/` and to
   `dist/package.json` -- a file no tarball carries -- from the built module. The
   wrong one is the one a USER gets. It now walks up to the manifest that names
-  `@panda/cli`, verified in BOTH layouts, and throws rather than inventing a
+  `@skanl/panda-cli`, verified in BOTH layouts, and throws rather than inventing a
   plausible `0.0.0`.
 - **A teardown hook was a bet.** `confinement-live`'s `afterAll` retries an `rm`
   five times and CATCHES the failure, but nothing caught the 10s hook timeout

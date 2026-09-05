@@ -88,7 +88,7 @@ RUNNING the real target's `merge`, not by reading.
    not introduce a policy.
 
 7. **`printParseErrorCode` is exported by the installed dependency.**
-   `jsonc-parser@3.3.1`, already a declared dependency of `@panda/projection`.
+   `jsonc-parser@3.3.1`, already a declared dependency of `@skanl/panda-projection`.
    No new dependency.
 
 8. **TOML is deliberately NOT parsed and stays that way.**

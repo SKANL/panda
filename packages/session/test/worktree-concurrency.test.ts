@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import type { ExecutorAdapter, WorkspaceHandle } from '@panda/contracts'
+import type { ExecutorAdapter, WorkspaceHandle } from '@skanl/panda-contracts'
 import { readExecutorConfigLayers } from '../src/executors.ts'
 import { runSession } from '../src/run-session.ts'
 
 // AC clause 1 of Story 4.2, in the only shape the ledger makes deterministic:
 // two sessions, ONE process, ONE state directory. `LEDGER_QUEUES` in
-// `@panda/workspace-git-worktree` is module-level, so two providers constructed
+// `@skanl/panda-workspace-git-worktree` is module-level, so two providers constructed
 // over the same directory share one read-modify-write queue and cannot reserve
 // the same ordinal. Two panda PROCESSES over one state directory are a named,
 // coded boundary rather than a gap this story closes — see `deferred-work.md`.

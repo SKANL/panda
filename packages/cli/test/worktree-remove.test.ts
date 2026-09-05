@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { inspectWorktrees, worktreeStateDir } from '@panda/session'
+import { inspectWorktrees, worktreeStateDir } from '@skanl/panda-session'
 import { runPanda } from '../src/run.ts'
 import type { RunCommandOptions } from '../src/run.ts'
-import type { Diagnosis } from '@panda/environment'
-import type { WorkspaceHandle } from '@panda/contracts'
+import type { Diagnosis } from '@skanl/panda-environment'
+import type { WorkspaceHandle } from '@skanl/panda-contracts'
 
 // Spec M16.A at the BINARY: the verb a user actually reaches, driven against
 // real git and real worktrees the shipped provider made.
@@ -105,7 +105,7 @@ async function project(): Promise<string> {
 /**
  * A worktree made the way a run makes one, because it IS a run: `panda run`
  * against an adapter that spawns nothing. Constructing the provider directly
- * would be a second creation path, and `@panda/cli` cannot reach it anyway —
+ * would be a second creation path, and `@skanl/panda-cli` cannot reach it anyway —
  * the thin-binding pin keeps the implementation packages out of this package
  * entirely, tests included.
  */

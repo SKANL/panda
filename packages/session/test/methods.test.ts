@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { describe, expect, it } from 'vitest'
 import { assertMethodMayMount, resolveMethod, swapMethod } from '../src/methods.ts'
 
@@ -103,7 +103,7 @@ describe('M5.D row 10: a specifier that does not resolve', () => {
     await expect(resolveMethod('./nothing-is-here.mjs')).rejects.toMatchObject({
       code: PANDA_ERROR_CODES.configurationUnusable,
     })
-    await expect(resolveMethod('@panda/there-is-no-such-package')).rejects.toBeInstanceOf(PandaError)
+    await expect(resolveMethod('@skanl/panda-there-is-no-such-package')).rejects.toBeInstanceOf(PandaError)
   })
 
   it('names the specifier it could not load, so the message is actionable', async () => {

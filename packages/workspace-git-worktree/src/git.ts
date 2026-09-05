@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
 
 const run = promisify(execFile)
 

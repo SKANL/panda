@@ -41,7 +41,7 @@ jobs:
 
       # This is the release gate, not a formality. It packs all thirteen
       # packages, installs them offline into projects OUTSIDE the repository,
-      # runs a real session, installs the `@panda/cli` tarball and runs the
+      # runs a real session, installs the `@skanl/panda-cli` tarball and runs the
       # binary a user would get -- and it refuses a package that stopped being
       # publishable. A broken tarball fails BEFORE the publish, which is the only
       # moment it can still be fixed cheaply.

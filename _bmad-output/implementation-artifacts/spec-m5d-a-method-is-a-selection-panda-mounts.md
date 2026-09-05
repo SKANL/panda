@@ -8,7 +8,7 @@
 
 ## Intent
 
-`@panda/contracts` publishes the MethodPlugin contract (M5.A) and enforces every
+`@skanl/panda-contracts` publishes the MethodPlugin contract (M5.A) and enforces every
 rule it states (M5.B). Panda the PRODUCT has no method vocabulary at all: no
 verb, no key, no mount point. UJ-3 — *"Gaspar swaps methodology mid-project"* —
 is one of three user journeys and nothing in the binary touches it.
@@ -57,12 +57,12 @@ Executed on 2026-09-01 at `88a5333`, never inferred.
    gain a second member. The scopes, the atomic symlink-safe write, and the
    effective-selection report come with them.
 
-6. **`@panda/session` can host the mount with no new edge and no guard change.**
+6. **`@skanl/panda-session` can host the mount with no new edge and no guard change.**
    Measured from the manifests and from `packages/session/test/guard.test.ts`:
-   session declares `@panda/adapter-cli`, `@panda/contracts`, `@panda/kernel`,
-   `@panda/workspace-local` — `@panda/contracts` already exports
+   session declares `@skanl/panda-adapter-cli`, `@skanl/panda-contracts`, `@skanl/panda-kernel`,
+   `@skanl/panda-workspace-local` — `@skanl/panda-contracts` already exports
    `activateMethod` and `validateMethodPlugin`. Session's guard pins that exact
-   dependency list and forbids `@panda/cli`; unlike `@panda/environment`'s, it
+   dependency list and forbids `@skanl/panda-cli`; unlike `@skanl/panda-environment`'s, it
    carries **no** filesystem-verb clause, so a dynamic import there breaks
    nothing. Read before deciding, which is M5.C's lesson applied.
 
@@ -76,8 +76,8 @@ Executed on 2026-09-01 at `88a5333`, never inferred.
 - **AD-1** — the kernel is not touched. Measurement 2 is the reason, in the
   kernel's own words.
 - **AD-2** — **no new package and no new dependency.** The work lands in
-  `@panda/session` (mount), `@panda/projection` (the allowlist M5.C published)
-  and `@panda/cli` (the noun). Every guard test stays green unmodified; if one
+  `@skanl/panda-session` (mount), `@skanl/panda-projection` (the allowlist M5.C published)
+  and `@skanl/panda-cli` (the noun). Every guard test stays green unmodified; if one
   goes red, that is a finding, not a file to edit.
 - **AD-5** — a method that cannot be loaded is REPORTED, never silently skipped.
   A run with a broken method selection must not quietly behave like a run with
@@ -321,11 +321,11 @@ deterministically rather than flaking on a slow machine.
 
 ### The pinned export surface, widened deliberately
 
-`kernel-composition.test.ts` asserts `@panda/session`'s exact value exports so
+`kernel-composition.test.ts` asserts `@skanl/panda-session`'s exact value exports so
 that any widening is a decision. It went red, and the widening was made after
 checking the rule it states — *"exports no factory that yields a kernel, a plugin
 or an adapter"*. Neither addition does: `resolveMethod` returns a validated
-MethodPlugin (a manifest `@panda/contracts` already validates in public) and
+MethodPlugin (a manifest `@skanl/panda-contracts` already validates in public) and
 `swapMethod` returns a `MethodActivation` (what the public `activateMethod`
 already returns). `selectMethod` was deliberately NOT exported — `runSession` is
 its only caller, and publishing a surface nothing consumes is the defect the

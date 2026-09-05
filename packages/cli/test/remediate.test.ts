@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { RegistryStore } from '@panda/environment'
+import { RegistryStore } from '@skanl/panda-environment'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 

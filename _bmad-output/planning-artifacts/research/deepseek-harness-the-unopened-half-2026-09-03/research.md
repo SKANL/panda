@@ -208,10 +208,10 @@ surfaced a defect in panda's own kernel, and fixing it is `2982123` on `main`
 
 M7.C shipped "the kernel APPLIES the `configSchema` every manifest must declare".
 Measured by wrapping each manifest's schema and driving a real kernel, that was a
-**no-op for `@panda/workspace-git-worktree`**: it registered under
+**no-op for `@skanl/panda-workspace-git-worktree`**: it registered under
 `workspace-git-worktree` and read the config key `workspace`, so the kernel
 handed its schema `undefined` on every activation, while its sibling
-`@panda/workspace-local` — id and key both `workspace` — received the real
+`@skanl/panda-workspace-local` — id and key both `workspace` — received the real
 subtree in the same driver. Invisible to 1,353 green tests, because both
 factories re-validated the subtree themselves and so no behaviour differed. The
 rule it broke existed only as a comment at `packages/adapter-cli/src/plugin.ts`.

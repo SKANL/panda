@@ -1,6 +1,6 @@
 import { lstat, readdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
 import {
   LOCAL_WORKSPACE_RECORD_FILE,
   WINDOWS_RESERVED_IDS,

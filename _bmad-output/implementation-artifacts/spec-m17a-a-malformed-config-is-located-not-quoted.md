@@ -265,10 +265,10 @@ than any of the long-token runs, because with a long token a clean result is
 partly V8's truncation doing the work.
 
 **The dependency posture is unchanged and was checked, not assumed.**
-`@panda/registry` gains `jsonc-parser`, which is not a new third-party
-dependency: it is the SAME one `@panda/projection` already had, and the repo
+`@skanl/panda-registry` gains `jsonc-parser`, which is not a new third-party
+dependency: it is the SAME one `@skanl/panda-projection` already had, and the repo
 still ships exactly ONE distinct external package across all twelve manifests.
-The helper is duplicated rather than homed in `@panda/contracts` for a measured
+The helper is duplicated rather than homed in `@skanl/panda-contracts` for a measured
 reason — contracts has no third-party dependency and `proof:consumer-install`
 fails a package that gains one by design — and the two copies cannot drift
 because one gate drives both.

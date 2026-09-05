@@ -1,11 +1,11 @@
-# @panda/environment
+# @skanl/panda-environment
 
 The verbs that change a machine: `init`, `doctor` and `remediate`, as a library.
-`@panda/cli` is a thin binding over this package and holds no capability of its
+`@skanl/panda-cli` is a thin binding over this package and holds no capability of its
 own — that is FR-29, and the consumer-install proof enforces it.
 
 ```bash
-npm i @panda/environment
+npm i @skanl/panda-environment
 ```
 
 ## What it gives you

@@ -17,7 +17,7 @@ Two of `panda doctor`'s own exits already say so out loud:
 
 > `removed-by-user`: *"To keep it absent instead, the entry has to leave the
 > registry — panda ships no command for that yet, only `RegistryStore.remove` in
-> `@panda/environment`"*
+> `@skanl/panda-environment`"*
 >
 > `unprojectable`: *"No sequence of panda commands makes the entry projectable;
 > it stops being reported when the entry leaves the registry, for which panda
@@ -44,13 +44,13 @@ one is a promise. This story makes the promise mechanical.
   `--scope agent` flag would accept the flag, exit 0 and persist nothing. Under
   the shipped grammar that lie is **not expressible**, so it needs no guard.
 - **The CLI validates nothing about an entry.** `validateRegistryEntry` in
-  `@panda/contracts` already rejects unknown root keys, bad types, empty ids and
+  `@skanl/panda-contracts` already rejects unknown root keys, bad types, empty ids and
   `UNPROJECTABLE_ENTRY_IDS`. The CLI shapes argv into an entry object and hands it
   over. Re-implementing any of that in the CLI is the exact defect the COVE round
   cost us: inventing rules the contract does not state.
 - **`add` does not project.** It reports the command that does. Coupling them
   makes registration fail for projection reasons.
-- Kernel stays zero-dependency and never imports `@panda/contracts` (AD-1).
+- Kernel stays zero-dependency and never imports `@skanl/panda-contracts` (AD-1).
 - Relative imports carry `.ts`.
 
 ## I/O & Edge-Case Matrix
@@ -120,7 +120,7 @@ drift from it. Do not implement past this clause.
 
 **0. AMENDMENT of matrix row 5 — the contract did NOT already reject it, and the
 rejection was added there rather than in the CLI.** The frozen Boundaries say
-*"`validateRegistryEntry` in `@panda/contracts` already rejects unknown root
+*"`validateRegistryEntry` in `@skanl/panda-contracts` already rejects unknown root
 keys, bad types, empty ids and `UNPROJECTABLE_ENTRY_IDS`"*, and row 5 asks for
 `panda add tool t --entry-path ./x` to be *"Rejected by the CONTRACT
 (unknown/ill-fitting field for the type)"*. Measured before writing anything:
@@ -197,7 +197,7 @@ modes `get(type, id, scope?)` already had — the merged view keeps one row per
 `type:id` and so drops the scope that produced it, which is the one fact row 11
 needs), `packages/environment/src/index.ts` (re-exports `storeFor`,
 `scopeDirectory` and `REGISTRY_ENTRY_TYPES`, because `packages/cli/test/run.test.ts`
-forbids the CLI importing `@panda/registry` or `@panda/contracts` at runtime) and
+forbids the CLI importing `@skanl/panda-registry` or `@skanl/panda-contracts` at runtime) and
 `packages/cli/README.md`. No new file beyond `registry-commands.ts`.
 
 ### Amendment 4 — the spec author was wrong about T4, and the story found a worse bug than the one it was written for (2026-08-26)
@@ -252,7 +252,7 @@ authored next to the command.
   change what `panda add skill` prints. If it does not, the message is authored,
   not derived, and the task is not done.
 
-**Renegotiation 1 (per-type field fit moved into `@panda/contracts`): ACCEPTED.**
+**Renegotiation 1 (per-type field fit moved into `@skanl/panda-contracts`): ACCEPTED.**
 Deriving the rejection from `REGISTRY_PATH_FIELDS` is right — the Ask First
 forbade a CLI-side table precisely to avoid a second copy, and a derivation is
 not a copy. One consequence needs an answer before this closes, recorded here as
@@ -278,13 +278,13 @@ ledger.
 green**, run on the final tree.
 
 Said rather than tidied away: the gate was run four times over the course of this
-story and ONE of those runs failed with a single assertion in `@panda/registry`
-(`1 failed | 60 passed`). It does not reproduce — `pnpm --filter @panda/registry
+story and ONE of those runs failed with a single assertion in `@skanl/panda-registry`
+(`1 failed | 60 passed`). It does not reproduce — `pnpm --filter @skanl/panda-registry
 test` is green on its own, and the two full-gate runs after it are green — and
 the log was not kept, so the case cannot be named. The change to that package is
 `list(scope?)`, which touches no lockfile and no timing; the timing-sensitive
 files in it (`lock.test.ts`, `contention.test.ts`) run alongside
-`@panda/adapter-cli`'s twelve parallel files under `pnpm -r`. Recorded as an
+`@skanl/panda-adapter-cli`'s twelve parallel files under `pnpm -r`. Recorded as an
 unidentified transient rather than as four green runs. Chased afterwards and
 still not reproduced -- see "The transient: not reproduced" below.
 
@@ -292,15 +292,15 @@ Per-package test counts, before this story and after:
 
 | Package | Before | After |
 | --- | --- | --- |
-| `@panda/kernel` | 217 passed (9 files) | 217 passed (9 files) |
-| `@panda/contracts` | 58 passed (5 files) | **59 passed** (5 files) |
-| `@panda/registry` | 60 passed (5 files) | **62 passed** (5 files) |
-| `@panda/workspace-local` | 23 passed (3 files) | 23 passed (3 files) |
-| `@panda/adapter-cli` | 148 passed, 6 skipped (12 files) | 148 passed, 6 skipped (12 files) |
-| `@panda/session` | 89 passed (6 files) | 89 passed (6 files) |
-| `@panda/projection` | 243 passed, 3 skipped (15 files) | **246 passed**, 3 skipped (16 files) |
-| `@panda/environment` | 91 passed (7 files) | **94 passed** (7 files) |
-| `@panda/cli` | 61 passed (3 files) | **97 passed (5 files)** |
+| `@skanl/panda-kernel` | 217 passed (9 files) | 217 passed (9 files) |
+| `@skanl/panda-contracts` | 58 passed (5 files) | **59 passed** (5 files) |
+| `@skanl/panda-registry` | 60 passed (5 files) | **62 passed** (5 files) |
+| `@skanl/panda-workspace-local` | 23 passed (3 files) | 23 passed (3 files) |
+| `@skanl/panda-adapter-cli` | 148 passed, 6 skipped (12 files) | 148 passed, 6 skipped (12 files) |
+| `@skanl/panda-session` | 89 passed (6 files) | 89 passed (6 files) |
+| `@skanl/panda-projection` | 243 passed, 3 skipped (15 files) | **246 passed**, 3 skipped (16 files) |
+| `@skanl/panda-environment` | 91 passed (7 files) | **94 passed** (7 files) |
+| `@skanl/panda-cli` | 61 passed (3 files) | **97 passed (5 files)** |
 | **Total** | 890 passed, 9 skipped | **937 passed, 9 skipped** |
 
 New: 28 rows in `packages/cli/test/registry-commands.test.ts` (the I/O matrix, the four T5 rows and the review round's) and
@@ -489,7 +489,7 @@ those, touching no vendor file. Recorded in the deferred ledger.
 
 ### The transient: not reproduced
 
-`pnpm --filter @panda/registry test` was run 10 times in a row: **10/10 green,
+`pnpm --filter @skanl/panda-registry test` was run 10 times in a row: **10/10 green,
 61 passed each time**, no failure captured. The honest note above stands — one
 full-gate run failed a single unnamed assertion in that package and the log was
 lost, and it has not been seen since across the loop plus every full-gate run of
@@ -567,7 +567,7 @@ where no target gave one the message says so rather than inventing it.
 - the two argv guards that make `--scope agent` inexpressible were both untested,
   and disabled together `panda add skill s --scope agent` exited 0 and persisted
   at GLOBAL. Pinned across four spellings, with the store asserted absent.
-- `deliveryFor` had NO test in `@panda/environment`; its `catch` survived being
+- `deliveryFor` had NO test in `@skanl/panda-environment`; its `catch` survived being
   replaced by a rethrow, which would turn a completed registration into exit 2.
   Pinned with a REAL throwing target (`collectMcpEntries` raises for an id that
   can never be a native config key), plus the two happy paths.

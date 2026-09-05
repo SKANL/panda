@@ -42,8 +42,8 @@ context:
 ## Code Map
 
 - `packages/contracts/src/executor.ts` -- extend envelope status union with `'cancelled'`; schema-level rules for each status
-- `packages/adapter-claude/` -- NEW package `@panda/adapter-claude`: spawns `claude` headlessly (print/non-interactive mode) inside a WorkspaceHandle rootPath; maps CLI output/errors to envelopes; implements tree-kill cancellation
-- `packages/cli/` -- NEW package `@panda/cli`: minimal bin `panda` with `run <prompt>` (first slice only; uses kernel + adapter + workspace-local)
+- `packages/adapter-claude/` -- NEW package `@skanl/panda-adapter-claude`: spawns `claude` headlessly (print/non-interactive mode) inside a WorkspaceHandle rootPath; maps CLI output/errors to envelopes; implements tree-kill cancellation
+- `packages/cli/` -- NEW package `@skanl/panda-cli`: minimal bin `panda` with `run <prompt>` (first slice only; uses kernel + adapter + workspace-local)
 - `packages/contracts/src/contract-suite/` -- cancellation clause added to EXECUTOR_CLAUSES (stub-friendly)
 - Tests -- unit suites with a fake child-process seam + environment-gated live smoke (`claude` detection)
 
@@ -73,4 +73,4 @@ context:
 - `pnpm -r lint` -- expected: zero warnings
 
 **Manual checks (live evidence):**
-- With `claude` authenticated: `pnpm --filter @panda/cli build:noop && pnpm panda run "list files"` style smoke produces a typed ok envelope (document exact invocation in package README section of the story report)
+- With `claude` authenticated: `pnpm --filter @skanl/panda-cli build:noop && pnpm panda run "list files"` style smoke produces a typed ok envelope (document exact invocation in package README section of the story report)

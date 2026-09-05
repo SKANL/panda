@@ -1,5 +1,5 @@
 {
-  "name": "@panda/projection",
+  "name": "@skanl/panda-projection",
   "version": "0.1.0",
   "description": "Projects Registry entries into executors' native configuration, and owns the ledger that can take them back.",
   "repository": {
@@ -29,12 +29,12 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*",
-    "@panda/lock": "workspace:*",
+    "@skanl/panda-contracts": "workspace:*",
+    "@skanl/panda-lock": "workspace:*",
     "jsonc-parser": "^3.3.1"
   },
   "devDependencies": {
-    "@panda/registry": "workspace:*",
+    "@skanl/panda-registry": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

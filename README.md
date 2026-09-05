@@ -21,8 +21,8 @@ panda status               # what is installed, and how much quota is left where
 ## Install
 
 ```bash
-npm i -g @panda/cli      # the binary
-npm i -D @panda/contracts # implementing a port
+npm i -g @skanl/panda-cli      # the binary
+npm i -D @skanl/panda-contracts # implementing a port
 ```
 
 Thirteen packages ship under the `@panda` scope at one shared version. That is
@@ -36,7 +36,7 @@ promising it.
 
 **The packaged artifact is proven, not assumed.** A CI job on every push packs
 all thirteen, installs them into a project **outside** this repository, offline,
-runs a real session there, installs the `@panda/cli` tarball and runs the binary
+runs a real session there, installs the `@skanl/panda-cli` tarball and runs the binary
 a user would get. It also refuses to let a package stop being publishable — a
 manifest that regains `private`, drifts off the shared version, or loses
 `publishConfig.access` fails the build by name.
@@ -56,7 +56,7 @@ Node >= 24. CI runs Node 24 and a Node 26 canary.
 
 ## Extend it
 
-Third parties implement panda's ports installing only `@panda/contracts`, and each
+Third parties implement panda's ports installing only `@skanl/panda-contracts`, and each
 port ships a public suite that tells an implementation whether it conforms. Start
 at [`packages/contracts/README.md`](./packages/contracts/README.md).
 

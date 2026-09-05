@@ -1,4 +1,4 @@
-import { PANDA_VERSION } from '@panda/contracts'
+import { PANDA_VERSION } from '@skanl/panda-contracts'
 import {
   REGISTRY_ENTRY_TYPES,
   REMEDIATION_KINDS,
@@ -17,7 +17,7 @@ import {
   type RemediationKind,
   type RemediationReport,
   type WorktreeLeftover,
-} from '@panda/environment'
+} from '@skanl/panda-environment'
 import {
   createLogSink,
   inspectLocalWorkspaces,
@@ -36,7 +36,7 @@ import {
   type UsageReport,
   type WorktreeInspection,
   type WorktreeOutcome,
-} from '@panda/session'
+} from '@skanl/panda-session'
 import {
   isRegistryVerb,
   runExportCommand,
@@ -324,7 +324,7 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
         // Worktrees are PROJECT state: `runSession` puts them under the project's
         // own `.panda/workspaces`, so the machine scope has none to report and
         // this is the only doctor that looks. The list is discovered here and
-        // handed in because `@panda/environment` may not import a workspace
+        // handed in because `@skanl/panda-environment` may not import a workspace
         // implementation (spec M16.A, D4 and the environment guard test).
         const projectDir = directory ?? options.cwd ?? process.cwd()
         const inspection = await inspectWorktrees(worktreeStateDir(projectDir))
@@ -402,7 +402,7 @@ export async function runPanda(argv: readonly string[], options: RunCommandOptio
 
   try {
     // The two capability calls, in order, with nothing between them the CLI
-    // decided: reading panda's documents is `@panda/session`'s answer, and so is
+    // decided: reading panda's documents is `@skanl/panda-session`'s answer, and so is
     // the run. The layers are handed FORWARD rather than resolved here so the
     // documents are read once and the KERNEL's configuration is the one that
     // decides — the CLI holds no kernel and composes nothing (Story M3.B).
@@ -640,7 +640,7 @@ function usageOutcome(
 
 /**
  * The whole of what `panda workspace remove` is: reject bad argv, call the two
- * workspace capabilities in `@panda/session`, print what they did, map it to an
+ * workspace capabilities in `@skanl/panda-session`, print what they did, map it to an
  * exit code. Every fact printed is a capability's — the CLI removes nothing,
  * checks nothing and classifies nothing.
  *
@@ -802,7 +802,7 @@ function formatOutcome(outcome: WorktreeOutcome | LocalWorkspaceOutcome): string
 
 /**
  * The whole of what `panda doctor` and `panda project doctor` are: reject bad
- * argv, call the capability in `@panda/environment`, print its diagnosis, map
+ * argv, call the capability in `@skanl/panda-environment`, print its diagnosis, map
  * findings to an exit code. Every fact printed is the capability's — the CLI
  * classifies nothing, decides nothing about drift, and writes nothing.
  */
@@ -1245,7 +1245,7 @@ function formatFinding(found: DiagnosisFinding): string {
 
 /**
  * The whole of what `panda init` and `panda project init` are: reject bad argv,
- * call the capability in `@panda/environment`, print its result, map it to an
+ * call the capability in `@skanl/panda-environment`, print its result, map it to an
  * exit code. Every fact printed is produced by the capability — the CLI adds no
  * detection, no projection and no interpretation of its own.
  */

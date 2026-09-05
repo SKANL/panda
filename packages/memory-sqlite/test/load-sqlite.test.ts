@@ -34,7 +34,7 @@ interface Ran {
 function runNode(source: string): Promise<Ran> {
   return new Promise((resolve) => {
     // `--conditions=panda-source` for the same reason `vitest.config.ts` sets it:
-    // inside this repository `@panda/*` resolves to SOURCE, and the development
+    // inside this repository `@skanl/panda-*` resolves to SOURCE, and the development
     // loop deliberately ships no build for the child to import.
     const child = spawn(process.execPath, ['--conditions=panda-source', '--input-type=module', '-e', source], {
       stdio: ['ignore', 'pipe', 'pipe'],

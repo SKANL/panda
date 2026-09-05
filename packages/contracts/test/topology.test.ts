@@ -9,11 +9,11 @@ const packagesDir = join(import.meta.dirname, '..', '..')
  *
  * The four `test/guard.test.ts` files in `environment`, `kernel`, `projection`
  * and `session` are NOT duplicated here and are not replaced: they carry
- * package-SPECIFIC clauses no generic checker can express — `@panda/environment`
+ * package-SPECIFIC clauses no generic checker can express — `@skanl/panda-environment`
  * permits only `access`, `constants`, `mkdir` and `stat` from the filesystem and
  * forbids the literal string `atomicWriteText`. What this file adds is the
  * clause that is the SAME for every package and is therefore a fact about the
- * GRAPH rather than about any package: strictly-downward `@panda/*` imports.
+ * GRAPH rather than about any package: strictly-downward `@skanl/panda-*` imports.
  * Writing it six more times would be six spellings of one rule, which is how two
  * answers come to disagree.
  *
@@ -39,20 +39,20 @@ const packagesDir = join(import.meta.dirname, '..', '..')
  *   IS AD-1: `dependencyTier >= tier` is true for every possible import, so the
  *   kernel's empty allowlist needs no special case. The kernel's own guard keeps
  *   its richer clauses; this one agrees with it rather than replacing it.
- * - tier 1 — `@panda/lock`, a PRIMITIVE: the portable lockfile protocol, on
- *   `@panda/contracts` and nothing else. It earns a tier of its own rather than
+ * - tier 1 — `@skanl/panda-lock`, a PRIMITIVE: the portable lockfile protocol, on
+ *   `@skanl/panda-contracts` and nothing else. It earns a tier of its own rather than
  *   a place beside the implementations because two of them import it, and two
  *   packages at one tier importing each other is exactly what "strictly"
  *   downward forbids. The spine's `flowchart BT` predates it; the order below is
  *   the executable statement, and this is the layer it gained when the lock
- *   stopped being `@panda/registry`'s private machinery.
+ *   stopped being `@skanl/panda-registry`'s private machinery.
  * - tier 2 — the spine's `IMPL["adapter-* · memory-* · workspace-* · projection"]`,
  *   plus `registry`, which is an implementation of the Registry ports in exactly
  *   the same sense and imports exactly the same set.
  * - tier 3 — the CONSUMER packages that compose implementations. The spine does
  *   not name them individually; `packages/environment/test/guard.test.ts` does,
- *   in its own words: "`@panda/environment` is CONSUMER tier, exactly like
- *   `@panda/session`". Two consumer packages at the same tier may not import each
+ *   in its own words: "`@skanl/panda-environment` is CONSUMER tier, exactly like
+ *   `@skanl/panda-session`". Two consumer packages at the same tier may not import each
  *   other, which is what "strictly" downward buys.
  * - tier 4 — `CLI --> KERNEL`, `CLI --> CONTRACTS`, `CLI --> IMPL`: the CLI sits
  *   on everything.
@@ -95,10 +95,10 @@ function importsOf(source: string): string[] {
 
 /**
  * The package a specifier names, or `undefined` when it names none.
- * `@panda/contracts/validation` and `@panda/contracts` are one dependency.
+ * `@skanl/panda-contracts/validation` and `@skanl/panda-contracts` are one dependency.
  */
 function packageNameOf(specifier: string): string | undefined {
-  return specifier.startsWith('@panda/') ? specifier.slice('@panda/'.length).split('/')[0] : undefined
+  return specifier.startsWith('@skanl/panda-') ? specifier.slice('@skanl/panda-'.length).split('/')[0] : undefined
 }
 
 function workspaceDependenciesOf(files: readonly string[]): string[] {
@@ -119,17 +119,17 @@ function workspaceDependenciesOf(files: readonly string[]): string[] {
  */
 function violationsFor(packageName: string, dependencies: readonly string[]): string[] {
   const tier = TIER[packageName]
-  if (tier === undefined) return [`@panda/${packageName} has no declared tier`]
+  if (tier === undefined) return [`@skanl/panda-${packageName} has no declared tier`]
   return dependencies.flatMap((dependency) => {
     const dependencyTier = TIER[dependency]
     if (dependencyTier === undefined) {
-      return [`@panda/${packageName} (tier ${tier}) imports @panda/${dependency}, which the declared order does not name`]
+      return [`@skanl/panda-${packageName} (tier ${tier}) imports @skanl/panda-${dependency}, which the declared order does not name`]
     }
     // Strictly downward: a SIBLING at the same tier is a violation too. Two
     // packages at one tier importing each other are one package with two names.
     return dependencyTier >= tier
       ? [
-          `@panda/${packageName} (tier ${tier}) imports @panda/${dependency} (tier ${dependencyTier}) — imports must be strictly downward`,
+          `@skanl/panda-${packageName} (tier ${tier}) imports @skanl/panda-${dependency} (tier ${dependencyTier}) — imports must be strictly downward`,
         ]
       : []
   })
@@ -153,7 +153,7 @@ describe('package topology is strictly downward (AD-2)', () => {
     expect(Object.keys(TIER).sort()).toEqual(packagesWithSource())
   })
 
-  it('reports zero upward or sibling @panda/* imports across every package src', () => {
+  it('reports zero upward or sibling @skanl/panda-* imports across every package src', () => {
     const violations: string[] = []
     let scanned = 0
     for (const packageName of packagesWithSource()) {
@@ -171,26 +171,26 @@ describe('package topology is strictly downward (AD-2)', () => {
   it('flags an upward import, a sibling import, and an unknown package', () => {
     // Every failure mode of the matrix, driven rather than described.
     expect(violationsFor('contracts', ['session'])).toEqual([
-      '@panda/contracts (tier 0) imports @panda/session (tier 3) — imports must be strictly downward',
+      '@skanl/panda-contracts (tier 0) imports @skanl/panda-session (tier 3) — imports must be strictly downward',
     ])
     expect(violationsFor('contracts', ['kernel'])).toEqual([
-      '@panda/contracts (tier 0) imports @panda/kernel (tier 0) — imports must be strictly downward',
+      '@skanl/panda-contracts (tier 0) imports @skanl/panda-kernel (tier 0) — imports must be strictly downward',
     ])
     // AD-1 falls out of tier 0 rather than being restated: the kernel may import
     // nothing at all, contracts included.
     expect(violationsFor('kernel', ['contracts'])).toEqual([
-      '@panda/kernel (tier 0) imports @panda/contracts (tier 0) — imports must be strictly downward',
+      '@skanl/panda-kernel (tier 0) imports @skanl/panda-contracts (tier 0) — imports must be strictly downward',
     ])
     expect(violationsFor('cli', ['not-a-package'])).toEqual([
-      '@panda/cli (tier 4) imports @panda/not-a-package, which the declared order does not name',
+      '@skanl/panda-cli (tier 4) imports @skanl/panda-not-a-package, which the declared order does not name',
     ])
-    expect(violationsFor('brand-new', ['contracts'])).toEqual(['@panda/brand-new has no declared tier'])
+    expect(violationsFor('brand-new', ['contracts'])).toEqual(['@skanl/panda-brand-new has no declared tier'])
     // The tier the lock's extraction added, driven in both directions: the
     // primitive may reach contracts and nothing above it, and the two packages
     // that import it are above it rather than beside it.
     expect(violationsFor('lock', ['contracts'])).toEqual([])
     expect(violationsFor('lock', ['registry'])).toEqual([
-      '@panda/lock (tier 1) imports @panda/registry (tier 2) — imports must be strictly downward',
+      '@skanl/panda-lock (tier 1) imports @skanl/panda-registry (tier 2) — imports must be strictly downward',
     ])
     expect(violationsFor('projection', ['contracts', 'lock'])).toEqual([])
     // And the shape that must NOT fire, or every row above proves only that the
@@ -203,13 +203,13 @@ describe('package topology is strictly downward (AD-2)', () => {
     // violation it cannot report.
     // The package names are interpolated so this fixture is not itself an import
     // the scan above would flag — the extractor is deliberately naive about context.
-    const kernel = `@panda/${'kernel'}`
+    const kernel = `@skanl/panda-${'kernel'}`
     expect(
       [
         `import { a } from '${kernel}'`,
         `const m = await import("${kernel}")`,
         `export * from '${kernel}/deep/path'`,
-        `import type { B } from '@panda/${'contracts'}/validation'`,
+        `import type { B } from '@skanl/panda-${'contracts'}/validation'`,
         `import { readFileSync } from 'node:fs'`,
         `import { local } from './sibling.ts'`,
       ].flatMap((source) => importsOf(source).map(packageNameOf)),

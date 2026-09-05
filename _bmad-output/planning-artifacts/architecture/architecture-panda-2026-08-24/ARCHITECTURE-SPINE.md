@@ -24,10 +24,10 @@ companions: []
 
 ```mermaid
 flowchart TD
-    K["@panda/kernel<br/>(container: lifecycle · DI · event bus · config layers)"]
-    C["@panda/contracts<br/>(7 ports + typed errors + schema interfaces)")
+    K["@skanl/panda-kernel<br/>(container: lifecycle · DI · event bus · config layers)"]
+    C["@skanl/panda-contracts<br/>(7 ports + typed errors + schema interfaces)")
     A["adapters / memory / workspace / projection<br/>(plugins implementing ports)"]
-    CLI["@panda/cli"]
+    CLI["@skanl/panda-cli"]
     X["Executors (external CLIs)<br/>claude · codex · opencode"]
 
     A -->|implements| C
@@ -44,7 +44,7 @@ flowchart TD
 
 - **Binds:** all
 - **Prevents:** core growing privileged knowledge of any Contract or implementation; "plugin" in name only.
-- **Rule:** the Kernel is generic. It loads Plugins declaring provided/consumed services via manifest, resolves their graph, owns lifecycle. No Kernel module imports `@panda/contracts` or any implementation package. [ADOPTED]
+- **Rule:** the Kernel is generic. It loads Plugins declaring provided/consumed services via manifest, resolves their graph, owns lifecycle. No Kernel module imports `@skanl/panda-contracts` or any implementation package. [ADOPTED]
 
 ### AD-2 — Package topology & dependency direction
 
@@ -54,15 +54,15 @@ flowchart TD
 
 ```mermaid
 flowchart BT
-    KERNEL["@panda/kernel"] --> NOTHING["(no deps, not even contracts)"]
-    CONTRACTS["@panda/contracts"] --> NOTHING2["(no external runtime deps)"]
+    KERNEL["@skanl/panda-kernel"] --> NOTHING["(no deps, not even contracts)"]
+    CONTRACTS["@skanl/panda-contracts"] --> NOTHING2["(no external runtime deps)"]
     IMPL["adapter-* · memory-* · workspace-* · projection"] --> CONTRACTS
-    CLI["@panda/cli"] --> KERNEL
+    CLI["@skanl/panda-cli"] --> KERNEL
     CLI --> CONTRACTS
     CLI --> IMPL
 ```
 
-Third parties implement any port installing only `@panda/contracts`. All Contracts version together under one semver major (PRD §11). **Runtime consumption mirrors this topology**: derived-state generators (projection engine, Bundle export) may consume only canonical-state inputs — Registry read-ports and resolved config. Memory and other side-state are reachable solely through explicit consumer-facing surfaces, never as implicit inputs to derived artifacts. [ADOPTED]
+Third parties implement any port installing only `@skanl/panda-contracts`. All Contracts version together under one semver major (PRD §11). **Runtime consumption mirrors this topology**: derived-state generators (projection engine, Bundle export) may consume only canonical-state inputs — Registry read-ports and resolved config. Memory and other side-state are reachable solely through explicit consumer-facing surfaces, never as implicit inputs to derived artifacts. [ADOPTED]
 
 ### AD-3 — Plugin trust model
 
@@ -74,7 +74,7 @@ Third parties implement any port installing only `@panda/contracts`. All Contrac
 
 - **Binds:** F3 Registry/Projection, F4 Memory, F5 Workspaces, F6 Bundles
 - **Prevents:** two writers to any owned state; derived state treated as truth; untraceable mutations; silent lost updates across processes.
-- **Rule:** the Registry is THE canonical mutable store. Its canonical entry envelopes (tool/skill/mcp-server/profile) — schemas and validation point — are defined in `@panda/contracts` and enforced by the Registry service at registration; provider-specific payloads live only under a reserved `extensions` namespace. Registry write serialization is **machine-scoped**: an advisory lock keyed to the physical store path binds every writer (concurrent CLIs, embedded SDKs alike), contending writers receive a typed error naming the holder. Projections are derived artifacts written only by the projection engine, atomically (temp-file + rename), as a pure function of canonical-state inputs. Vendor configs are modified exclusively through ProjectionTarget merges; foreign content preserved byte-for-byte. **All persistent mutations of panda-owned state** — Registry entries, panda-owned config keys, projections — flow exclusively through their owning component's serialized API; direct filesystem writes to panda-owned files by plugins are prohibited and detected by doctor. The observability log is a **kernel-owned core service initialized before any plugin loads**, with a fixed failure policy (typed degraded mode, never silent loss); every model-visible interaction must be reconstructable from it. [ADOPTED + tightened by adversarial review H1/H3/H4/H8]
+- **Rule:** the Registry is THE canonical mutable store. Its canonical entry envelopes (tool/skill/mcp-server/profile) — schemas and validation point — are defined in `@skanl/panda-contracts` and enforced by the Registry service at registration; provider-specific payloads live only under a reserved `extensions` namespace. Registry write serialization is **machine-scoped**: an advisory lock keyed to the physical store path binds every writer (concurrent CLIs, embedded SDKs alike), contending writers receive a typed error naming the holder. Projections are derived artifacts written only by the projection engine, atomically (temp-file + rename), as a pure function of canonical-state inputs. Vendor configs are modified exclusively through ProjectionTarget merges; foreign content preserved byte-for-byte. **All persistent mutations of panda-owned state** — Registry entries, panda-owned config keys, projections — flow exclusively through their owning component's serialized API; direct filesystem writes to panda-owned files by plugins are prohibited and detected by doctor. The observability log is a **kernel-owned core service initialized before any plugin loads**, with a fixed failure policy (typed degraded mode, never silent loss); every model-visible interaction must be reconstructable from it. [ADOPTED + tightened by adversarial review H1/H3/H4/H8]
 
 ### AD-5 — Injection semantics
 
@@ -92,7 +92,7 @@ Third parties implement any port installing only `@panda/contracts`. All Contrac
 
 - **Binds:** all Contracts, all packages
 - **Prevents:** naked errors crossing boundaries; untestable failure modes.
-- **Rule:** one typed error hierarchy with stable string codes lives in `@panda/contracts`. Every Contract violation raises a coded error naming the violated clause; contract-test suites assert on codes. [ADOPTED]
+- **Rule:** one typed error hierarchy with stable string codes lives in `@skanl/panda-contracts`. Every Contract violation raises a coded error naming the violated clause; contract-test suites assert on codes. [ADOPTED]
 
 ### AD-8 — Event bus discipline
 
@@ -104,7 +104,7 @@ Third parties implement any port installing only `@panda/contracts`. All Contrac
 
 - **Binds:** config resolution, projection inputs, drift detection
 - **Prevents:** ad-hoc merge order; invisible overrides; unclassifiable config sections.
-- **Rule:** resolution walks defaults → global → project → agent → invocation overlay, deep-merging with sentinels for panda-owned keys; a dump command exposes the composed tree with originating layer per key. Narrower scopes never mutate wider-scope files. **`@panda/contracts` owns a single versioned, namespaced sentinel grammar** (`PANDA:<v>:…` family) covering BOTH the layered-config vocabulary and the vendor-config projection markers as explicitly distinct systems; ProjectionTargets implement only per-format encodings of that grammar; sentinels from unknown/legacy versions classify as Drift requiring explicit migration. [ADOPTED + tightened H7]
+- **Rule:** resolution walks defaults → global → project → agent → invocation overlay, deep-merging with sentinels for panda-owned keys; a dump command exposes the composed tree with originating layer per key. Narrower scopes never mutate wider-scope files. **`@skanl/panda-contracts` owns a single versioned, namespaced sentinel grammar** (`PANDA:<v>:…` family) covering BOTH the layered-config vocabulary and the vendor-config projection markers as explicitly distinct systems; ProjectionTargets implement only per-format encodings of that grammar; sentinels from unknown/legacy versions classify as Drift requiring explicit migration. [ADOPTED + tightened H7]
 
 ### AD-10 — Tool-call interception waterfall
 
@@ -116,7 +116,7 @@ Third parties implement any port installing only `@panda/contracts`. All Contrac
 
 | Concern | Convention |
 | --- | --- |
-| Naming | Packages `@panda/<role>`; ports `XProvider`/`XAdapter`/`XTarget`/`XSource`; events past-tense (`executor.exited`); error codes `PANDA_<DOMAIN>_<REASON>` |
+| Naming | Packages `@skanl/panda-<role>`; ports `XProvider`/`XAdapter`/`XTarget`/`XSource`; events past-tense (`executor.exited`); error codes `PANDA_<DOMAIN>_<REASON>` |
 | Data & formats | IDs are content-hash hex; timestamps ISO 8601 UTC; results are typed envelopes (`{status, data, summary, changedPaths?, errors?}`); schemas cross Contract boundaries as Standard Schema v1 objects |
 | State & cross-cutting | Mutations serialized through owning component; atomic writes everywhere (temp+rename); secrets never logged/bundled/serialized into errors; logs append-only |
 | Liveness detection | ExecutorAdapter responsibility only; native-config hooks are injected EXCLUSIVELY through the projection engine's owned merge path (never direct writes); passive PTY/OSC fallback; screen scraping prohibited |
@@ -140,8 +140,8 @@ Third parties implement any port installing only `@panda/contracts`. All Contrac
 ```text
 panda/
   packages/
-    kernel/            # @panda/kernel — container, zero runtime deps
-    contracts/         # @panda/contracts — 7 ports, errors, schema interfaces
+    kernel/            # @skanl/panda-kernel — container, zero runtime deps
+    contracts/         # @skanl/panda-contracts — 7 ports, errors, schema interfaces
     adapter-claude/    # first-party ExecutorAdapter plugins
     adapter-codex/
     adapter-opencode/
@@ -150,7 +150,7 @@ panda/
     workspace-local/   # WorkspaceProvider impl
     workspace-git/     # git-worktree WorkspaceProvider impl
     projection/        # projection engine + ProjectionTarget traits table
-    cli/               # @panda/cli binary
+    cli/               # @skanl/panda-cli binary
   .scratch/            # references, scratch analysis (gitignored)
 ```
 
@@ -160,14 +160,14 @@ Deployment envelope (v1): local-first SDK + globally installable CLI; no server,
 
 | Capability | Lives in | Governed by |
 | --- | --- | --- |
-| F1 Kernel & lifecycle | @panda/kernel | AD-1, AD-5, AD-8, AD-9 |
+| F1 Kernel & lifecycle | @skanl/panda-kernel | AD-1, AD-5, AD-8, AD-9 |
 | F2 Executor adapters | adapter-* packages | AD-3, AD-6, AD-7; traits-as-data rule (PRD FR-8) |
-| F3 Registry & projection | @panda/contracts + projection | AD-4, AD-9; ownership sentinels (PRD FR-12) |
+| F3 Registry & projection | @skanl/panda-contracts + projection | AD-4, AD-9; ownership sentinels (PRD FR-12) |
 | F4 Memory providers | memory-* packages | AD-4, AD-7; append-only provenance (PRD RD-1) |
 | F5 Workspaces | workspace-* packages | AD-6; PRD FR-17..FR-20 |
-| F6 Portability (Bundles) | @panda/contracts + cli | AD-4, AD-6; secret exclusion (PRD FR-21) |
-| F7 Method contract | @panda/contracts definition | AD-7; PRD RD-3 |
-| F8 CLI | @panda/cli | composes all; budgets from PRD §12 |
+| F6 Portability (Bundles) | @skanl/panda-contracts + cli | AD-4, AD-6; secret exclusion (PRD FR-21) |
+| F7 Method contract | @skanl/panda-contracts definition | AD-7; PRD RD-3 |
+| F8 CLI | @skanl/panda-cli | composes all; budgets from PRD §12 |
 
 ## Deferred
 

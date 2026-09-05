@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES } from '@panda/contracts'
-import type { ProjectionConfigTarget, RegistryEntriesByKind } from '@panda/contracts'
+import { PANDA_ERROR_CODES } from '@skanl/panda-contracts'
+import type { ProjectionConfigTarget, RegistryEntriesByKind } from '@skanl/panda-contracts'
 import { runProjection } from '../src/engine.ts'
 import { ProjectionLedger } from '../src/ledger.ts'
 

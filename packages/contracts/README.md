@@ -1,4 +1,4 @@
-# @panda/contracts
+# @skanl/panda-contracts
 
 The ports a third party implements to extend panda, and the published suites that
 tell them whether they got it right.
@@ -7,7 +7,7 @@ Everything an author needs is on this page and in the types this package exports
 You should never have to read panda's source.
 
 ```bash
-npm i -D @panda/contracts
+npm i -D @skanl/panda-contracts
 ```
 
 > **This package alone is enough to implement a port**, and that is under test
@@ -52,8 +52,8 @@ A workspace handle is a **lease**, not a path.
 ## Write the port
 
 ```ts
-import { PANDA_ERROR_CODES, PandaError, validateWorkspaceHandle } from '@panda/contracts'
-import type { WorkspaceHandle, WorkspaceProvider } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError, validateWorkspaceHandle } from '@skanl/panda-contracts'
+import type { WorkspaceHandle, WorkspaceProvider } from '@skanl/panda-contracts'
 
 export class EphemeralWorkspaces implements WorkspaceProvider {
   async create(): Promise<WorkspaceHandle> {
@@ -94,7 +94,7 @@ import {
   PandaError,
   runWorkspaceContractSuite,
   validateWorkspaceHandle,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 
 class HalfRightWorkspaces {
   #roots = new Map()

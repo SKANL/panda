@@ -10,7 +10,7 @@ import {
   memoryOverwriteUnsupported,
   memoryStoreVersionMismatch,
   validateMemorySaveRequest,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type {
   MemoryEntry,
   MemoryProvider,
@@ -19,7 +19,7 @@ import type {
   MemorySearchResult,
   MemoryStoreInfo,
   MemoryTimeline,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 
 const META_FILE = 'meta.json'
 const LOG_FILE = 'entries.ndjson'
@@ -82,7 +82,7 @@ export class FilesystemMemoryProvider implements MemoryProvider {
 
   async save(request: MemorySaveRequest): Promise<MemoryEntry> {
     this.#assertActive()
-    // Validation lives in @panda/contracts so both shipped providers refuse the
+    // Validation lives in @skanl/panda-contracts so both shipped providers refuse the
     // same requests with the same coded message. FR-16 asks for identical
     // behaviour envelopes; two hand-written validators is where that erodes.
     const valid = validateMemorySaveRequest(request)
@@ -234,7 +234,7 @@ async function readLog(logPath: string): Promise<MemoryEntry[]> {
 /**
  * The whole query surface: AND-ed equality on provenance, exact case-sensitive
  * substring on the opaque payload. `contains` uses `String.prototype.includes`,
- * whose empty-needle answer (`true`) is the one `@panda/memory-sqlite` matches
+ * whose empty-needle answer (`true`) is the one `@skanl/panda-memory-sqlite` matches
  * with `instr(payload, '') > 0` — the two engines have to agree on the corner
  * cases too, or FR-16's "identical behaviour envelopes" is only about the middle.
  */

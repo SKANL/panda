@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
 import { FilesystemMemoryProvider } from '../src/index.ts'
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'panda-memory-filesystem-unit-'))

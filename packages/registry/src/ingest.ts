@@ -1,5 +1,5 @@
-import { PANDA_ERROR_CODES, PANDA_SOURCE_EXTENSION_KEY, PandaError, validateRegistryEntry } from '@panda/contracts'
-import { isNonEmptyString, isRecord } from '@panda/contracts/validation'
+import { PANDA_ERROR_CODES, PANDA_SOURCE_EXTENSION_KEY, PandaError, validateRegistryEntry } from '@skanl/panda-contracts'
+import { isNonEmptyString, isRecord } from '@skanl/panda-contracts/validation'
 import type {
   IngestOrigin,
   IngestOutcome,
@@ -10,7 +10,7 @@ import type {
   SourceTracking,
   SourcedSkill,
   ToolProvider,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type { RegistryStore } from './store.ts'
 
 // Provider ingestion (FR-13b/FR-13c): the ONE driver behind the ToolProvider

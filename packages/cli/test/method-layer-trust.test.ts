@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { ExecutorAdapter } from '@panda/contracts'
+import type { ExecutorAdapter } from '@skanl/panda-contracts'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 

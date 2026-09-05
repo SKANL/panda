@@ -20,7 +20,7 @@ import { isNonEmptyString, isRecord, issue } from './validation.ts'
 //
 // DUPLICATED, deliberately: `packages/kernel/src/manifest.ts` enforces the same
 // rule on a `PluginManifest.version` and carries its own copy, because AD-1
-// forbids the kernel a runtime dependency on anything, `@panda/contracts`
+// forbids the kernel a runtime dependency on anything, `@skanl/panda-contracts`
 // included. `test/method.test.ts` asserts the two copies agree on every string
 // in a shared corpus, so they cannot drift silently.
 export const SEMVER_PATTERN =
@@ -48,7 +48,7 @@ export function isSemver(value: unknown): value is string {
  * The value is a MODULE SPECIFIER, stored verbatim: it may be a relative path
  * or a bare package name, and normalising it as a path would corrupt the second
  * kind. Owned here because this package owns the MethodPlugin contract, the
- * same way `@panda/adapter-cli` owns `EXECUTOR_CONFIG_KEY`.
+ * same way `@skanl/panda-adapter-cli` owns `EXECUTOR_CONFIG_KEY`.
  */
 export const METHOD_CONFIG_KEY = 'method'
 

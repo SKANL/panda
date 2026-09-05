@@ -3,13 +3,13 @@
 A **MethodPlugin** packages a development methodology — its phases, the
 artifacts it produces, the commands it offers — as something panda can load.
 This is the whole contract. Everything an author needs is on this page and in
-the types `@panda/contracts` exports; you should never have to read panda's
+the types `@skanl/panda-contracts` exports; you should never have to read panda's
 source to write one.
 
 Implements FR-23 / RD-3.
 
 ```ts
-import { activateMethod, validateMethodPlugin, type MethodPlugin } from '@panda/contracts'
+import { activateMethod, validateMethodPlugin, type MethodPlugin } from '@skanl/panda-contracts'
 ```
 
 ## The shape

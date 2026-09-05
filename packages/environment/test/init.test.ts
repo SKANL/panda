@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createMemoryLogSink } from '@panda/kernel'
-import type { LogSink } from '@panda/kernel'
-import { RegistryStore } from '@panda/registry'
+import { createMemoryLogSink } from '@skanl/panda-kernel'
+import type { LogSink } from '@skanl/panda-kernel'
+import { RegistryStore } from '@skanl/panda-registry'
 import { describe, expect, it } from 'vitest'
 import { PROJECTION_ACTION_ID, deliveryFor, initMachine, initProject, noExecutorsDetected } from '../src/init.ts'
 

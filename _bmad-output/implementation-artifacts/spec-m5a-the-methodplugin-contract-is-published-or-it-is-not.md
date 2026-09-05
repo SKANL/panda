@@ -58,8 +58,8 @@ the author's failure.
 ## Boundaries & Constraints
 
 - **AD-1 is absolute:** the kernel has zero runtime dependencies and never
-  imports `@panda/contracts`. The MethodPlugin contract is a Contract, so it
-  lives in `@panda/contracts`; the kernel's `PluginManifest` is not moved and
+  imports `@skanl/panda-contracts`. The MethodPlugin contract is a Contract, so it
+  lives in `@skanl/panda-contracts`; the kernel's `PluginManifest` is not moved and
   not made to depend on it.
 - **RD-3 caps the surface: EXACTLY two lifecycle hooks.** `onActivate` and
   `onDeactivate`, nothing else — the PRD says *"no further hooks until a second
@@ -110,7 +110,7 @@ deliverable is BOTH the sample and **the list of everything its author had to
 guess, could not find, or had to read `src/` for.** That list is the finding.
 
 **Ask First (frozen):** semver enforcement lives in `packages/kernel/src/manifest.ts`,
-which has ZERO runtime dependencies and may never import `@panda/contracts`. If
+which has ZERO runtime dependencies and may never import `@skanl/panda-contracts`. If
 enforcing semver there would require a dependency, or would require moving the
 check into contracts and thereby splitting manifest validation across two
 packages, STOP and report the options with their costs. Do not add a dependency
@@ -137,8 +137,8 @@ is what these numbers come from.
 needed no dependency and no split. The rule is a regular expression — the
 recommended semver.org pattern, verbatim — evaluated inside the existing
 `validateManifest`, so the kernel keeps its zero runtime dependencies, never
-imports `@panda/contracts`, and manifest validation stays whole in one function.
-`@panda/contracts` carries its own copy of the same pattern for a MethodPlugin's
+imports `@skanl/panda-contracts`, and manifest validation stays whole in one function.
+`@skanl/panda-contracts` carries its own copy of the same pattern for a MethodPlugin's
 `version` (AD-1 forbids the kernel the reverse direction), and
 `packages/contracts/test/method.test.ts` asserts the two copies agree on an
 18-string corpus, so the duplication cannot drift silently.
@@ -193,7 +193,7 @@ eight rejection rows and five acceptance rows.
 
 ### Published surface (T1, T2, T4 contract half)
 
-Everything below is reachable from `import … from '@panda/contracts'`; nothing
+Everything below is reachable from `import … from '@skanl/panda-contracts'`; nothing
 requires reading `src/`.
 
 - Values: `validateMethodPlugin`, `methodPluginIssues`, `METHOD_PLUGIN_SCHEMA`,
@@ -228,7 +228,7 @@ the method and the hook, `cause` preserved, and no handle returned).
 `node scripts/check-source-bytes.mjs` ok; `pnpm typecheck` all nine packages
 Done; `pnpm lint` no issues.
 
-`pnpm test` aborts at `@panda/adapter-cli`, whose two live opencode rows fail
+`pnpm test` aborts at `@skanl/panda-adapter-cli`, whose two live opencode rows fail
 with HTTP 403 `DataPolicyError` ("This model collects data used to improve its
 quality and requires explicit opt in") — the same environmental refusal recorded
 in the M4.F ledger entry, unrelated to this story. The remaining packages were

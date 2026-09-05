@@ -431,7 +431,7 @@ v1 surfaces quota state in `panda status` only when an Executor exposes an offic
 
 ## 12. Language / Runtime Targets & Performance Budgets
 
-- TypeScript on Node.js LTS (>=24, Krypton), ESM, pnpm 11 monorepo; zero runtime deps in `@panda/kernel`.
+- TypeScript on Node.js LTS (>=24, Krypton), ESM, pnpm 11 monorepo; zero runtime deps in `@skanl/panda-kernel`.
 - Budgets (initial, revisited at dogfooding): CLI cold start ≤ 300ms; projection of 50-entry registry ≤ 2s; adapter spawn overhead ≤ 150ms above raw CLI startup.
 
 ## 13. Why Now

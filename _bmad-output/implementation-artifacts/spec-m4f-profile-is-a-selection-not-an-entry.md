@@ -73,7 +73,7 @@ specific hazards its own review recorded, both now live:
 - Reuse M4.E's retirement machinery exactly. If retiring a second word needs any
   new mechanism, that is a finding about M4.E, not a licence to build one — see
   Ask First.
-- Kernel stays zero-dependency and never imports `@panda/contracts` (AD-1).
+- Kernel stays zero-dependency and never imports `@skanl/panda-contracts` (AD-1).
 - Relative imports carry `.ts`.
 
 ## I/O & Edge-Case Matrix
@@ -199,7 +199,7 @@ No duplicate table survived M4.E's review; the measurement this story exists to
 produce is that result.
 
 **Gate.** `node scripts/check-source-bytes.mjs`, `pnpm typecheck` and
-`pnpm lint` clean. `pnpm check` aborts at `@panda/adapter-cli`, whose live
+`pnpm lint` clean. `pnpm check` aborts at `@skanl/panda-adapter-cli`, whose live
 opencode rows fail on a reproducible provider refusal (HTTP 403
 `DataPolicyError`, opt-in required) unrelated to this change — ledgered. Every
 other package run individually: kernel 217, contracts 65, registry 68,

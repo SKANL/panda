@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { acquireLock } from '../src'
 import type { LockHolder, StaleLockBreak } from '../src'
 

@@ -13,7 +13,7 @@ ships that upgrade path.
 
 > `ponytail:` in-process only, so two panda **PROCESSES** can still interleave
 > and lose a claim. A cross-process lock cannot be borrowed from
-> `@panda/registry` (AD-2/AD-7: that edge was removed in Story 2.8 and leaked
+> `@skanl/panda-registry` (AD-2/AD-7: that edge was removed in Story 2.8 and leaked
 > `PANDA_REGISTRY_*` codes out of a projection API); **extracting a leaf lock
 > package with its own codes is the upgrade path**, recorded in
 > `deferred-work.md`.
@@ -92,36 +92,36 @@ The comment gives two reasons the lock cannot be borrowed. Both are real, and
 both dissolve under the same move.
 
 1. **AD-2** — a `projection → registry` edge. Measured:
-   `packages/projection/package.json` declares `@panda/contracts` and
-   `jsonc-parser`; `packages/registry/package.json` declares `@panda/contracts`,
-   `@panda/kernel` and `jsonc-parser`. The edge does not exist and must not be
+   `packages/projection/package.json` declares `@skanl/panda-contracts` and
+   `jsonc-parser`; `packages/registry/package.json` declares `@skanl/panda-contracts`,
+   `@skanl/panda-kernel` and `jsonc-parser`. The edge does not exist and must not be
    created.
 2. **AD-7 code leakage** — measured, and **smaller than the comment implies**:
    the lock raises exactly **two** distinct codes, `registryContention` and
    `registryStoreUnavailable`, at five sites. Both already live in
-   `@panda/contracts`.
+   `@skanl/panda-contracts`.
 
 Also measured: `acquireLock` and its four types are **already exported from
-`@panda/registry`'s public index** (`registry/src/index.ts:1-2`), so this is not
+`@skanl/panda-registry`'s public index** (`registry/src/index.ts:1-2`), so this is not
 private machinery being promoted — it is a published surface moving down.
 
 ## The decision, and the alternative it refused
 
 **Extract the lock into a dependency-free leaf package with NEUTRAL codes.**
-Both `@panda/registry` and `@panda/projection` depend on it. AD-2 holds by
+Both `@skanl/panda-registry` and `@skanl/panda-projection` depend on it. AD-2 holds by
 construction: a leaf below both is strictly downward.
 
 Neutral codes are what dissolves objection 2. The leaf raises its own
-lock-flavoured codes; `@panda/registry` catches and re-raises
+lock-flavoured codes; `@skanl/panda-registry` catches and re-raises
 `registryContention` / `registryStoreUnavailable` **exactly as today**, so no
-published registry error changes; `@panda/projection` raises its own
+published registry error changes; `@skanl/panda-projection` raises its own
 projection-flavoured contention code.
 
 **The refused alternative is duplication**, and it was not refused lightly —
 panda has chosen duplication for this exact constraint before, and wrote the rule
 down at `projection/src/document-fault.ts:22-26`:
 
-> `ponytail:` `@panda/registry` carries its own copy of this, because AD-2
+> `ponytail:` `@skanl/panda-registry` carries its own copy of this, because AD-2
 > forbids the edge that would let it import this one … Ceiling: two copies to
 > keep in step. **Upgrade path: a shared dependency-free leaf package, worth it
 > the first time a third package needs it.**
@@ -143,13 +143,13 @@ here. If the extraction turns into a rewrite, that is a renegotiation.
 
 ## Boundaries & constraints
 
-- **AD-2.** The new package depends on `@panda/contracts` and nothing else. It
+- **AD-2.** The new package depends on `@skanl/panda-contracts` and nothing else. It
   must carry its own `test/guard.test.ts` pinning that, because AD-2 is enforced
   by a guard test in only 4 of 12 packages and a new package arriving without one
   continues a measured trend.
 - **AD-7.** The leaf's codes are new entries in `PANDA_ERROR_CODES`. No package
   raises another package's code.
-- **No published registry error changes.** `@panda/registry` keeps raising
+- **No published registry error changes.** `@skanl/panda-registry` keeps raising
   `registryContention` and `registryStoreUnavailable` from the same five
   situations. This is pinned by a test, not by intent.
 - **`acquireLock`'s behaviour does not change.** Exclusive create, holder written
@@ -209,7 +209,7 @@ File a renegotiation rather than implementing past any of these:
   requires rewriting the algorithm rather than relocating it and renaming two
   codes.
 - If a neutral-code leaf turns out to require an edge this spec did not
-  anticipate, or if `@panda/kernel` (which `registry` depends on and `projection`
+  anticipate, or if `@skanl/panda-kernel` (which `registry` depends on and `projection`
   does not) is reachable from the lock.
 - If holding a file lock across the ledger's read-modify-write introduces a
   deadlock with the registry's own lock on any path where both are held.
@@ -229,7 +229,7 @@ Landed as **NARROWED**, not closed. That word is this ledger's own
 (`deferred-work.md` carries 9 of them across 225 entries), and the entry it
 answers is the one against `spec-2-8`, which named this exact gap and this exact
 fix: *"Two panda PROCESSES can still interleave and lose a claim … Cross-process
-needs a real lock, which cannot be borrowed from `@panda/registry` (AD-2/AD-7) —
+needs a real lock, which cannot be borrowed from `@skanl/panda-registry` (AD-2/AD-7) —
 the upgrade path is a leaf lock package with its own error codes."* M32.A is that
 upgrade path arriving.
 
@@ -283,8 +283,8 @@ It is reduced.
   now carrying the leaf's code as `cause`. `packages/registry` 189/189 with
   `lock.test.ts` and `contention.test.ts` unmodified.
 - **AC4** — falsified. A planted `import type { RegistryStore } from
-  '@panda/registry'` in `packages/lock/src/index.ts` produced
-  `expected [ '@panda/registry' ] to deeply equal []` — exactly one violation,
+  '@skanl/panda-registry'` in `packages/lock/src/index.ts` produced
+  `expected [ '@skanl/panda-registry' ] to deeply equal []` — exactly one violation,
   naming only that package.
 - **AC6** — the lying `ponytail:` comment is replaced (`ledger.ts:219-230`).
 - **AC7** — typecheck 13/13, lint clean, bytes clean, build 13/13,

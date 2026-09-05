@@ -24,7 +24,7 @@ function workspaceImportsOf(files: readonly string[]): Set<string> {
   const found = new Set<string>()
   for (const file of files) {
     for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
-      if (specifier.startsWith('@panda/')) found.add(specifier)
+      if (specifier.startsWith('@skanl/panda-')) found.add(specifier)
     }
   }
   return found
@@ -34,26 +34,26 @@ const packageJson = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'u
 const declaredDependencies = Object.keys((packageJson['dependencies'] ?? {}) as Record<string, unknown>)
 
 /**
- * AD-2's topology is strictly downward. `@panda/session` is CONSUMER tier: it may
+ * AD-2's topology is strictly downward. `@skanl/panda-session` is CONSUMER tier: it may
  * depend on the kernel, the contracts and the implementations it wires, and on no
  * other consumer. These pins are the mechanism behind that sentence — without
  * them the tier is a claim in a comment, and pnpm would happily resolve an import
- * of `@panda/cli` from the very package whose reason to exist is that a third
+ * of `@skanl/panda-cli` from the very package whose reason to exist is that a third
  * party does not need the CLI.
  *
- * These clauses read IMPORT SPECIFIERS, so they see `@panda/x` and not a relative
+ * These clauses read IMPORT SPECIFIERS, so they see `@skanl/panda-x` and not a relative
  * path out of the package. That second route is closed repo-wide by the
  * `no-restricted-imports` regex in `eslint.config.js`, which is where it belongs:
  * a lint rule sees every package, where a per-package test only ever sees one.
  */
-describe('@panda/session dependency direction (AD-2)', () => {
+describe('@skanl/panda-session dependency direction (AD-2)', () => {
   it('declares exactly the packages it composes', () => {
     expect([...declaredDependencies].sort()).toEqual([
-      '@panda/adapter-cli',
-      '@panda/contracts',
-      '@panda/kernel',
-      '@panda/workspace-git-worktree',
-      '@panda/workspace-local',
+      '@skanl/panda-adapter-cli',
+      '@skanl/panda-contracts',
+      '@skanl/panda-kernel',
+      '@skanl/panda-workspace-git-worktree',
+      '@skanl/panda-workspace-local',
     ])
   })
 
@@ -66,8 +66,8 @@ describe('@panda/session dependency direction (AD-2)', () => {
     expect([...imported].sort()).toEqual([...declaredDependencies].sort())
   })
 
-  it('never reaches for @panda/cli, from src or from its own tests', () => {
-    // The acceptance criterion is "a project that has NOT installed @panda/cli".
+  it('never reaches for @skanl/panda-cli, from src or from its own tests', () => {
+    // The acceptance criterion is "a project that has NOT installed @skanl/panda-cli".
     // A test that imported the CLI would be exercising the wrong claim, so the
     // scan covers `test` as well as `src` — the same reason the kernel's guard
     // scans both.
@@ -75,7 +75,7 @@ describe('@panda/session dependency direction (AD-2)', () => {
     expect(files.length).toBeGreaterThan(0)
     for (const file of files) {
       for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
-        expect(specifier.startsWith('@panda/cli'), `${file} imports '${specifier}'`).toBe(false)
+        expect(specifier.startsWith('@skanl/panda-cli'), `${file} imports '${specifier}'`).toBe(false)
       }
     }
   })

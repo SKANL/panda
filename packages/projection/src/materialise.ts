@@ -1,6 +1,6 @@
 import { lstat, mkdir, readdir, readFile, rm, rmdir, stat } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import type {
   DriftEntry,
   ProjectionClaim,
@@ -11,7 +11,7 @@ import type {
   ProjectionResult,
   ProjectionSkip,
   RegistryEntriesByKind,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import { atomicWriteBytes } from './atomic-write.ts'
 import {
   canonicalBytesHash,

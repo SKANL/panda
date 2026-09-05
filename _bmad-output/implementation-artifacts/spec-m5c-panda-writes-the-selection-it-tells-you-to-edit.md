@@ -69,15 +69,15 @@ Every claim was executed on 2026-09-01 at `3e6f85c`, never inferred.
    correctly.
 
 7. **The topology permits reusing it, and forbids the obvious alternative.**
-   Measured from the manifests: `@panda/environment` depends on `contracts`,
+   Measured from the manifests: `@skanl/panda-environment` depends on `contracts`,
    `kernel`, `projection`, `registry` — so it may import `atomic-write`.
-   `@panda/session` (which owns the config READER) depends on `adapter-cli`,
-   `contracts`, `kernel`, `workspace-local` — **not** projection. `@panda/cli`
+   `@skanl/panda-session` (which owns the config READER) depends on `adapter-cli`,
+   `contracts`, `kernel`, `workspace-local` — **not** projection. `@skanl/panda-cli`
    depends on `environment` and `session`, so it is the only package that can
    see both.
 
-8. **`availableExecutorIds()` lives in `@panda/session`**, re-exported through
-   `executors.ts`. `@panda/environment` cannot call it (measurement 7).
+8. **`availableExecutorIds()` lives in `@skanl/panda-session`**, re-exported through
+   `executors.ts`. `@skanl/panda-environment` cannot call it (measurement 7).
 
 9. **The printed-command invariant is live.**
    `packages/cli/test/printed-commands.test.ts` dispatches every backtick-quoted
@@ -89,9 +89,9 @@ Every claim was executed on 2026-09-01 at `3e6f85c`, never inferred.
 ## Boundaries & Constraints
 
 - **AD-1** — the kernel is not touched.
-- **AD-2** — no new package edge. The capability lands in `@panda/environment`,
+- **AD-2** — no new package edge. The capability lands in `@skanl/panda-environment`,
   which already holds the projection dependency; the executor catalogue reaches
-  it as a PARAMETER from `@panda/cli`, the one package that can see both
+  it as a PARAMETER from `@skanl/panda-cli`, the one package that can see both
   (measurements 7 and 8).
 - **AD-5** — typed absence over silence. A config document that exists and
   cannot be read is not the same as one that is absent, and this story must not
@@ -116,7 +116,7 @@ defect as a registry type nothing projects.
 
 What the key may CONTAIN is the caller's question, not the capability's: the CLI
 validates an executor id against `availableExecutorIds()` before calling. That
-is also what keeps `@panda/environment` from needing to know what an executor
+is also what keeps `@skanl/panda-environment` from needing to know what an executor
 is (AD-2).
 
 ### D2 — `atomic-write.ts` is REUSED, not copied
@@ -215,7 +215,7 @@ _bmad-output/implementation-artifacts/
 
 ## Tasks & Acceptance
 
-- [x] T1 — `setConfigValue`: read-or-absent, refuse a malformed document, merge ONE allowlisted key, write through `atomic-write`. **Landed in `@panda/projection`, not `@panda/environment`** — see the Change Log.
+- [x] T1 — `setConfigValue`: read-or-absent, refuse a malformed document, merge ONE allowlisted key, write through `atomic-write`. **Landed in `@skanl/panda-projection`, not `@skanl/panda-environment`** — see the Change Log.
 - [x] T2 — the published key allowlist; a key not on it is a coded refusal, not a silent write.
 - [x] T3 — `swap-command.ts`: argv parse, id validation (through `resolveExecutor`, so the refusal is byte-identical to `panda run --executor`), machine and project scopes, the effective-selection report of D3.
 - [x] T4 — dispatcher branches in `run.ts` for `swap` and `project swap`, plus the USAGE lines.
@@ -242,7 +242,7 @@ Stop and ask rather than deciding:
 
 - Any **new** `PANDA_*` error code (measurement 5 says none is needed).
 - Any new package edge (AD-2, measurement 7) — in particular making
-  `@panda/environment` depend on `@panda/session` to reach the executor
+  `@skanl/panda-environment` depend on `@skanl/panda-session` to reach the executor
   catalogue. D1 routes it as a parameter instead.
 - Naming the verb anything other than `swap`, or adding a noun beyond `executor`.
 - Adding `--for`, an unset/reset verb, or any second key beyond the allowlist.
@@ -257,10 +257,10 @@ Stop and ask rather than deciding:
   Story 5.4's precondition ("two installed methods") is unreachable: panda has
   **zero** dynamic imports and cannot load a method from anywhere.
 
-- 2026-09-01 — **D2 was WRONG and the writer moved to `@panda/projection`.**
+- 2026-09-01 — **D2 was WRONG and the writer moved to `@skanl/panda-projection`.**
   Filed rather than implemented past, and found by a guard rather than by
   reasoning. `packages/environment/test/guard.test.ts` holds two clauses this
-  spec's measurement never looked at: `@panda/environment` may import **only**
+  spec's measurement never looked at: `@skanl/panda-environment` may import **only**
   `access`, `constants`, `mkdir` and `stat` from the filesystem, and its source
   may not contain the string `atomicWriteText` at all. The second clause's own
   comment says the symbol *"is no longer exported from the projection index"*
@@ -273,10 +273,10 @@ Stop and ask rather than deciding:
   and only the guard answers that. A package manifest is not an architecture.
 
   **The resolution needs no new package edge:** `config-write.ts` lives in
-  `@panda/projection` beside the primitive it uses, `@panda/projection` publishes
-  the WRITER but still not `atomicWriteText`, and `@panda/environment`
+  `@skanl/panda-projection` beside the primitive it uses, `@skanl/panda-projection` publishes
+  the WRITER but still not `atomicWriteText`, and `@skanl/panda-environment`
   re-exports the writer as the CLI's facade — the same shape it already uses for
-  `createMemoryLogSink` from `@panda/kernel`. Environment names no filesystem
+  `createMemoryLogSink` from `@skanl/panda-kernel`. Environment names no filesystem
   verb and no atomic writer, so both clauses pass unchanged.
 
 - 2026-09-01 — **the "root fix" in `atomic-write.ts` was reverted, because there
@@ -384,5 +384,5 @@ separate branches and neither row is redundant.
 Nothing persists a `method` selection — the allowlist holds one key, and Story
 5.4 adds the second in the change that teaches panda to read it. No unset verb.
 `~/.panda/registry.json` has the same symlink exposure as `config.json` and
-`@panda/registry`'s writer does not resolve links; found while measuring, not
+`@skanl/panda-registry`'s writer does not resolve links; found while measuring, not
 fixed here, recorded in `deferred-work.md`.

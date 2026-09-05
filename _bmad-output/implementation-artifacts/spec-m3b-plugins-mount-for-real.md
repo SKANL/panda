@@ -27,11 +27,11 @@ context:
 
 ## Boundaries & Constraints
 
-**Always:** `panda run` is behaviour-neutral — identical envelope, identical exit codes, identical cancellation, identical cleanup on every failure path, and every existing CLI assertion passes unmodified; the executor adapter and the workspace provider are obtained from the kernel, never constructed on the composed path; the kernel's layered configuration is seeded from the SAME documents executor selection reads, so one document configures both; a plugin that fails to activate is contained and reported, never a crash of the kernel or of its siblings (AD-5); absence is typed — a consumed service that is missing reads as `{ kind: 'absent' }` and its use site raises a named error, never `undefined`; the executor invocation is registered as an action on the KERNEL's pipeline, so caps are kernel-scoped rather than per-session; every capability stays reachable by importing packages without `@panda/cli` (FR-29).
+**Always:** `panda run` is behaviour-neutral — identical envelope, identical exit codes, identical cancellation, identical cleanup on every failure path, and every existing CLI assertion passes unmodified; the executor adapter and the workspace provider are obtained from the kernel, never constructed on the composed path; the kernel's layered configuration is seeded from the SAME documents executor selection reads, so one document configures both; a plugin that fails to activate is contained and reported, never a crash of the kernel or of its siblings (AD-5); absence is typed — a consumed service that is missing reads as `{ kind: 'absent' }` and its use site raises a named error, never `undefined`; the executor invocation is registered as an action on the KERNEL's pipeline, so caps are kernel-scoped rather than per-session; every capability stays reachable by importing packages without `@skanl/panda-cli` (FR-29).
 
-**Ask First:** dynamic import of plugin code from disk, and any plugin discovery mechanism; a change to `ResultEnvelope`; making the registry, projection or doctor paths mount plugins (this story composes the RUN path); a semver rule for `PluginManifest.version`; exposing the kernel itself on `@panda/cli`'s public surface.
+**Ask First:** dynamic import of plugin code from disk, and any plugin discovery mechanism; a change to `ResultEnvelope`; making the registry, projection or doctor paths mount plugins (this story composes the RUN path); a semver rule for `PluginManifest.version`; exposing the kernel itself on `@skanl/panda-cli`'s public surface.
 
-**Never:** no direct construction of an adapter or a workspace provider left on the composed path; no second layered configuration over the same document; no behaviour visible to a `panda run` user changes; no plugin reads or writes panda-owned state outside its own service (AD-4); no capability moves into `@panda/cli`.
+**Never:** no direct construction of an adapter or a workspace provider left on the composed path; no second layered configuration over the same document; no behaviour visible to a `panda run` user changes; no plugin reads or writes panda-owned state outside its own service (AD-4); no capability moves into `@skanl/panda-cli`.
 
 ## I/O & Edge-Case Matrix
 
@@ -86,7 +86,7 @@ MEASURED, not what was preferred.
 AD-6 governs identity, and the Consistency Conventions row beside it fixes the
 vocabulary: ports are named `XProvider`/`XAdapter`/`XTarget`/`XSource`. Neither
 sentence names SERVICES, so the only evidence available is the one service panda
-already has: `@panda/registry` provides `registry` — plugin id, service name and
+already has: `@skanl/panda-registry` provides `registry` — plugin id, service name and
 config subtree all one word, and the word is the ROLE the consumer asks for, not
 the class it gets back (the value is a `RegistryStore`).
 
@@ -124,7 +124,7 @@ The first version of this entry named two routes and called the entry
 "NARROWED". Review refuted the count and the narrowing; both are corrected here
 rather than patched beside. Five routes, every one measured:
 
-- Any package that installs `@panda/adapter-cli` can build a runnable executor
+- Any package that installs `@skanl/panda-adapter-cli` can build a runnable executor
   from **six** exported value factories, not one. The claim that closing this
   needs the *vendor* factories unexported was wrong: `createExecutorAdapter('codex', …)`
   is the catalogue's own factory, is not a vendor factory, and is equally
@@ -145,7 +145,7 @@ rather than patched beside. Five routes, every one measured:
   mutation of `run`; all failed, and the last one now throws.
 
 **What this story genuinely closed**, stated at the size it is: for the
-pnpm-strict consumer that installed only `@panda/session` — the consumer this
+pnpm-strict consumer that installed only `@skanl/panda-session` — the consumer this
 package's own comments describe and `consumer-install.proof.ts` exercises — the
 bypass surface is **zero**, because that package now exports `createSessionKernel`
 and no factory at all. It briefly exported `createKernel` and both plugin
@@ -167,7 +167,7 @@ default provider — retention is. Named in a `ponytail:` comment on the service
 and filed in `deferred-work.md`; the upgrade path is a pipeline that can retire a
 handle, which is the same mechanism a post-hoc cost adjustment (M3.C) needs.
 
-### 4. The executor catalogue moved to `@panda/adapter-cli`
+### 4. The executor catalogue moved to `@skanl/panda-adapter-cli`
 
 `EXECUTOR_CATALOGUE`, `DEFAULT_EXECUTOR_ID`, `availableExecutorIds` and
 `createExecutorAdapter` now live in `packages/adapter-cli/src/catalogue.ts`, and
@@ -207,7 +207,7 @@ mounted plugin resolves against — is the only one in the composed path.
 **Why `panda run` stopped calling `resolveExecutor`.** The CLI now calls
 `readExecutorConfigLayers` and hands the snapshots to `runSession`, which reports
 the selection back through a new `onSelection` callback. Measured reason: the
-CLI cannot hold a kernel (`packages/cli/test/run.test.ts` pins `@panda/kernel`
+CLI cannot hold a kernel (`packages/cli/test/run.test.ts` pins `@skanl/panda-kernel`
 out of its imports, and exposing the kernel on the CLI surface is Ask-First in
 this spec), and `ExecutorSelection` cannot grow a field (pinned by `toEqual`).
 Keeping the old two-call shape would have meant reading `.panda/config.json`
@@ -275,20 +275,20 @@ The list grew on review from six to nine, and every addition was a measurement:
 provider that silently wrote into `process.cwd()` is the failure this plugin
 could not report on afterwards. `runSession` supplies
 `join(cwd, '.panda', 'workspaces')` as an explicit plugin option, merged over the
-configured value exactly as `@panda/registry`'s plugin merges its own.
+configured value exactly as `@skanl/panda-registry`'s plugin merges its own.
 
 When `createProvider` IS supplied, the workspace plugin is not mounted at all.
 The seam is a host/test injection, not the composed path, and mounting a provider
 nobody would consume would construct one for nothing.
 
-### 9. Implementation packages now depend on `@panda/kernel`
+### 9. Implementation packages now depend on `@skanl/panda-kernel`
 
-`@panda/adapter-cli` and `@panda/workspace-local` each gained
-`"@panda/kernel": "workspace:*"`. AD-2's diagram draws implementations depending
-on contracts alone, but `@panda/registry` has declared the kernel dependency
+`@skanl/panda-adapter-cli` and `@skanl/panda-workspace-local` each gained
+`"@skanl/panda-kernel": "workspace:*"`. AD-2's diagram draws implementations depending
+on contracts alone, but `@skanl/panda-registry` has declared the kernel dependency
 since Story 1.2 for exactly this reason — a plugin's manifest and factory are
 kernel types — so this follows the established precedent rather than widening the
-topology. `packages/session/test/guard.test.ts`, which pins @panda/session's
+topology. `packages/session/test/guard.test.ts`, which pins @skanl/panda-session's
 dependency set to four packages, is untouched: no new edge was added there.
 
 The installed-tarball proof already installs the kernel as a direct `file:`
@@ -340,10 +340,10 @@ New: 9 clauses in `packages/adapter-cli/test/plugin.test.ts`, 5 in
 `packages/session/test/kernel-composition.test.ts` — 26 in all.
 
 Unchanged and passing with `git diff` empty on every existing test file:
-`@panda/cli` 53, `@panda/session` 62 (74 with the new file), `@panda/adapter-cli`
-92 + 6 skipped (101 + 6 with the new file), `@panda/workspace-local` 13 (18 with
-the new file), `@panda/kernel`, `@panda/contracts`, `@panda/registry` 60,
-`@panda/projection` 142 + 3 skipped, `@panda/environment` 61. `pnpm check` green
+`@skanl/panda-cli` 53, `@skanl/panda-session` 62 (74 with the new file), `@skanl/panda-adapter-cli`
+92 + 6 skipped (101 + 6 with the new file), `@skanl/panda-workspace-local` 13 (18 with
+the new file), `@skanl/panda-kernel`, `@skanl/panda-contracts`, `@skanl/panda-registry` 60,
+`@skanl/panda-projection` 142 + 3 skipped, `@skanl/panda-environment` 61. `pnpm check` green
 with every `dist/` deleted first; `pnpm proof:consumer-install` green, 8 passed.
 
 ### 13. What this story does NOT close
@@ -353,8 +353,8 @@ an open entry:
 
 - The waterfall is still reachable around, by FIVE routes and not two, and the
   word "NARROWED" is withdrawn — see #2 as corrected and #15. Zero of them are
-  reachable from a `@panda/session`-only install; every one needs
-  `@panda/adapter-cli`, `@panda/kernel`, or a reference the caller already held.
+  reachable from a `@skanl/panda-session`-only install; every one needs
+  `@skanl/panda-adapter-cli`, `@skanl/panda-kernel`, or a reference the caller already held.
 - `createActionPipeline` is still a public export, so a holder can build a
   second, uncapped pipeline. Untouched.
 - `maxInvocations` and `maxTotalCost` still coincide while every action costs 1.
@@ -369,7 +369,7 @@ an open entry:
   with `PANDA_KERNEL_MANIFEST_INVALID` (duplicate plugin id), so a host cannot
   mount two adapters side by side and pick per session. New entry.
 - `manifest.configSchema` is decorative — the kernel probes it and never applies
-  it (#19). Pre-existing, inherited from `@panda/registry`; proposed as a kernel
+  it (#19). Pre-existing, inherited from `@skanl/panda-registry`; proposed as a kernel
   fix in the ledger rather than made one here.
 - Behaviour neutrality held only after the review round: the first version of
   this story broke `panda run` for any `.panda/config.json` carrying an unknown
@@ -383,15 +383,15 @@ an open entry:
 **Measured:** a complete working session composition was planted inside
 `packages/cli/src/` — read the layers, build a kernel, `selectExecutor` deciding
 the executor IN THE CLI, mount both plugins, start, `getService`, run, stop —
-importing only `@panda/session`. It spawned `opencode`, and eslint, tsc and all
-53 CLI assertions were green. The pin scanned for `@panda/kernel` by NAME, and
+importing only `@skanl/panda-session`. It spawned `opencode`, and eslint, tsc and all
+53 CLI assertions were green. The pin scanned for `@skanl/panda-kernel` by NAME, and
 the kernel had arrived through a package the CLI is allowed to import.
 
 That is the second time this pin has been routed around and neither time needed
 a new idea: Story 2.0 used relative cross-package imports, M3.B used a
 re-export. So the rule stopped naming packages and started naming CAPABILITIES:
 `no-restricted-imports` on `packages/cli/src/**` and `bin/**` with a
-`group: ['@panda/*']` pattern and an `importNames` list covering `createKernel`,
+`group: ['@skanl/panda-*']` pattern and an `importNames` list covering `createKernel`,
 `createSessionKernel`, `createExecutorPlugin`, `createWorkspacePlugin`,
 `createExecutorAdapter`, `seedExecutorConfig`, `selectExecutor`,
 `EXECUTOR_CATALOGUE`, `EXECUTOR_SERVICE`, `WORKSPACE_SERVICE`. Which package
@@ -415,12 +415,12 @@ cannot reach.
 `ActivationContext`. Hand it one carrying your own `ActionPipeline` and you get a
 real vendor adapter running with no kernel, no policy and no record —
 reproduced against the emitted `dist/`, which is the installed-consumer surface.
-`@panda/session` had re-exported that factory, `createWorkspacePlugin`,
+`@skanl/panda-session` had re-exported that factory, `createWorkspacePlugin`,
 `createKernel`, `seedExecutorConfig` and `selectExecutor`. For the pnpm-strict
-consumer that installed only `@panda/session`, the bypass surface went from
+consumer that installed only `@skanl/panda-session`, the bypass surface went from
 **zero to one in this story**.
 
-All five are withdrawn. In their place `@panda/session` exports one named
+All five are withdrawn. In their place `@skanl/panda-session` exports one named
 surface, `createSessionKernel(options)`, which mounts both plugins, seeds the
 configuration, starts the kernel and hands back the started kernel — the
 capability without the factory. `runSession` calls the same function when no
@@ -458,7 +458,7 @@ Two fixes, both proven by execution and by mutation:
   by three clauses; the mutation that restores the override turns one red.
 - **An unknown key is reported and survived.** The plugin emits
   `workspace.config.ignored` on the kernel bus per unrecognised key and per
-  wrong-shaped subtree, `@panda/session` forwards them through a new
+  wrong-shaped subtree, `@skanl/panda-session` forwards them through a new
   `onWarning` seam, and `panda run` prints them on stderr. A `rootDir` that is
   present and unusable still REJECTS activation, because there is then nothing to
   serve — that is the one genuinely fatal case and it stays fatal.
@@ -494,7 +494,7 @@ independently from the same document; renaming one produced
 `executor: codex (selected by the 'project' layer)` on stderr while `claude` was
 spawned, exit 0.
 
-The constant now lives beside the catalogue in `@panda/adapter-cli` and is
+The constant now lives beside the catalogue in `@skanl/panda-adapter-cli` and is
 imported everywhere else. This package's whole catalogue design exists because a
 second spelling drifted from the thing it named; the key had no business being
 the exception. The mutation that renames it turns two `panda run` clauses red.
@@ -505,7 +505,7 @@ the exception. The mutation that renames it turns two `panda run` clauses red.
 anything leaves 103, 23, 84 and 53 tests green. The kernel only PROBES the field
 for shape (Standard Schema v1, synchronous, non-throwing) and never applies it to
 the plugin's subtree; all enforcement is the factory's own call to its own
-schema. Inherited from `@panda/registry`'s plugin, not invented here.
+schema. Inherited from `@skanl/panda-registry`'s plugin, not invented here.
 
 Not fixed in this story, and deliberately: applying it is a kernel semantic
 change that touches an existing plugin and it is not on this spec's Ask-First
@@ -537,8 +537,8 @@ kernel fix is proposed in `deferred-work.md` with this measurement as evidence.
   "`setLayer`". Filed.
 - **`ARCHITECTURE-SPINE.md`'s AD-2 diagram disagrees with the code**, now three
   times over (`adapter-cli`, `workspace-local`, and `registry` since Story 1.2),
-  on top of a larger pre-existing divergence (`@panda/environment` depends on
-  both `@panda/projection` and `@panda/registry`). #9 argued around the diagram
+  on top of a larger pre-existing divergence (`@skanl/panda-environment` depends on
+  both `@skanl/panda-projection` and `@skanl/panda-registry`). #9 argued around the diagram
   instead of proposing an amendment. Filed as documentation debt naming both.
 - **A throwing `createAdapter` now reports a wrapped message.** It arrives as
   `PANDA_KERNEL_PLUGIN_START_FAILED … executor: <original>` rather than the bare
@@ -556,7 +556,7 @@ kernel fix is proposed in `deferred-work.md` with this measurement as evidence.
   user's document. It is not fixable without either reading files inside
   `runSession` (pinned forbidden by "reads no configuration of its own") or
   changing `ExecutorSelection`'s shape (pinned by `toEqual`) or editing two
-  pre-existing test files. What changed is the DOCUMENTED path: `@panda/session`'s
+  pre-existing test files. What changed is the DOCUMENTED path: `@skanl/panda-session`'s
   README now shows `readExecutorConfigLayers` → `runSession({ configLayers })`,
   and a clause proves a document's `workspace.rootDir` reaches a mounted plugin
   through it. Filed.
@@ -569,7 +569,7 @@ all reverted.
 | # | Weakening | Guard that failed |
 |---|-----------|-------------------|
 | 1 | the thin-binding pin stops naming the capabilities | `pnpm lint` over the planted CLI composition: 1 error → 0, exit 1 → 0 |
-| 2 | `@panda/session` re-exports `createKernel` + both plugin factories | session surface clause |
+| 2 | `@skanl/panda-session` re-exports `createKernel` + both plugin factories | session surface clause |
 | 3 | an unknown key in the `workspace` subtree is an issue again | "REPORTS an unknown key on the bus and keeps serving" |
 | 4 | the mount-time `rootDir` overrides the document again | "lets the CONFIGURED rootDir win over the mount-time fallback" |
 | 5 | the session passes its root as a plugin option again | *equivalent mutant* — the plugin-side fallback makes it a no-op, which is the point: the root cause was fixed where all callers route through, and #4 covers the class |

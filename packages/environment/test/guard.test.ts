@@ -22,7 +22,7 @@ function workspaceImportsOf(files: readonly string[]): Set<string> {
   const found = new Set<string>()
   for (const file of files) {
     for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
-      if (specifier.startsWith('@panda/')) found.add(specifier)
+      if (specifier.startsWith('@skanl/panda-')) found.add(specifier)
     }
   }
   return found
@@ -33,24 +33,24 @@ const declaredDependencies = Object.keys((packageJson['dependencies'] ?? {}) as 
 const sourceFiles = collectSourceFiles(join(packageDir, 'src'))
 
 /**
- * AD-2's topology is strictly downward. `@panda/environment` is CONSUMER tier,
- * exactly like `@panda/session`: it may depend on the kernel, the contracts and
+ * AD-2's topology is strictly downward. `@skanl/panda-environment` is CONSUMER tier,
+ * exactly like `@skanl/panda-session`: it may depend on the kernel, the contracts and
  * the implementations it wires, and on no other consumer. These pins are the
  * mechanism behind that sentence — without them the tier is a claim in a
- * comment, and pnpm would happily resolve an import of `@panda/cli` from the
+ * comment, and pnpm would happily resolve an import of `@skanl/panda-cli` from the
  * very package whose reason to exist is that a third party does not need it.
  *
- * These clauses read IMPORT SPECIFIERS, so they see `@panda/x` and not a
+ * These clauses read IMPORT SPECIFIERS, so they see `@skanl/panda-x` and not a
  * relative path out of the package. That second route is closed repo-wide by the
  * `no-restricted-imports` regex in `eslint.config.js`.
  */
-describe('@panda/environment dependency direction (AD-2)', () => {
+describe('@skanl/panda-environment dependency direction (AD-2)', () => {
   it('declares exactly the packages it composes', () => {
     expect([...declaredDependencies].sort()).toEqual([
-      '@panda/contracts',
-      '@panda/kernel',
-      '@panda/projection',
-      '@panda/registry',
+      '@skanl/panda-contracts',
+      '@skanl/panda-kernel',
+      '@skanl/panda-projection',
+      '@skanl/panda-registry',
     ])
   })
 
@@ -58,10 +58,10 @@ describe('@panda/environment dependency direction (AD-2)', () => {
     expect([...workspaceImportsOf(sourceFiles)].sort()).toEqual([...declaredDependencies].sort())
   })
 
-  it('never reaches for @panda/cli or @panda/session, from src or from its own tests', () => {
-    // The acceptance criterion is "a project that has NOT installed @panda/cli",
+  it('never reaches for @skanl/panda-cli or @skanl/panda-session, from src or from its own tests', () => {
+    // The acceptance criterion is "a project that has NOT installed @skanl/panda-cli",
     // so a test importing the CLI would exercise the wrong claim; the scan
-    // therefore covers `test` as well as `src`. `@panda/session` is barred for
+    // therefore covers `test` as well as `src`. `@skanl/panda-session` is barred for
     // the tier reason rather than the FR-29 one: two consumer packages that
     // import each other are one god package with two names.
     const files = [...sourceFiles, ...collectSourceFiles(join(packageDir, 'test'))]
@@ -69,7 +69,7 @@ describe('@panda/environment dependency direction (AD-2)', () => {
     for (const file of files) {
       for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
         expect(
-          specifier.startsWith('@panda/cli') || specifier.startsWith('@panda/session'),
+          specifier.startsWith('@skanl/panda-cli') || specifier.startsWith('@skanl/panda-session'),
           `${file} imports '${specifier}'`,
         ).toBe(false)
       }
@@ -101,7 +101,7 @@ describe('@panda/environment dependency direction (AD-2)', () => {
     ])
     for (const specifier of specifiers) {
       expect(
-        specifier === '@panda/projection' || specifier === '@panda/registry',
+        specifier === '@skanl/panda-projection' || specifier === '@skanl/panda-registry',
         `src/doctor.ts imports '${specifier}'`,
       ).toBe(false)
     }
@@ -113,8 +113,8 @@ describe('@panda/environment dependency direction (AD-2)', () => {
 
   it('keeps the FR-29 consumer test importing NOTHING but this package', () => {
     // Without this the positive proof proves the wrong thing. A reviewer rewrote
-    // `consumer.test.ts` to take `RegistryStore` from `@panda/registry` and
-    // `createMemoryLogSink` from `@panda/kernel` directly: every clause passed,
+    // `consumer.test.ts` to take `RegistryStore` from `@skanl/panda-registry` and
+    // `createMemoryLogSink` from `@skanl/panda-kernel` directly: every clause passed,
     // lint and typecheck were clean, and the re-export closure — the only reason
     // the SDK promise holds for someone who installed just this package — was
     // undefended. So the import list itself is the assertion.
@@ -151,10 +151,10 @@ const PERMITTED_FS_IMPORTS = ['access', 'constants', 'mkdir', 'stat']
  */
 const FS_SPECIFIER = String.raw`(?:node:)?fs(?:\/promises)?`
 
-describe('@panda/environment writes no vendor file itself', () => {
+describe('@skanl/panda-environment writes no vendor file itself', () => {
   it('cannot reach the atomic writer that lands a vendor file', () => {
     // The other evasion a reviewer found: `import { atomicWriteText } from
-    // '@panda/projection'` — a package this one already depends on, so no
+    // '@skanl/panda-projection'` — a package this one already depends on, so no
     // dependency clause moved. The fix is upstream (that symbol is no longer
     // exported from the projection index, since nothing outside it needed one),
     // and this is the clause that notices if it comes back.

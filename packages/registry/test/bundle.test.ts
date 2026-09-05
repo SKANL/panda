@@ -13,7 +13,7 @@ import {
   writeBundle,
 } from '../src'
 import type { OmittedEntry, OmittedField } from '../src'
-import type { RegistryEntry } from '@panda/contracts'
+import type { RegistryEntry } from '@skanl/panda-contracts'
 
 const HOME = join('/home', 'dev')
 

@@ -130,7 +130,7 @@ export interface ActionHandle<T = unknown> {
    * passed to `register` and can obviously call that. What this guarantees is
    * that the kernel exports no path around the seam, which is the half a kernel
    * can enforce; stopping other packages from constructing adapters directly is
-   * composition work, done by `@panda/session` in Story 2.0.
+   * composition work, done by `@skanl/panda-session` in Story 2.0.
    */
   invoke(): Promise<T>
 }

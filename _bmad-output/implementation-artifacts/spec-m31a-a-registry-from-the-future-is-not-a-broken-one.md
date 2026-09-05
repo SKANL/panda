@@ -69,7 +69,7 @@ Driven: the `resolution` line printed for the version-2 document is
 ```
 // A store stamped with a format version this build does not speak. Version by
 // REJECT, never migrate — the same decision `STORE_VERSION` reached
-// independently in `@panda/registry`: a partially-read store is worse than an
+// independently in `@skanl/panda-registry`: a partially-read store is worse than an
 // unopened one, and a migration path is a v1 requirement nobody has.
 contractMemoryStoreVersionMismatch: 'PANDA_CONTRACT_MEMORY_STORE_VERSION_MISMATCH',
 // The medium itself cannot be created, opened or read, naming the path.
@@ -157,8 +157,8 @@ the build that needs the good message is the one already shipped.**
 - **AD-7.** Route on `error.code`, never on message text. `errors.ts:32-40`
   states this explicitly. A branch that matches the detail string is a
   renegotiation, not an implementation.
-- **AD-1 / AD-2.** The code lives in `@panda/contracts`; the throw in
-  `@panda/registry`; the kind and its three records in `@panda/environment`.
+- **AD-1 / AD-2.** The code lives in `@skanl/panda-contracts`; the throw in
+  `@skanl/panda-registry`; the kind and its three records in `@skanl/panda-environment`.
   Read each package's `test/guard.test.ts` before adding an import — `contracts`
   and `registry` have none, `environment` does and pins its dependency set by
   exact equality.

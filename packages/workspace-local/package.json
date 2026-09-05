@@ -1,5 +1,5 @@
 {
-  "name": "@panda/workspace-local",
+  "name": "@skanl/panda-workspace-local",
   "version": "0.1.0",
   "description": "The local-directory WorkspaceProvider: a workspace is a subdirectory of rootDir.",
   "repository": {
@@ -29,8 +29,8 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*",
-    "@panda/kernel": "workspace:*"
+    "@skanl/panda-contracts": "workspace:*",
+    "@skanl/panda-kernel": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

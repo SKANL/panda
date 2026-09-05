@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { performance } from 'node:perf_hooks'
-import type { WorkspaceHandle } from '@panda/contracts'
+import type { WorkspaceHandle } from '@skanl/panda-contracts'
 import { createClaudeCodeAdapter, createNodeChildSpawner } from '../src/index.ts'
 import type { AdapterTiming } from '../src/index.ts'
 

@@ -1,5 +1,5 @@
 {
-  "name": "@panda/workspace-git-worktree",
+  "name": "@skanl/panda-workspace-git-worktree",
   "version": "0.1.0",
   "description": "A WorkspaceProvider over real git worktrees: every workspace is a detached checkout panda can prove it made.",
   "repository": {
@@ -29,8 +29,8 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*",
-    "@panda/kernel": "workspace:*"
+    "@skanl/panda-contracts": "workspace:*",
+    "@skanl/panda-kernel": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

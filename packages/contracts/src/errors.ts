@@ -58,7 +58,7 @@ export const PANDA_ERROR_CODES = {
   contractMemoryOverwriteUnsupported: 'PANDA_CONTRACT_MEMORY_OVERWRITE_UNSUPPORTED',
   // A store stamped with a format version this build does not speak. Version by
   // REJECT, never migrate — the same decision `STORE_VERSION` reached
-  // independently in `@panda/registry`: a partially-read store is worse than an
+  // independently in `@skanl/panda-registry`: a partially-read store is worse than an
   // unopened one, and a migration path is a v1 requirement nobody has.
   contractMemoryStoreVersionMismatch: 'PANDA_CONTRACT_MEMORY_STORE_VERSION_MISMATCH',
   // The medium itself cannot be created, opened or read, naming the path.
@@ -86,9 +86,9 @@ export const PANDA_ERROR_CODES = {
   // exact failure executor selection exists to remove — it runs a DIFFERENT
   // agent than the user configured, silently, wearing the disguise of robustness.
   configurationUnusable: 'PANDA_CONFIGURATION_UNUSABLE',
-  // `@panda/lock`, the portable lockfile protocol, owned by no domain. Its two
-  // codes are NEUTRAL on purpose: the lock was extracted out of `@panda/registry`
-  // so `@panda/projection` could serialize its ledger across PROCESSES without
+  // `@skanl/panda-lock`, the portable lockfile protocol, owned by no domain. Its two
+  // codes are NEUTRAL on purpose: the lock was extracted out of `@skanl/panda-registry`
+  // so `@skanl/panda-projection` could serialize its ledger across PROCESSES without
   // the `projection -> registry` edge AD-2 forbids, and a shared leaf that kept
   // raising `PANDA_REGISTRY_*` would have leaked one package's vocabulary out of
   // the other's API — the exact AD-7 breach that made the edge unacceptable the

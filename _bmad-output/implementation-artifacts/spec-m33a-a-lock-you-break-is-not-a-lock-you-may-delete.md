@@ -157,7 +157,7 @@ after this ships.
   records what happens then: an un-awaited version of the sibling clause *"lost
   on Node 24 in CI while passing on Node 26, and it would equally have PASSED on
   a build where the restore was broken."*
-- **The clause lives in `@panda/lock`'s own suite.** Measured: `stale|break` over
+- **The clause lives in `@skanl/panda-lock`'s own suite.** Measured: `stale|break` over
   `packages/lock/test/` → **0**, control `acquire` → 5. The leaf currently pins
   only that its codes are neutral, and its algorithm is pinned inside a consumer.
 - **No published code changes.** `PANDA_LOCK_CONTENTION` / `PANDA_LOCK_UNAVAILABLE`
@@ -208,7 +208,7 @@ after this ships.
    passes AC1 by never breaking anything fails here.
 4. **AC4 — both call sites.** Drive the corrupt-lockfile path too, not only the
    dead-pid path. State the evidence for each separately.
-5. **AC5 — committed as a FORCED clause in `@panda/lock`'s own suite**, using the
+5. **AC5 — committed as a FORCED clause in `@skanl/panda-lock`'s own suite**, using the
    new seam. It must fail with the fix reverted; run the revert and say which
    assertion reddens.
 6. **AC6 — the residual is recorded**, in the code comment and in

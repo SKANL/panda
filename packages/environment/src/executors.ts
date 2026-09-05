@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ProjectionConfigTarget, ProjectionMaterialiseTarget } from '@panda/contracts'
-import type { FileFormat, NativeMcpRead } from '@panda/projection'
+import type { ProjectionConfigTarget, ProjectionMaterialiseTarget } from '@skanl/panda-contracts'
+import type { FileFormat, NativeMcpRead } from '@skanl/panda-projection'
 import {
   CLAUDE_MCP_TRAITS,
   CODEX_CONFIG_TRAITS,
@@ -19,7 +19,7 @@ import {
   createCodexSkillsTarget,
   createOpenCodeConfigTarget,
   createOpenCodeSkillsTarget,
-} from '@panda/projection'
+} from '@skanl/panda-projection'
 
 // Which executors this machine has, and where panda projects into each of them.
 //
@@ -57,7 +57,7 @@ import {
 // strings together the chain from "the binary confirmed this location" to "this
 // is where panda writes" is broken. Every one of the three roots was verified BY
 // EXECUTION against the real binary under an injected
-// home — see the comment on `@panda/projection`'s `targets/skills.ts` for what
+// home — see the comment on `@skanl/panda-projection`'s `targets/skills.ts` for what
 // each executor was asked and what it answered. An executor with no verified
 // root would carry `machineSkills: undefined` and go on reporting its skills
 // unprojectable; that branch is exercised at project scope, where none of the

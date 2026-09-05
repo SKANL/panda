@@ -14,7 +14,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 60_000,
   },
-  // `@panda/*` resolves to SOURCE inside this repository through one custom
+  // `@skanl/panda-*` resolves to SOURCE inside this repository through one custom
   // export condition, the same name `tsconfig.base.json` sets. Under `ssr`, not
   // `resolve`: vitest 4 drives the node environment through the SSR pipeline.
   ssr: { resolve: { conditions: ['panda-source'] } },

@@ -21,7 +21,7 @@ function relativeImportsOf(source: string): string[] {
   return importsOf(source).filter((specifier) => specifier.startsWith('.'))
 }
 
-describe('@panda/kernel zero-dependency invariant', () => {
+describe('@skanl/panda-kernel zero-dependency invariant', () => {
   it('declares no runtime dependencies or peer dependencies (AD-1/AD-2)', () => {
     const pkg = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as Record<string, unknown>
     expect(pkg['dependencies'] ?? {}).toEqual({})
@@ -36,7 +36,7 @@ describe('@panda/kernel zero-dependency invariant', () => {
     expect(Object.keys(pkg['exports'] as Record<string, unknown>)).toEqual(['.'])
   })
 
-  it('never imports @panda/contracts from kernel sources (AD-1)', () => {
+  it('never imports @skanl/panda-contracts from kernel sources (AD-1)', () => {
     // `test` is scanned too: a kernel TEST importing the contracts package is the
     // same violation, and only eslint would have noticed. The scan reads IMPORT
     // SPECIFIERS rather than raw text, so naming the package in a comment or a
@@ -45,7 +45,7 @@ describe('@panda/kernel zero-dependency invariant', () => {
     expect(sources.length).toBeGreaterThan(0)
     for (const file of sources) {
       for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
-        expect(specifier.startsWith('@panda/contracts'), `${file} imports '${specifier}'`).toBe(false)
+        expect(specifier.startsWith('@skanl/panda-contracts'), `${file} imports '${specifier}'`).toBe(false)
       }
     }
   })
@@ -57,7 +57,7 @@ describe('@panda/kernel zero-dependency invariant', () => {
       for (const specifier of relativeImportsOf(readFileSync(file, 'utf8'))) {
         const resolvedPath = resolve(dirname(file), specifier)
         const escapesPackage = !resolvedPath.startsWith(packageDir + sep)
-        expect(escapesPackage, `${file} imports '${specifier}' which resolves outside @panda/kernel`).toBe(false)
+        expect(escapesPackage, `${file} imports '${specifier}' which resolves outside @skanl/panda-kernel`).toBe(false)
       }
     }
   })
@@ -66,7 +66,7 @@ describe('@panda/kernel zero-dependency invariant', () => {
     // The bare-specifier scan shares this extractor, so this covers both clauses.
     // The package name is interpolated so this fixture is not itself an import the
     // scan above would flag — the extractor is deliberately naive about context.
-    const banned = `@panda/${'contracts'}`
+    const banned = `@skanl/panda-${'contracts'}`
     expect(importsOf(`import { PandaError } from '${banned}'`)).toEqual([banned])
     expect(relativeImportsOf(`import x from '../outside/a'`)).toEqual(['../outside/a'])
     expect(relativeImportsOf(`const m = await import('../outside/b')`)).toEqual(['../outside/b'])

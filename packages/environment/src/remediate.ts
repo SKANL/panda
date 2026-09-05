@@ -1,13 +1,13 @@
 import { homedir } from 'node:os'
-import { PANDA_ERROR_CODES, projectionTargetLocation } from '@panda/contracts'
+import { PANDA_ERROR_CODES, projectionTargetLocation } from '@skanl/panda-contracts'
 import type {
   ProjectionTarget,
   RemediationKind,
   RemediationOutcome,
   RemediationRefusal,
-} from '@panda/contracts'
-import { ProjectionLedger, groupByKind, runRemediation } from '@panda/projection'
-import type { ProjectionMode } from '@panda/projection'
+} from '@skanl/panda-contracts'
+import { ProjectionLedger, groupByKind, runRemediation } from '@skanl/panda-projection'
+import type { ProjectionMode } from '@skanl/panda-projection'
 // The exit table lives in `doctor.ts`, beside the finding kinds it is total
 // over, and this file only ASKS it which kinds a verb resolves. Owning it here
 // is what shipped the first time, and the consequence was a product that printed
@@ -22,7 +22,7 @@ import { scopeDirectory, storeFor, targetsFor } from './init.ts'
 //
 // This file composes and decides nothing else. `diagnose` produces the findings
 // — the same call, under the same inspection mode, that `panda doctor` prints —
-// and `runRemediation` in `@panda/projection` performs the act. What lives here
+// and `runRemediation` in `@skanl/panda-projection` performs the act. What lives here
 // is the one thing neither of them owns: WHICH exit belongs to which reported
 // state, and the rule that a user names exactly one of them.
 //

@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { worktreeStateDir } from '@panda/session'
+import { worktreeStateDir } from '@skanl/panda-session'
 import { runPanda } from '../src/run.ts'
 import type { RunCommandOptions } from '../src/run.ts'
-import type { WorkspaceHandle } from '@panda/contracts'
+import type { WorkspaceHandle } from '@skanl/panda-contracts'
 
 // Spec M27.A at the BINARY, under the DEFAULT provider. `panda run` creates a
 // directory per session under `.panda/workspaces/<uuid>` and, before this

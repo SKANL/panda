@@ -77,7 +77,7 @@ M2 is also the acceptance test that would have caught this session's inert-proje
 
 ### M4 — Distribution
 
-Packages export raw TypeScript with no compile or consumption story. "Usable in any project" is a vision bullet, and today `npm install @panda/...` cannot work. This also gates the open-source posture, which no artifact currently states.
+Packages export raw TypeScript with no compile or consumption story. "Usable in any project" is a vision bullet, and today `npm install @skanl/panda-...` cannot work. This also gates the open-source posture, which no artifact currently states.
 
 ## Do early, independent of the milestones
 
@@ -107,7 +107,7 @@ M2 as written above made it worse: its criteria were phrased *"when `panda proje
 
 **The capability lives in a package. The CLI is a thin binding: parse argv, call the function, map the result to an exit code.**
 
-The test that keeps it honest is one sentence, and it is checkable: *anything the CLI can do, a third party must be able to do by importing packages, without `@panda/cli`.* If that fails, the functionality is in the wrong place.
+The test that keeps it honest is one sentence, and it is checkable: *anything the CLI can do, a third party must be able to do by importing packages, without `@skanl/panda-cli`.* If that fails, the functionality is in the wrong place.
 
 ### Sequencing change
 

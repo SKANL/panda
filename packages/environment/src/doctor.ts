@@ -1,14 +1,14 @@
 import { access, constants, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
-import { PANDA_ERROR_CODES, REGISTRY_ENTRY_TYPES } from '@panda/contracts'
+import { PANDA_ERROR_CODES, REGISTRY_ENTRY_TYPES } from '@skanl/panda-contracts'
 import type {
   DriftEntry,
   DriftKind,
   PandaErrorCode,
   ProjectionWarning,
   RemediationKind,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type { ExecutorDetection } from './executors.ts'
 import { noExecutorsDetected, runScope, scopeDirectory } from './init.ts'
 import type {
@@ -122,7 +122,7 @@ export type DiagnosisFindingKind =
    * this command performs.
    *
    * The leftovers arrive through {@link DiagnoseOptions.worktreeLeftovers}
-   * rather than being discovered here. `@panda/environment` may not import a
+   * rather than being discovered here. `@skanl/panda-environment` may not import a
    * workspace implementation (`test/guard.test.ts`), and doctor may not open a
    * file of its own; the caller that already holds the worktree capability
    * hands the facts in, and this file phrases them — the same shape every other
@@ -492,9 +492,9 @@ export interface Diagnosis {
 /**
  * One interrupted worktree removal, as the caller who found it describes it.
  *
- * A STRUCTURAL shape, deliberately: `@panda/environment` may not import the
+ * A STRUCTURAL shape, deliberately: `@skanl/panda-environment` may not import the
  * worktree implementation, and the one type both sides would otherwise share
- * would have to live in `@panda/contracts` — a third-party port surface, for a
+ * would have to live in `@skanl/panda-contracts` — a third-party port surface, for a
  * detail of one provider's own store. The caller holds the capability that
  * discovers these; this file only phrases them.
  */

@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ProjectionMaterialiseTarget, RegistryEntry } from '@panda/contracts'
+import type { ProjectionMaterialiseTarget, RegistryEntry } from '@skanl/panda-contracts'
 import { runProjection, groupByKind } from '../src/engine.ts'
 import { ProjectionLedger } from '../src/ledger.ts'
 import { snapshotRealSkillsRoots } from './real-skills-roots.ts'

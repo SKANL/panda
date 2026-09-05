@@ -1,5 +1,5 @@
 {
-  "name": "@panda/cli",
+  "name": "@skanl/panda-cli",
   "version": "0.1.0",
   "description": "The `panda` command-line surface: argv, JSON output and exit codes, and nothing more.",
   "repository": {
@@ -32,11 +32,11 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/environment": "workspace:*",
-    "@panda/session": "workspace:*"
+    "@skanl/panda-environment": "workspace:*",
+    "@skanl/panda-session": "workspace:*"
   },
   "devDependencies": {
-    "@panda/contracts": "workspace:*",
+    "@skanl/panda-contracts": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

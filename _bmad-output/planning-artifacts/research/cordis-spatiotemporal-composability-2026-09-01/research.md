@@ -236,7 +236,7 @@ not enforced, none of them a cordis feature panda lacks:
 
 - a candidate rejected for service coverage had its disposer discarded, after the
   factory had already run to completion and allocated;
-- disposal was typed synchronous, which forced `@panda/registry`'s plugin into
+- disposal was typed synchronous, which forced `@skanl/panda-registry`'s plugin into
   `void store.dispose()` with no catch — a live unhandled-rejection hazard, since
   that store waits for every in-flight mutation;
 - the bus stayed open across the disposer loop and was never drained again.
@@ -250,7 +250,7 @@ single-owner pipeline is a stated security posture, not an oversight);
 
 **Queued with their measurements, in `SESSION-HANDOFF.md` §9:** the kernel
 reporting every manifest violation rather than the first — it throws on the first
-while `@panda/contracts` accumulates and the published document promises all of
+while `@skanl/panda-contracts` accumulates and the published document promises all of
 them; carrying the Standard Schema issue `path` that panda declares away in both
 copies; the kernel APPLYING `configSchema`, a required field it only probes and
 that three first-party plugins hand-roll around; and `{kind: 'absent'}` carrying

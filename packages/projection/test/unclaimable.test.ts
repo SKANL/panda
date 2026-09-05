@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { RegistryEntriesByKind } from '@panda/contracts'
+import type { RegistryEntriesByKind } from '@skanl/panda-contracts'
 import { createClaudeMcpTarget } from '../src/targets/claude-mcp.ts'
 import { createCodexConfigTarget } from '../src/targets/codex-config.ts'
 

@@ -1,5 +1,5 @@
 {
-  "name": "@panda/adapter-cli",
+  "name": "@skanl/panda-adapter-cli",
   "version": "0.1.0",
   "description": "Every shipped ExecutorAdapter that drives an out-of-process coding CLI.",
   "repository": {
@@ -29,8 +29,8 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*",
-    "@panda/kernel": "workspace:*"
+    "@skanl/panda-contracts": "workspace:*",
+    "@skanl/panda-kernel": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

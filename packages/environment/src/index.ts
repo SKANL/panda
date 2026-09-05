@@ -41,8 +41,8 @@ export { remediate, type RemediateOptions, type RemediationReport } from './reme
 export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDetection, type ExecutorProfile } from './executors.ts'
 
 // Re-exported, not merely referenced. Under pnpm's strict layout a consumer that
-// installed `@panda/environment` cannot resolve `@panda/contracts`,
-// `@panda/kernel` or `@panda/registry` unless it declares them too — so a
+// installed `@skanl/panda-environment` cannot resolve `@skanl/panda-contracts`,
+// `@skanl/panda-kernel` or `@skanl/panda-registry` unless it declares them too — so a
 // surface whose result carries a `DriftEntry` and whose precondition is "put
 // entries in the registry first" has to hand back both, or the SDK promise is
 // only true inside this monorepo. The list is exactly that: what you need to
@@ -55,15 +55,15 @@ export { EXECUTOR_PROFILES, detectExecutors, type EvidencePath, type ExecutorDet
 // which is re-exported. All three are reachable only by a consumer implementing
 // one of those callbacks; the ordinary path needs none of them. Recorded in
 // deferred-work.md rather than fixed by widening the surface on speculation.
-export { RegistryStore } from '@panda/registry'
-export type { RegistryStoreOptions } from '@panda/registry'
+export { RegistryStore } from '@skanl/panda-registry'
+export type { RegistryStoreOptions } from '@skanl/panda-registry'
 // The bundle surface, for the same reason: a consumer holding a `RegistryStore`
 // can build the artifact and read what did not travel without resolving
-// `@panda/registry` itself. `writeBundle` is here and this package still writes
+// `@skanl/panda-registry` itself. `writeBundle` is here and this package still writes
 // no file — it names a capability its own guard test forbids it to PERFORM,
 // which is the whole point of a facade.
-export { BUNDLE_KIND, BUNDLE_VERSION, OMITTED_FIELDS, createBundle, isCredential, parseBundle, readBundle, serializeBundle, writeBundle } from '@panda/registry'
-export type { OmittedEntry, OmittedField, RegistryBundle } from '@panda/registry'
+export { BUNDLE_KIND, BUNDLE_VERSION, OMITTED_FIELDS, createBundle, isCredential, parseBundle, readBundle, serializeBundle, writeBundle } from '@skanl/panda-registry'
+export type { OmittedEntry, OmittedField, RegistryBundle } from '@skanl/panda-registry'
 export {
   DRIFT_KINDS,
   REGISTRY_ENTRY_TYPES,
@@ -76,7 +76,7 @@ export {
   // an already-normalized value corrupts it rather than being a no-op.
   expandRegistryEntryPaths,
   isRetiredEntryType,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 export type {
   DriftEntry,
   DriftKind,
@@ -91,14 +91,14 @@ export type {
   RemediationRefusal,
   RetiredEntryType,
   StoredEntryType,
-} from '@panda/contracts'
-export { createMemoryLogSink } from '@panda/kernel'
-export type { LogRecord, LogSink, MemoryLogSink } from '@panda/kernel'
+} from '@skanl/panda-contracts'
+export { createMemoryLogSink } from '@skanl/panda-kernel'
+export type { LogRecord, LogSink, MemoryLogSink } from '@skanl/panda-kernel'
 // Re-exported, not reimplemented. This package may not touch the filesystem at
 // all (see test/guard.test.ts): the ledger is the sole authority for what panda
 // writes, and the clause is blunt on purpose. The WRITER is forwarded so the CLI
 // reaches it through this facade -- the same shape as createMemoryLogSink above
-// -- while the atomic primitive it uses stays inside @panda/projection, where a
+// -- while the atomic primitive it uses stays inside @skanl/panda-projection, where a
 // previous story deliberately un-exported it.
 export {
   WRITABLE_CONFIG_KEYS,
@@ -107,7 +107,7 @@ export {
   type ConfigWriteOptions,
   type ConfigWriteResult,
   type WritableConfigKey,
-} from '@panda/projection'
+} from '@skanl/panda-projection'
 export { ingestMachine } from './ingest.ts'
 export type {
   IngestMachineOptions,
@@ -117,4 +117,4 @@ export type {
   MachineSkillsSkip,
   OwnedMcpEntry,
 } from './ingest.ts'
-export type { IngestOutcome, IngestWarning } from '@panda/contracts'
+export type { IngestOutcome, IngestWarning } from '@skanl/panda-contracts'

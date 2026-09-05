@@ -38,10 +38,10 @@ importers:
 
   packages/adapter-cli:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
     devDependencies:
@@ -57,14 +57,14 @@ importers:
 
   packages/cli:
     dependencies:
-      '@panda/environment':
+      '@skanl/panda-environment':
         specifier: workspace:*
         version: link:../environment
-      '@panda/session':
+      '@skanl/panda-session':
         specifier: workspace:*
         version: link:../session
     devDependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
       '@types/node':
@@ -79,7 +79,7 @@ importers:
 
   packages/contracts:
     devDependencies:
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
       '@types/node':
@@ -94,16 +94,16 @@ importers:
 
   packages/environment:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@panda/projection':
+      '@skanl/panda-projection':
         specifier: workspace:*
         version: link:../projection
-      '@panda/registry':
+      '@skanl/panda-registry':
         specifier: workspace:*
         version: link:../registry
     devDependencies:
@@ -131,7 +131,7 @@ importers:
 
   packages/lock:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
@@ -147,7 +147,7 @@ importers:
 
   packages/memory-filesystem:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
@@ -163,7 +163,7 @@ importers:
 
   packages/memory-sqlite:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
@@ -179,17 +179,17 @@ importers:
 
   packages/projection:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/lock':
+      '@skanl/panda-lock':
         specifier: workspace:*
         version: link:../lock
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
     devDependencies:
-      '@panda/registry':
+      '@skanl/panda-registry':
         specifier: workspace:*
         version: link:../registry
       '@types/node':
@@ -204,13 +204,13 @@ importers:
 
   packages/registry:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@panda/lock':
+      '@skanl/panda-lock':
         specifier: workspace:*
         version: link:../lock
       jsonc-parser:
@@ -229,19 +229,19 @@ importers:
 
   packages/session:
     dependencies:
-      '@panda/adapter-cli':
+      '@skanl/panda-adapter-cli':
         specifier: workspace:*
         version: link:../adapter-cli
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@panda/workspace-git-worktree':
+      '@skanl/panda-workspace-git-worktree':
         specifier: workspace:*
         version: link:../workspace-git-worktree
-      '@panda/workspace-local':
+      '@skanl/panda-workspace-local':
         specifier: workspace:*
         version: link:../workspace-local
     devDependencies:
@@ -257,10 +257,10 @@ importers:
 
   packages/workspace-git-worktree:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
     devDependencies:
@@ -276,10 +276,10 @@ importers:
 
   packages/workspace-local:
     dependencies:
-      '@panda/contracts':
+      '@skanl/panda-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@panda/kernel':
+      '@skanl/panda-kernel':
         specifier: workspace:*
         version: link:../kernel
     devDependencies:

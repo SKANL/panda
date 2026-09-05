@@ -2,9 +2,9 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DIAGNOSIS_FINDING_KINDS, FINDING_EXITS } from '@panda/environment'
+import { DIAGNOSIS_FINDING_KINDS, FINDING_EXITS } from '@skanl/panda-environment'
 import { runPanda } from '../src'
-import type { ExecutorAdapter } from '@panda/contracts'
+import type { ExecutorAdapter } from '@skanl/panda-contracts'
 
 // THE INVARIANT: nothing panda prints is a command panda does not have.
 //

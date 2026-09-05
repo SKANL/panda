@@ -10,8 +10,8 @@ import {
   type SpawnedChild,
   type SpawnOptions,
   type SpawnOutcome,
-} from '@panda/adapter-cli'
-import type { ResultEnvelope } from '@panda/contracts'
+} from '@skanl/panda-adapter-cli'
+import type { ResultEnvelope } from '@skanl/panda-contracts'
 import { runSession } from '../src/run-session.ts'
 import {
   DEFAULT_EXECUTOR_ID,

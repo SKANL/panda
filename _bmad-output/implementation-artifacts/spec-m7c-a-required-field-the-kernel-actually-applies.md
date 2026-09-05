@@ -71,7 +71,7 @@ Executed on 2026-09-01 at `37e6e6f`, every claim re-read at the line.
 ## Boundaries & Constraints
 
 - **AD-1** — the kernel keeps zero runtime dependencies and never imports
-  `@panda/contracts`.
+  `@skanl/panda-contracts`.
 - **AD-2** — no new package, no new dependency. Changes land in
   `packages/kernel/`, and the three plugin packages lose code.
 - **AD-5** — typed absence over silence. A plugin that declared a schema and got
@@ -116,7 +116,7 @@ plugin's output type without a type parameter on `PluginManifest`, and the plugi
 already knows what its own schema returns.
 
 `context.config` STAYS. A plugin still legitimately reads other layers and other
-subtrees — `@panda/session` seeds the workspace root as a layer, and the executor
+subtrees — `@skanl/panda-session` seeds the workspace root as a layer, and the executor
 selection reads the composed document whole.
 
 ### D4 — the three plugins lose the ceremony, and keep everything else

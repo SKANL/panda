@@ -21,7 +21,7 @@ no other scope takes it either; it stays in the registry, listed by `panda list`
 
 That reporting is correct (correction-01 C5) and is why this is incomplete
 rather than wrong. But a public vocabulary with inert members is a contract
-defect, it lives in `@panda/contracts`, and NFR-8's joint-semver rule makes it
+defect, it lives in `@skanl/panda-contracts`, and NFR-8's joint-semver rule makes it
 cheapest before consumers exist.
 
 **This story removes `tool` and does not touch `profile`.** The split is drawn by
@@ -101,7 +101,7 @@ keep the bytes, and run the new build against them.
   not change its fields.
 - No CLI-side table of valid types. `REGISTRY_ENTRY_TYPES` stays the one source,
   as M4.D established.
-- Kernel stays zero-dependency and never imports `@panda/contracts` (AD-1).
+- Kernel stays zero-dependency and never imports `@skanl/panda-contracts` (AD-1).
 - Relative imports carry `.ts`.
 - Do not weaken the per-type field-fit rejection M4.D added to the envelope.
 
@@ -328,7 +328,7 @@ kernel 217 · contracts 64 · workspace-local 23 · registry 68 · session 89
 projection 248 (+3 skipped) · environment 99 · cli 106
 ```
 
-**Not green, and not this story's:** two live rows in `@panda/adapter-cli`
+**Not green, and not this story's:** two live rows in `@skanl/panda-adapter-cli`
 (`confinement-live.test.ts`, both opencode) fail on both Node versions with
 `FreeUsageLimitError` / HTTP 429 from `opencode.ai/zen/v1/chat/completions`, and
 their own assertions say `this run measured nothing`. `git diff --name-only --

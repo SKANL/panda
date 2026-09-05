@@ -8,7 +8,7 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
-    // `@panda/*` resolves to `src` inside this repository and to `dist` for
+    // `@skanl/panda-*` resolves to `src` inside this repository and to `dist` for
     // everyone else, through one custom export condition. Only this repo sets it
     // (here, in `tsconfig.build.base.json`, and in `vitest.shared.ts`), which is
     // what keeps the manifests correct for ANY packer while the development loop

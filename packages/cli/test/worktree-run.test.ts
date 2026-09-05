@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import type { ExecutorAdapter, WorkspaceHandle } from '@panda/contracts'
+import type { ExecutorAdapter, WorkspaceHandle } from '@skanl/panda-contracts'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 

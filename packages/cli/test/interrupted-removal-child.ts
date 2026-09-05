@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { removeWorktree } from '@panda/session'
+import { removeWorktree } from '@skanl/panda-session'
 
 // The REAL interruption for spec M16.A's AC2. This process performs a real
 // removal of a real worktree and is killed, for real, between the intent and the

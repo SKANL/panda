@@ -4,7 +4,7 @@
 **Story:** not an epic story. Closes two claims this repository makes and does
 not keep: `AGENTS.md` lists AD-2 under "Architecture — **enforced**" while it is
 gated in 4 of 10 packages, and `ARCHITECTURE-SPINE.md` promises third parties
-they can implement any port installing only `@panda/contracts`, which nothing
+they can implement any port installing only `@skanl/panda-contracts`, which nothing
 tests.
 **Base commit:** `066bf3f`
 
@@ -29,10 +29,10 @@ Executed 2026-09-03 at `066bf3f`, every zero with a control.
 |---|---|---|
 | M1 | AD-2 is gated in 4 of 10 packages | `test/guard.test.ts` exists in `environment`, `kernel`, `projection`, `session`. Absent from `adapter-cli`, `cli`, `contracts`, `registry`, `workspace-git-worktree`, `workspace-local`. **Control:** the same listing finds `packages/kernel/test/guard.test.ts` and correctly reports `packages/registry/test/guard.test.ts` missing. |
 | M2 | `AGENTS.md` understates its own gap | It says "**4 of 10 packages**. `registry` and `cli` have none, which is a known gap, not a permission." The count is right and the naming is not: SIX have none. |
-| M3 | AD-2 HOLDS today | A checker over all `@panda/*` imports in every `packages/*/src`, against the role order declared in `ARCHITECTURE-SPINE.md:53-64`, reports **zero violations across 75 source files**. `contracts` imports nothing; `kernel` imports nothing. |
-| M4 | The checker is FALSIFIABLE, not just green | A planted `import { createKernel } from '@panda/kernel'` inside `packages/contracts/src` is reported as exactly one violation, naming only that package, with every other row still `ok`. Removed; tree clean. |
-| M5 | The third-party promise has no gate | `ARCHITECTURE-SPINE.md:66` — "Third parties implement any port installing only `@panda/contracts`." `packages/session/test/consumer-install.proof.ts:64` installs `@panda/session` **plus the five packages it pulls in**. That proves the session bundle is installable; it says nothing about contracts alone. |
-| M6 | Nothing is broken behind either claim | `contracts` has zero `@panda/*` imports, so an install of it alone would work today. Both halves gate a rule that currently holds — which is what a gate is for, and what the FR-29 proof already does for its own claim. |
+| M3 | AD-2 HOLDS today | A checker over all `@skanl/panda-*` imports in every `packages/*/src`, against the role order declared in `ARCHITECTURE-SPINE.md:53-64`, reports **zero violations across 75 source files**. `contracts` imports nothing; `kernel` imports nothing. |
+| M4 | The checker is FALSIFIABLE, not just green | A planted `import { createKernel } from '@skanl/panda-kernel'` inside `packages/contracts/src` is reported as exactly one violation, naming only that package, with every other row still `ok`. Removed; tree clean. |
+| M5 | The third-party promise has no gate | `ARCHITECTURE-SPINE.md:66` — "Third parties implement any port installing only `@skanl/panda-contracts`." `packages/session/test/consumer-install.proof.ts:64` installs `@skanl/panda-session` **plus the five packages it pulls in**. That proves the session bundle is installable; it says nothing about contracts alone. |
+| M6 | Nothing is broken behind either claim | `contracts` has zero `@skanl/panda-*` imports, so an install of it alone would work today. Both halves gate a rule that currently holds — which is what a gate is for, and what the FR-29 proof already does for its own claim. |
 
 ---
 
@@ -42,7 +42,7 @@ Executed 2026-09-03 at `066bf3f`, every zero with a control.
 
 The four existing `guard.test.ts` files are NOT duplicated by this and are not
 replaced. They carry package-SPECIFIC clauses no generic checker can express —
-`@panda/environment`'s permits only `access`, `constants`, `mkdir` and `stat`
+`@skanl/panda-environment`'s permits only `access`, `constants`, `mkdir` and `stat`
 from the filesystem and forbids the literal string `atomicWriteText`. Those stay
 exactly where they are.
 
@@ -63,7 +63,7 @@ as "fine" is the hole this whole story is about.
 
 Not a new harness. `consumer-install.proof.ts` already packs tarballs, installs
 into a scrubbed temp consumer outside the repo, and imports. This adds one
-scenario to that machinery: pack `@panda/contracts` alone, install it alone,
+scenario to that machinery: pack `@skanl/panda-contracts` alone, install it alone,
 import it, and use a port type from it. Its control is the existing session
 scenario, which proves the harness runs.
 
@@ -98,12 +98,12 @@ the same defect one level up.
 | E1 | The repository as it is | Gate passes; zero violations. |
 | E2 | A package imports one tier ABOVE itself | FAIL, naming the package, the import, and both tiers. |
 | E3 | A package imports a SIBLING at its own tier | FAIL — "strictly downward" is strict. |
-| E4 | `contracts` imports any `@panda/*` | FAIL. |
-| E5 | `kernel` imports any `@panda/*`, contracts included | FAIL (AD-1). |
+| E4 | `contracts` imports any `@skanl/panda-*` | FAIL. |
+| E5 | `kernel` imports any `@skanl/panda-*`, contracts included | FAIL (AD-1). |
 | E6 | A NEW package appears in `packages/` with no declared tier | FAIL, naming it — never silently passed. |
 | E7 | A declared tier names a package that no longer exists | FAIL — the order must not rot. |
 | E8 | An import inside `test/` rather than `src/` | Out of scope for the tier rule; `test` may reach anywhere. Stated so the boundary is deliberate. |
-| E9 | `@panda/contracts` packed and installed ALONE, then imported | Succeeds, and a port type is usable from it. |
+| E9 | `@skanl/panda-contracts` packed and installed ALONE, then imported | Succeeds, and a port type is usable from it. |
 | E10 | `contracts` gains a runtime dependency | E9 fails at install or import. |
 
 ---
@@ -133,7 +133,7 @@ the same defect one level up.
    that package, with every other package still passing. Then removed.
 2. **The gate FAILS on a package with no declared tier.** Add a directory under
    `packages/` with a `src/`, and the gate names it rather than skipping it.
-3. **`@panda/contracts` installs and imports ALONE**, in the existing proof's
+3. **`@skanl/panda-contracts` installs and imports ALONE**, in the existing proof's
    scrubbed consumer, with the session scenario still passing as its control.
 4. **`AGENTS.md`'s AD-2 line matches the measurement**, and the count and the
    names agree with each other.
@@ -165,9 +165,9 @@ critical to learn, one story ago.
 
 | plant | by | result |
 |---|---|---|
-| UPWARD, static: `@panda/session` (tier 2) inside `packages/contracts/src/errors.ts` (tier 0) | implementer | exactly one violation, naming only contracts |
-| SIBLING, static: `@panda/kernel` (tier 0) in the same file -- a different comparison branch (`==` rather than `>`) | implementer | exactly one violation |
-| **UPWARD, DYNAMIC, DIFFERENT PACKAGE**: `await import('@panda/environment')` (tier 2) appended to `packages/projection/src/index.ts` (tier 1) | **coordinator** | `@panda/projection (tier 1) imports @panda/environment (tier 2) -- imports must be strictly downward`, exactly one violation, correct tiers both sides |
+| UPWARD, static: `@skanl/panda-session` (tier 2) inside `packages/contracts/src/errors.ts` (tier 0) | implementer | exactly one violation, naming only contracts |
+| SIBLING, static: `@skanl/panda-kernel` (tier 0) in the same file -- a different comparison branch (`==` rather than `>`) | implementer | exactly one violation |
+| **UPWARD, DYNAMIC, DIFFERENT PACKAGE**: `await import('@skanl/panda-environment')` (tier 2) appended to `packages/projection/src/index.ts` (tier 1) | **coordinator** | `@skanl/panda-projection (tier 1) imports @skanl/panda-environment (tier 2) -- imports must be strictly downward`, exactly one violation, correct tiers both sides |
 
 The third shape matters twice over: it is a different package, and it is a
 DYNAMIC import. The coordinator's own prototype used a `from '...'` regex that
@@ -184,14 +184,14 @@ the tree verified unmodified afterwards; the gate returns 4/4 green.
 
 ### AD-2 holds, and now something says so
 
-Zero violations across every `@panda/*` import in all ten `packages/*/src`
+Zero violations across every `@skanl/panda-*` import in all ten `packages/*/src`
 trees. `contracts` imports nothing; `kernel` imports nothing, which is AD-1
 expressed as tier 0 with nothing beneath it rather than as a special case.
 
 ### The third-party promise, gated for the first time
 
 `ARCHITECTURE-SPINE.md` promises a port is implementable installing ONLY
-`@panda/contracts`. The FR-29 proof went from 9 scenarios to 10. The new one
+`@skanl/panda-contracts`. The FR-29 proof went from 9 scenarios to 10. The new one
 packs that single tarball, installs it into its OWN project rather than the
 session consumer -- installing into a tree that already holds five packages
 would prove nothing, which is the whole claim -- and then asserts ALONE **from
@@ -228,7 +228,7 @@ known-red live suite driving real vendor binaries, untouched by this story.
 The six missing package-specific `guard.test.ts` files are still missing, and
 AGENTS.md now says so accurately instead of naming two of them. The universal
 clause covers all ten packages; what those four guards add is package-specific
-and not derivable -- `@panda/environment`'s permits exactly four filesystem
+and not derivable -- `@skanl/panda-environment`'s permits exactly four filesystem
 functions and forbids a literal string. Adding four more bespoke guards is a
 decision per package with no measured hazard behind it, and this story does not
 make it.

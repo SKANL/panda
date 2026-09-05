@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspect } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
-import { RegistryStore, parseBundle } from '@panda/registry'
+import { RegistryStore, parseBundle } from '@skanl/panda-registry'
 import { setConfigValue } from '../src/config-write.ts'
 import { readNativeMcpEntries } from '../src/formats.ts'
 import type { ProjectionTargetTraits } from '../src/formats.ts'
@@ -11,7 +11,7 @@ import { ProjectionLedger } from '../src/ledger.ts'
 import { createClaudeMcpTarget } from '../src/targets/claude-mcp.ts'
 import { CODEX_CONFIG_TRAITS } from '../src/targets/codex-config.ts'
 import { OPENCODE_CONFIG_TRAITS, createOpenCodeConfigTarget } from '../src/targets/opencode-config.ts'
-import type { RegistryEntriesByKind } from '@panda/contracts'
+import type { RegistryEntriesByKind } from '@skanl/panda-contracts'
 
 // ONE GATE over EVERY document panda parses (Spec M17.A, Change Log 1).
 //

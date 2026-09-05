@@ -18,9 +18,9 @@ This story ships a MOUNT, not a feature. Every rung is reuse.
 Every claim below was executed on 2026-09-02 at `2daa657`, with a control
 wherever a zero is involved.
 
-1. **The package is unreachable.** `@panda/workspace-git-worktree` occurs
+1. **The package is unreachable.** `@skanl/panda-workspace-git-worktree` occurs
    exactly ONCE in `packages/` — the `name` field of its own manifest. Control:
-   `@panda/workspace-local` occurs in nine files, including
+   `@skanl/panda-workspace-local` occurs in nine files, including
    `packages/session/src/run-session.ts:22`. `run-session.ts:381` hardcodes
    `const workspace = createWorkspacePlugin()`.
 2. **The package ships no plugin.** `packages/workspace-git-worktree/src/index.ts`
@@ -85,10 +85,10 @@ wherever a zero is involved.
 
 **In scope**
 
-- A plugin in `@panda/workspace-git-worktree`, mirroring `workspace-local/src/plugin.ts`.
-- `selectWorkspaceProvider(config)` in `@panda/session`, mirroring `selectExecutor`.
+- A plugin in `@skanl/panda-workspace-git-worktree`, mirroring `workspace-local/src/plugin.ts`.
+- `selectWorkspaceProvider(config)` in `@skanl/panda-session`, mirroring `selectExecutor`.
 - The mount decision at `run-session.ts:381`, inside `createSessionKernel`.
-- The `@panda/session` dependency edge on `@panda/workspace-git-worktree`.
+- The `@skanl/panda-session` dependency edge on `@skanl/panda-workspace-git-worktree`.
 - One new shared contract clause closing the `acquire()` id divergence.
 - A README for `packages/workspace-git-worktree/` — the only workspace package without one.
 - Two ledger entries (see Tasks T7).
@@ -98,7 +98,7 @@ wherever a zero is involved.
 - **The Registry mirror, and a `worktree` entry type.** AD-6
   (`ARCHITECTURE-SPINE.md:89`, `[ADOPTED + tightened H2]`) requires the mirror
   "within the same serialized transaction as record creation"; AD-2 forbids
-  `@panda/workspace-*` importing `@panda/registry`. Three blockers, not one:
+  `@skanl/panda-workspace-*` importing `@skanl/panda-registry`. Three blockers, not one:
   (a) `RegistryEntryType` is `'skill' | 'mcp-server'` and its comment is a rule —
   "every word here reaches an executor … Both, and only both"
   (`contracts/src/registry.ts:7-9`); a `worktree` word reaches no executor and
@@ -166,7 +166,7 @@ wherever a zero is involved.
 | `packages/session/src/workspaces.ts` | NEW — `selectWorkspaceProvider(config)`, exported |
 | `packages/session/src/run-session.ts` | register the SELECTED plugin at `:381` |
 | `packages/session/src/index.ts` | export `selectWorkspaceProvider` |
-| `packages/session/package.json` | declare `@panda/workspace-git-worktree` |
+| `packages/session/package.json` | declare `@skanl/panda-workspace-git-worktree` |
 | `packages/session/test/guard.test.ts` | add the name to the exact-equality array |
 | `packages/session/test/consumer-install.proof.ts` | add to `SESSION_DEPENDENCIES` |
 | `_bmad-output/implementation-artifacts/deferred-work.md` | two entries (T7) |
@@ -183,7 +183,7 @@ wherever a zero is involved.
 - **T4** — the dependency edge, the guard array, `SESSION_DEPENDENCIES`.
   **Both guard clauses must be red before the import exists and green after.**
 - **T5** — the shared clause + the local guard (rows 7). The clause goes red for
-  `@panda/workspace-local` FIRST; record that it did.
+  `@skanl/panda-workspace-local` FIRST; record that it did.
 - **T6** — the two tests: the binary drive (row 2) and the one-process
   concurrency test (row 6). Force the ordering; never bet on it. The idiom is
   `contention.test.ts:36-43` — a ready file polled against a deadline, never a
@@ -196,7 +196,7 @@ wherever a zero is involved.
 **Acceptance — the anti-theatre criterion.** This story is done when:
 
 1. `packages/session/test/guard.test.ts` passes with
-   `@panda/workspace-git-worktree` in its exact-equality array — which it cannot
+   `@skanl/panda-workspace-git-worktree` in its exact-equality array — which it cannot
    until `packages/session/src/*.ts` genuinely imports the package, because the
    second clause asserts both directions.
 2. A test drives the binary in a temporary git repository whose config selects
@@ -214,7 +214,7 @@ the point: this is the second such package this project has shipped.
 Stop and file a renegotiation rather than implementing past any of these:
 
 - Any need to add a Registry entry type, a mirror port, or an import from
-  `@panda/workspace-*` to `@panda/registry`.
+  `@skanl/panda-workspace-*` to `@skanl/panda-registry`.
 - Any need to change `WRITABLE_CONFIG_KEYS` or `setConfigValue`.
 - Any need to add a field to `SessionOptions` or `SessionKernelOptions`.
 - Any need to relax `KERNEL_OWNED_OPTIONS`.

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import type { RegistryEntriesByKind } from '@panda/contracts'
+import type { RegistryEntriesByKind } from '@skanl/panda-contracts'
 import { createCodexConfigTarget } from '../src/targets/codex-config.ts'
 
 // Live check against the real `codex` binary: the ONLY executable form of the

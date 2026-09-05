@@ -3,8 +3,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
-import type { StaleLockBreak } from '@panda/lock'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
+import type { StaleLockBreak } from '@skanl/panda-lock'
 import { ProjectionLedger, serialiseLedgerDocument } from '../src/ledger.ts'
 
 // The ledger's OUTER boundary: `<ledger>.lock`, taken across the whole

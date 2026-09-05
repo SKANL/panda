@@ -1,13 +1,13 @@
-# @panda/cli
+# @skanl/panda-cli
 
 Minimal `panda` command-line surface, and nothing more than a binding: it parses
-argv, calls [`@panda/session`](../session/README.md), prints the typed envelope as
+argv, calls [`@skanl/panda-session`](../session/README.md), prints the typed envelope as
 structured JSON and maps it to an exit code. The composition it used to own —
 workspace under `<cwd>/.panda/workspaces/<uuid>`, adapter, cancellation, cleanup —
 lives in that package, so a third party can do everything this CLI does without
 installing it. It reads no files itself; `eslint.config.js` forbids this package
 from importing `node:fs` at all, because a capability that needs a filesystem
-read is a capability that belongs in `@panda/session` or `@panda/environment`.
+read is a capability that belongs in `@skanl/panda-session` or `@skanl/panda-environment`.
 
 ## Usage
 

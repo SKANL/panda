@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { atomicWriteText } from './atomic-write.ts'
 import { strictFaultLocation } from './document-fault.ts'
 
@@ -18,10 +18,10 @@ import { strictFaultLocation } from './document-fault.ts'
 
 // `<homeDir>/.panda/config.json` is the `global` layer and
 // `<projectDir>/.panda/config.json` is the `project` layer, resolved by
-// `readExecutorConfigLayers` in `@panda/session`.
+// `readExecutorConfigLayers` in `@skanl/panda-session`.
 //
 // ponytail: `.panda/config.json` is spelled here rather than imported from
-// `@panda/session`, which spells it too and carries the same note. AD-2 forbids
+// `@skanl/panda-session`, which spells it too and carries the same note. AD-2 forbids
 // the edge, and it would exist only to share two string literals.
 const PANDA_STATE_DIR = '.panda'
 const CONFIG_FILE = 'config.json'
@@ -30,8 +30,8 @@ const CONFIG_FILE = 'config.json'
  * The keys panda will persist — an ALLOWLIST, not a suggestion.
  *
  * The two literals are spelled here rather than imported: this package cannot
- * reach '@panda/adapter-cli' (which owns EXECUTOR_CONFIG_KEY) under AD-2, and
- * importing '@panda/contracts' for METHOD_CONFIG_KEY alone would make one of the
+ * reach '@skanl/panda-adapter-cli' (which owns EXECUTOR_CONFIG_KEY) under AD-2, and
+ * importing '@skanl/panda-contracts' for METHOD_CONFIG_KEY alone would make one of the
  * pair look canonical while the other stayed a literal. Both are duplicated, and
  * this comment is why.
  *
@@ -131,7 +131,7 @@ export function configPathFor(options: Pick<ConfigWriteOptions, 'scope' | 'homeD
  * workspace root beside the executor selection, and a writer that serialises
  * only what it was handed silently deletes the rest.
  *
- * The write goes through `@panda/projection`'s `atomicWriteText` rather than a
+ * The write goes through `@skanl/panda-projection`'s `atomicWriteText` rather than a
  * local temp-then-rename, because this exact file is the one dotfile managers
  * materialise as a symlink and it is the only writer in this repository that
  * resolves the link instead of replacing it. The cost is that a refusal arrives

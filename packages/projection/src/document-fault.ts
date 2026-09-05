@@ -19,8 +19,8 @@ import { parseTree, printParseErrorCode } from 'jsonc-parser'
  * so keeping it would move the leak rather than close it — and panda derives its
  * own location from `jsonc-parser`'s offsets.
  *
- * ponytail: `@panda/registry` carries its own copy of this, because AD-2 forbids
- * the edge that would let it import this one and `@panda/contracts` must stay
+ * ponytail: `@skanl/panda-registry` carries its own copy of this, because AD-2 forbids
+ * the edge that would let it import this one and `@skanl/panda-contracts` must stay
  * dependency-free for the third-party promise. Ceiling: two copies to keep in
  * step. Upgrade path: a shared dependency-free leaf package, worth it the first
  * time a third package needs it.

@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { MEMORY_CLAUSES, MEMORY_FORMAT_VERSION, runMemoryContractSuite } from '@panda/contracts'
-import type { MemoryContractHarness, SuiteReport } from '@panda/contracts'
+import { MEMORY_CLAUSES, MEMORY_FORMAT_VERSION, runMemoryContractSuite } from '@skanl/panda-contracts'
+import type { MemoryContractHarness, SuiteReport } from '@skanl/panda-contracts'
 import { FilesystemMemoryProvider } from '../src/index.ts'
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'panda-memory-filesystem-'))
@@ -20,7 +20,7 @@ async function harness(): Promise<MemoryContractHarness> {
   media += 1
   const storeDir = join(temporaryRoot, `store-${String(media)}`)
   return {
-    providerName: '@panda/memory-filesystem',
+    providerName: '@skanl/panda-memory-filesystem',
     provider: await FilesystemMemoryProvider.open({ storeDir }),
     // The reopen seam: a NEW instance over the SAME directory, which is exactly
     // what a process restart produces.
@@ -72,7 +72,7 @@ describe('FilesystemMemoryProvider against the memory contract suite', () => {
     expect(report.passed).toBe(false)
     expect(report.violations[0]?.clause).toBe('fresh-store-is-typed-empty')
     for (const violation of report.violations) {
-      expect(violation.detail).toContain('@panda/memory-filesystem')
+      expect(violation.detail).toContain('@skanl/panda-memory-filesystem')
     }
   })
 })

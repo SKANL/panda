@@ -1,5 +1,5 @@
 {
-  "name": "@panda/registry",
+  "name": "@skanl/panda-registry",
   "version": "0.1.0",
   "description": "The canonical environment Registry: scoped storage, portable bundles, and ingest from what is already installed.",
   "repository": {
@@ -29,9 +29,9 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*",
-    "@panda/kernel": "workspace:*",
-    "@panda/lock": "workspace:*",
+    "@skanl/panda-contracts": "workspace:*",
+    "@skanl/panda-kernel": "workspace:*",
+    "@skanl/panda-lock": "workspace:*",
     "jsonc-parser": "^3.3.1"
   },
   "devDependencies": {

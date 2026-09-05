@@ -8,19 +8,19 @@ import {
   availableExecutorIds,
   createExecutorAdapter,
   unknownExecutor,
-} from '@panda/adapter-cli'
-import type { CliExecutorAdapterOptions, ShippedExecutor } from '@panda/adapter-cli'
-import { METHOD_CONFIG_KEY, PANDA_ERROR_CODES, PandaError, isRecord } from '@panda/contracts'
-import { createLayeredConfig, deepMerge } from '@panda/kernel'
-import type { ConfigLayer, LayeredConfig } from '@panda/kernel'
+} from '@skanl/panda-adapter-cli'
+import type { CliExecutorAdapterOptions, ShippedExecutor } from '@skanl/panda-adapter-cli'
+import { METHOD_CONFIG_KEY, PANDA_ERROR_CODES, PandaError, isRecord } from '@skanl/panda-contracts'
+import { createLayeredConfig, deepMerge } from '@skanl/panda-kernel'
+import type { ConfigLayer, LayeredConfig } from '@skanl/panda-kernel'
 
 // Executor SELECTION: which shipped adapter this run uses, decided through the
 // layered configuration panda already owns.
 //
-// The catalogue itself moved to `@panda/adapter-cli` with Story M3.B — the
+// The catalogue itself moved to `@skanl/panda-adapter-cli` with Story M3.B — the
 // package that ships the three adapters is the one whose kernel plugin has to
 // turn a configured id into one. It is re-exported here unchanged, because
-// `@panda/session` is the FR-29 surface: a consumer that installed only this
+// `@skanl/panda-session` is the FR-29 surface: a consumer that installed only this
 // package still gets the whole selection vocabulary from one import.
 export {
   DEFAULT_EXECUTOR_ID,
@@ -40,11 +40,11 @@ export {
 export type { CliExecutorAdapterOptions }
 
 // ponytail: `.panda/config.json` is spelled here rather than imported from
-// `@panda/environment`, which owns the same `<scope>/.panda` convention. That
+// `@skanl/panda-environment`, which owns the same `<scope>/.panda` convention. That
 // package is CONSUMER tier and so is this one, and `packages/session/test/
-// guard.test.ts` pins @panda/session's dependency set to exactly four packages —
+// guard.test.ts` pins @skanl/panda-session's dependency set to exactly four packages —
 // so reaching for it would be an AD-2 violation the gate rejects, not a reuse.
-// Upgrade path: move the scope-directory convention down into `@panda/contracts`
+// Upgrade path: move the scope-directory convention down into `@skanl/panda-contracts`
 // (shared tier) and have both consumers read it from there. Recorded in the
 // spec's Spec Change Log.
 const PANDA_STATE_DIR = '.panda'
@@ -102,7 +102,7 @@ export interface ExecutorSelection {
   readonly layer: ConfigLayer
   /**
    * Every id a selection may name. Here for a host that offers a CHOICE and has
-   * to render one; `@panda/cli` does not print it, because on the one path where
+   * to render one; `@skanl/panda-cli` does not print it, because on the one path where
    * a user needs the list — an id panda has no adapter for — the coded error's
    * own message already carries it.
    */
@@ -136,7 +136,7 @@ function describeError(error: unknown): string {
  * so the machine scope silently relocates into the working directory and the
  * PROJECT's own document is then reported as the `global` layer. That is a false
  * claim on the one output this story exists to make trustworthy, so it is
- * refused with the same code `@panda/environment` refuses it with.
+ * refused with the same code `@skanl/panda-environment` refuses it with.
  */
 function scopeRoot(label: string, value: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
@@ -278,7 +278,7 @@ function wasReadFromDisk(entry: ExecutorConfigDocument): boolean {
 export interface ExecutorConfigLayers {
   /**
    * Values composed UNDER panda's own built-in default, so any document can
-   * still override them. `@panda/session` puts its computed workspace root here
+   * still override them. `@skanl/panda-session` puts its computed workspace root here
    * when the caller named no `cwd`, which is what lets a user's
    * `workspace.rootDir` actually decide the directory.
    */
@@ -493,7 +493,7 @@ export function selectExecutor(config: LayeredConfig): ExecutorSelection {
  * from a host that already knows what it wants, and it would make every existing
  * `panda run` test depend on the `~/.panda` of whoever ran the suite.
  *
- * Ships from `@panda/session` beside `runSession`, so FR-29 holds: a third party
+ * Ships from `@skanl/panda-session` beside `runSession`, so FR-29 holds: a third party
  * imports this package and gets the selection AND the run, with no CLI involved.
  *
  * `panda run` does NOT call this: it reads the layers once and hands them to

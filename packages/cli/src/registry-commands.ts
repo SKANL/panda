@@ -11,14 +11,14 @@ import {
   scopeDirectory,
   storeFor,
   writeBundle,
-} from '@panda/environment'
+} from '@skanl/panda-environment'
 import type {
   EntryDelivery,
   OmittedEntry,
   RegistryEntry,
   RegistryScope,
   StoredEntryType,
-} from '@panda/environment'
+} from '@skanl/panda-environment'
 
 // `panda add` / `panda remove` / `panda list` — the surface Story 2.1 built a
 // store for and never gave a verb, which is why two of `panda doctor`'s own
@@ -28,7 +28,7 @@ import type {
 // it shapes argv into an entry OBJECT and hands it to the store. It does not
 // know which field suits which entry type, does not check an id, and does not
 // look at `UNPROJECTABLE_ENTRY_IDS` — every one of those is
-// `validateRegistryEntry` in `@panda/contracts`, and a second copy of any of
+// `validateRegistryEntry` in `@skanl/panda-contracts`, and a second copy of any of
 // them here would be a rule that drifts from the contract it paraphrases.
 //
 // The one argv fact it DOES own is the entry type, because a missing or
@@ -162,7 +162,7 @@ function knownTypes(): string {
  * The vocabulary each verb accepts, and the asymmetry is the point: `remove`
  * takes a RETIRED type as well, because an entry written by an older build has
  * to have an exit through the product, and `add` does not, because nothing may
- * create one again. Both lists come from `@panda/contracts` — there is still no
+ * create one again. Both lists come from `@skanl/panda-contracts` — there is still no
  * table of entry types in this file.
  */
 function acceptedTypes(verb: RegistryVerb): readonly StoredEntryType[] {

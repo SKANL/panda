@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
-import { RegistryStore } from '@panda/registry'
+import { RegistryStore } from '@skanl/panda-registry'
 import { afterAll, describe, expect, it } from 'vitest'
-import { REGISTRY_ENTRY_TYPES } from '@panda/contracts'
+import { REGISTRY_ENTRY_TYPES } from '@skanl/panda-contracts'
 import { DIAGNOSIS_FINDING_KINDS, FINDING_EXITS, RESOLUTION, diagnose, hasProblem } from '../src/doctor.ts'
 import type { Diagnosis, DiagnosisFinding, DiagnosisFindingKind } from '../src/doctor.ts'
 import { initMachine, initProject } from '../src/init.ts'
@@ -560,7 +560,7 @@ describe('a registry holding a RETIRED entry type is diagnosed, not refused', ()
     // The EXIT carries the concrete spelling, not the `<type> <id>` template:
     // a resolution that prints a placeholder next to a detail that already knows
     // the type and the id makes the user translate a command panda could have
-    // written out. `@panda/cli` dispatches this exact string for real.
+    // written out. `@skanl/panda-cli` dispatches this exact string for real.
     expect(found.resolution).toContain('To leave this state: `panda remove tool rg`')
     expect(found.resolution).not.toContain('<type>')
     expect(found.resolution).not.toContain('<id>')

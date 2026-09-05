@@ -19,7 +19,7 @@ import {
   createMemoryLogSink,
   loadPlugins,
   validateManifest,
-} from '@panda/kernel'
+} from '@skanl/panda-kernel'
 import { PANDA_ERROR_CODES } from '../src'
 
 // Temporary local helpers until the shared contract-test harness lands (Story 1.4); they move there.

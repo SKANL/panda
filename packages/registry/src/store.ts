@@ -11,8 +11,8 @@ import {
   registryEntryIssues,
   validateRegistryEntry,
   validateRegistryScope,
-} from '@panda/contracts'
-import type { RegistryEntry, RegistryScope, StoredEntryType } from '@panda/contracts'
+} from '@skanl/panda-contracts'
+import type { RegistryEntry, RegistryScope, StoredEntryType } from '@skanl/panda-contracts'
 import { strictFaultLocation } from './document-fault.ts'
 import { acquireLock } from './lock.ts'
 import type { LockOptions, StaleLockBreak } from './lock.ts'

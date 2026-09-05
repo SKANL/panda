@@ -20,7 +20,7 @@ context:
 
 ## Boundaries & Constraints
 
-**Always:** every service registration pairs with a disposer; teardown unwinds in exact reverse activation order (verified via an injectable ordering log); double-dispose is a no-op; any operation targeting a disposed plugin raises a typed error carrying a stable `PANDA_KERNEL_*` code; a swap validates the candidate FULLY before commit — an invalid swap leaves the previous implementation serving and returns a typed error naming the validation failure; one plugin's failed activation is contained (kernel and other plugins keep running). New codes join `KERNEL_ERROR_CODES` and the contracts parity suite pins all of them. Zero runtime dependencies and no `@panda/contracts` imports in kernel remain enforced by the existing guard tests.
+**Always:** every service registration pairs with a disposer; teardown unwinds in exact reverse activation order (verified via an injectable ordering log); double-dispose is a no-op; any operation targeting a disposed plugin raises a typed error carrying a stable `PANDA_KERNEL_*` code; a swap validates the candidate FULLY before commit — an invalid swap leaves the previous implementation serving and returns a typed error naming the validation failure; one plugin's failed activation is contained (kernel and other plugins keep running). New codes join `KERNEL_ERROR_CODES` and the contracts parity suite pins all of them. Zero runtime dependencies and no `@skanl/panda-contracts` imports in kernel remain enforced by the existing guard tests.
 
 **Ask First:** changing readiness semantics beyond presence-propagation decided in 1.1; introducing async-only lifecycles (activation/disposal must work synchronously; async support only if trivially additive); any new package.
 

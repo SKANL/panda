@@ -10,7 +10,7 @@
 
 Panda teaches an author two different lessons about the same product.
 
-Write a **MethodPlugin** and one run lists every mistake: `@panda/contracts`
+Write a **MethodPlugin** and one run lists every mistake: `@skanl/panda-contracts`
 accumulates into `issues[]` and `METHOD-PLUGIN.md` promises *"It reports **every**
 violation at once, not the first."* Write a **kernel plugin** and it is one
 mistake per run — fix the `version`, run again, learn about `provides[2]`, run
@@ -64,7 +64,7 @@ Executed on 2026-09-01 at `4c769da`, every claim re-read at the line.
 ## Boundaries & Constraints
 
 - **AD-1** — the kernel keeps zero runtime dependencies and never imports
-  `@panda/contracts`. Nothing here needs either; the shape being copied from
+  `@skanl/panda-contracts`. Nothing here needs either; the shape being copied from
   contracts is copied, not imported, exactly as `SEMVER_PATTERN` already is.
 - **AD-2** — no new package, no new dependency. Changes land in
   `packages/kernel/` only.
@@ -236,7 +236,7 @@ Executed on 2026-09-01, not inferred.
 ### The additive widening was caught by exact-equality assertions, in four places
 
 `{ kind: 'absent' }` gaining a field turned four `toEqual` assertions red — two
-in the kernel, one in `@panda/workspace-local`, one in `@panda/adapter-cli`. That
+in the kernel, one in `@skanl/panda-workspace-local`, one in `@skanl/panda-adapter-cli`. That
 is the guard working: an exact-equality assertion is what makes a widening a
 decision rather than a drift.
 

@@ -1,9 +1,9 @@
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
-import { acquireLock as acquireFileLock } from '@panda/lock'
-import type { LockHolder, LockOptions, StaleLockBreak } from '@panda/lock'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
+import { acquireLock as acquireFileLock } from '@skanl/panda-lock'
+import type { LockHolder, LockOptions, StaleLockBreak } from '@skanl/panda-lock'
 
-// The lockfile protocol itself now lives in `@panda/lock`, a leaf below both
-// this package and `@panda/projection`. What stayed here is the TRANSLATION,
+// The lockfile protocol itself now lives in `@skanl/panda-lock`, a leaf below both
+// this package and `@skanl/panda-projection`. What stayed here is the TRANSLATION,
 // and it is the whole reason the move was safe: `acquireLock` is on this
 // package's published surface, so a consumer that catches it must go on seeing
 // `PANDA_REGISTRY_CONTENTION` and `PANDA_REGISTRY_STORE_UNAVAILABLE` from the

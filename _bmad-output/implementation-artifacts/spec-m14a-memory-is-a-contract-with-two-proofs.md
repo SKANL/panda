@@ -37,7 +37,7 @@ Executed 2026-09-03 at `0e7f9a6`, every zero with a control.
 | M2 | `MemoryProvider` does not exist as a symbol | gitnexus `context` reports it not found, while resolving `WorkspaceProvider` with both its implementations in the same index. |
 | M3 | The conformance-suite idiom already ships, twice | `packages/contracts/src/contract-suite/` holds `clause.ts`, `executor-clauses.ts`, `workspace-clauses.ts`, each a `Clause<T>[]` behind a `*_SUITE` name. This is the third application of a shipped pattern, not a new one. |
 | M4 | SQLite needs NO new dependency | `node:sqlite`'s `DatabaseSync` opens, executes and queries on **Node 24.14.1 and Node 26.8.1**, the exact two versions CI runs. It prints an `ExperimentalWarning` on 24. |
-| M5 | Panda's dependency posture is one dependency, total | Across all ten packages, exactly ONE non-`@panda/*` runtime dependency exists: `jsonc-parser` in `@panda/projection`. |
+| M5 | Panda's dependency posture is one dependency, total | Across all ten packages, exactly ONE non-`@skanl/panda-*` runtime dependency exists: `jsonc-parser` in `@skanl/panda-projection`. |
 | M6 | Every port panda ships has a production caller — memory would be the first without one | `ExecutorAdapter` (adapter-cli plugin), `WorkspaceProvider` (M10.A), `SkillSource` (M9.A), `ToolProvider` (M11.A), `MethodPlugin` (M5.D). Named here so nobody later "discovers" memory as the defect class: the PRD designs it that way (M-correction above). |
 
 ---
@@ -48,7 +48,7 @@ Executed 2026-09-03 at `0e7f9a6`, every zero with a control.
 
 Shipping 3-1 alone would publish a port with zero implementations, which is
 precisely what this project has now paid for three times: `ingest.ts` at 375
-lines with no caller, `@panda/workspace-git-worktree` finished and unreachable
+lines with no caller, `@skanl/panda-workspace-git-worktree` finished and unreachable
 for two milestones, and `ToolProvider` published in story 2.4 and unimplemented
 until M11.A. Shipping ONE provider would prove the port and leave the SWAP —
 which is FR-16 and S2's entire content — unproven, and panda's own history says
@@ -187,7 +187,7 @@ migration. Entry payloads are opaque to the port.
    declared** — proven by adding the packages first and watching the gate name
    them, exactly as M12.A's acceptance did.
 6. **No new runtime dependency**: every `package.json` still declares only
-   `@panda/*` plus the one pre-existing `jsonc-parser`.
+   `@skanl/panda-*` plus the one pre-existing `jsonc-parser`.
 
 ---
 
@@ -242,11 +242,11 @@ cannot pass an A-then-B ordering by luck.
 
 ### AC3 — the reopen clause fails when persistence is broken
 
-`@panda/memory-filesystem`'s `save()` had its `appendFile` removed, leaving the
+`@skanl/panda-memory-filesystem`'s `save()` had its `appendFile` removed, leaving the
 in-memory array intact. The aggregate report held EXACTLY ONE violation:
 
 ```
-state-survives-reopen: [@panda/memory-filesystem] a new provider instance over
+state-survives-reopen: [@skanl/panda-memory-filesystem] a new provider instance over
 the same medium sees 0 entries, 16 were written
 ```
 
@@ -258,7 +258,7 @@ red on the same plant, by design — they read the file rather than the provider
 ### AC4 — overwrite refused with a CODED error, matched on the code
 
 Both providers refuse through `memoryOverwriteUnsupported()` in
-`@panda/contracts`, so the two cannot drift. Falsified: the filesystem provider
+`@skanl/panda-contracts`, so the two cannot drift. Falsified: the filesystem provider
 was made to throw a plain `Error` whose MESSAGE still said the right thing, and
 `overwrite-refused-and-store-unchanged` went red alone with
 `rejected with non-coded error: ..., expected
@@ -278,8 +278,8 @@ undeclared. It failed in both directions, naming them:
 
 ```
 AD-2 violations:
-@panda/memory-filesystem has no declared tier
-@panda/memory-sqlite has no declared tier
+@skanl/panda-memory-filesystem has no declared tier
+@skanl/panda-memory-sqlite has no declared tier
 ```
 
 and `declares a tier for every package, and names no package that is gone`
@@ -292,9 +292,9 @@ is 10 passed, 1 skipped.
 
 Every `package.json` under `packages/` parsed and its `dependencies` printed —
 the full listing IS the control, since it shows the scan sees real dependencies
-in eleven of twelve packages. Exactly one non-`@panda/*` runtime dependency
+in eleven of twelve packages. Exactly one non-`@skanl/panda-*` runtime dependency
 exists across the workspace: `projection -> jsonc-parser`, which predates this
-story. `@panda/memory-sqlite` declares `@panda/contracts` and nothing else;
+story. `@skanl/panda-memory-sqlite` declares `@skanl/panda-contracts` and nothing else;
 `node:sqlite` is the platform.
 
 ### Gate
@@ -308,7 +308,7 @@ story. `@panda/memory-sqlite` declares `@panda/contracts` and nothing else;
 - `pnpm lint` — clean
 - `pnpm build && pnpm proof:consumer-install` — 10 passed, 1 skipped
 
-`pnpm check` itself aborts in `@panda/projection` on
+`pnpm check` itself aborts in `@skanl/panda-projection` on
 `test/skills-discovery.live.test.ts`, a live suite driving real vendor binaries;
 it is one of the two suites AGENTS.md names as excluded from the development
 loop and was not chased.
@@ -360,8 +360,8 @@ Reverted; suite green and the tree verified unmodified.
 
 **No new dependency, verified independently.** The `pnpm-lock.yaml` diff is +32
 lines and contains ZERO external packages — only the two new workspace entries.
-Across all twelve manifests the single non-`@panda/*` runtime dependency is still
-`jsonc-parser` in `@panda/projection`, printed in full as its own control.
+Across all twelve manifests the single non-`@skanl/panda-*` runtime dependency is still
+`jsonc-parser` in `@skanl/panda-projection`, printed in full as its own control.
 
 **The gate**: bytes 0, typecheck 12/12, lint 0, **1,462 tests green on Node 24
 AND Node 26.8.1** across twelve packages, build 12/12, and

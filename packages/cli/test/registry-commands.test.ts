@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REGISTRY_ENTRY_TYPES, REMOVABLE_ENTRY_TYPES, RETIRED_ENTRY_TYPES } from '@panda/environment'
+import { REGISTRY_ENTRY_TYPES, REMOVABLE_ENTRY_TYPES, RETIRED_ENTRY_TYPES } from '@skanl/panda-environment'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 
@@ -10,9 +10,9 @@ import type { RunCommandOptions } from '../src'
 // four stories of projection machinery were reachable without.
 //
 // What is pinned here is the CLI's whole job and nothing else: argv, output and
-// exit codes. Which entries are VALID is `@panda/contracts` and is proven in
+// exit codes. Which entries are VALID is `@skanl/panda-contracts` and is proven in
 // `packages/contracts/test/registry.test.ts`; what a store does with them is
-// `@panda/registry`'s. The rows below that end in a refusal therefore assert
+// `@skanl/panda-registry`'s. The rows below that end in a refusal therefore assert
 // only that the refusal arrives CODED and non-zero, never the sentence — the
 // binding must not be able to satisfy them by inventing a rule of its own.
 
@@ -809,7 +809,7 @@ describe('a retired entry type through the binary', () => {
 //
 // The CLI's job and nothing else: argv, output, exit codes, and that the file
 // panda names is the file panda wrote. WHAT goes in a bundle and where the
-// secret line falls is `@panda/registry`'s, proven in its own suite.
+// secret line falls is `@skanl/panda-registry`'s, proven in its own suite.
 
 describe('panda export', () => {
   async function bundleAt(path: string): Promise<Record<string, unknown>> {

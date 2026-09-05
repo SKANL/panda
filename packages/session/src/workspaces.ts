@@ -1,9 +1,9 @@
 import { join } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
-import type { ConfigLayer, LayeredConfig } from '@panda/kernel'
-import { createGitWorktreeWorkspacePlugin } from '@panda/workspace-git-worktree'
-import { WORKSPACE_CONFIG_KEY, createWorkspacePlugin } from '@panda/workspace-local'
-import type { WorkspacePlugin } from '@panda/workspace-local'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
+import type { ConfigLayer, LayeredConfig } from '@skanl/panda-kernel'
+import { createGitWorktreeWorkspacePlugin } from '@skanl/panda-workspace-git-worktree'
+import { WORKSPACE_CONFIG_KEY, createWorkspacePlugin } from '@skanl/panda-workspace-local'
+import type { WorkspacePlugin } from '@skanl/panda-workspace-local'
 
 // Workspace provider SELECTION: which shipped `WorkspaceProvider` this run
 // mounts, decided through the layered configuration panda already owns.
@@ -39,7 +39,7 @@ export function worktreeStateDir(projectRoot: string): string {
 /** What panda mounts when nothing selects otherwise. */
 export const DEFAULT_WORKSPACE_PROVIDER_ID = 'local'
 
-/** The `git worktree`-backed provider (`@panda/workspace-git-worktree`). */
+/** The `git worktree`-backed provider (`@skanl/panda-workspace-git-worktree`). */
 export const GIT_WORKTREE_PROVIDER_ID = 'git-worktree'
 
 /**
@@ -100,7 +100,7 @@ const DOTTED_KEY = `${WORKSPACE_CONFIG_KEY}.${WORKSPACE_PROVIDER_CONFIG_KEY}`
 function unusableSelection(detail: string): PandaError {
   // `configurationUnusable` rather than a new code: panda's own document exists
   // and holds a value panda cannot use, which is exactly what that code is for
-  // (see its note in `@panda/contracts`). There is no workspace twin of
+  // (see its note in `@skanl/panda-contracts`). There is no workspace twin of
   // `PANDA_EXECUTOR_NOT_FOUND` and this story does not invent one — the message
   // carries the closed catalogue, which is the half a user acts on.
   return new PandaError(

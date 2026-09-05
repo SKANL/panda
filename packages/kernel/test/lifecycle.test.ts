@@ -1137,7 +1137,7 @@ describe('M7.C rows 10 and 12: swap, and the config that stays', () => {
     kernel.start()
 
     // `settings` is the plugin's own slice; `config` remains the whole document,
-    // which `@panda/session` and the executor selection both still read.
+    // which `@skanl/panda-session` and the executor selection both still read.
     expect(composed).toEqual({ cfg: { a: 1 }, somethingElse: { b: 2 } })
   })
 })

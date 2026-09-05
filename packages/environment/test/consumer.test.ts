@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 // The ONLY import in this file, and that is the assertion: everything a consumer
 // needs — populating the registry, running init, reading the result, observing
 // the run — comes from this package's single public entry. An
-// `@panda/environment`-only install cannot resolve `@panda/registry`,
-// `@panda/projection` or `@panda/kernel` under pnpm's strict layout, so a test
+// `@skanl/panda-environment`-only install cannot resolve `@skanl/panda-registry`,
+// `@skanl/panda-projection` or `@skanl/panda-kernel` under pnpm's strict layout, so a test
 // that reached for any of them would be proving the claim on a monorepo's terms.
 import {
   PROJECTION_ACTION_ID,
@@ -19,13 +19,13 @@ import {
 
 /**
  * The POSITIVE proof of FR-29: anything `panda init` / `panda project init` can
- * do, a third party can do by importing this package, with no `@panda/cli`
+ * do, a third party can do by importing this package, with no `@skanl/panda-cli`
  * installed. A negative scan of CLI source can be evaded — this cannot, because
  * it never mentions the CLI. It composes the capability the way a consumer
  * would and asserts the result in the EXECUTOR'S OWN TERMS: the bytes Claude
  * Code reads, at the path Claude Code reads them from.
  *
- * What makes it fail: move any part of the capability into `@panda/cli` and this
+ * What makes it fail: move any part of the capability into `@skanl/panda-cli` and this
  * file stops writing `.mcp.json`. Concretely — delete the `runProjection` call
  * from `src/init.ts` and the file never appears; drop the `mcpServers` key or
  * the `type: 'stdio'` field from what the target renders and the vendor-shaped
@@ -41,7 +41,7 @@ async function fixture(): Promise<{ homeDir: string; projectDir: string }> {
   return { homeDir, projectDir }
 }
 
-describe('a consumer with no @panda/cli installed', () => {
+describe('a consumer with no @skanl/panda-cli installed', () => {
   it('projects the registry into the file Claude Code reads, in Claude Code vocabulary', async () => {
     const { homeDir, projectDir } = await fixture()
     // Claude Code's own state file, with its own content. Its presence is the
@@ -138,7 +138,7 @@ describe('a consumer with no @panda/cli installed', () => {
    * report that cannot be trusted to match the write is the failure mode this
    * command exists to not have.
    *
-   * What makes it fail: move the diagnosis into `@panda/cli` and there is nothing
+   * What makes it fail: move the diagnosis into `@skanl/panda-cli` and there is nothing
    * to import here; compute it from a second code path and the `wouldWrite`
    * prediction stops matching `written`; let it prepare state and the byte
    * comparison of the untouched project directory fails.

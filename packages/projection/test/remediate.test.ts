@@ -12,7 +12,7 @@ import type {
   ProjectionMaterialiseTarget,
   RegistryEntry,
   RemediationOutcome,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import { groupByKind, runProjection } from '../src/engine.ts'
 import { ProjectionLedger } from '../src/ledger.ts'
 import { runRemediation } from '../src/remediate.ts'

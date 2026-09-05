@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateManifest } from '@panda/kernel'
+import { validateManifest } from '@skanl/panda-kernel'
 import {
   METHOD_PLUGIN_ROOT_KEYS,
   METHOD_PLUGIN_SCHEMA,

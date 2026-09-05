@@ -8,7 +8,7 @@ import {
   PandaError,
   REGISTRY_ENTRY_TYPES,
   defineStandardSchema,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type {
   RegistryEntry,
   RegistryScope,
@@ -16,7 +16,7 @@ import type {
   SourcedSkill,
   StandardSchemaV1,
   ToolProvider,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import { IngestWriteFailure, RegistryStore, ingestProviders } from '../src'
 
 const tempRoots: string[] = []

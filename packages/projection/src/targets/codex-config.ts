@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ProjectionConfigTarget } from '@panda/contracts'
+import type { ProjectionConfigTarget } from '@skanl/panda-contracts'
 import { createProjectionTargetFromTraits, readNativeCommand } from '../formats.ts'
 import type { ProjectionTargetTraits, TraitTargetOptions } from '../formats.ts'
 

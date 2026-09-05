@@ -1,11 +1,11 @@
-# @panda/memory-filesystem
+# @skanl/panda-memory-filesystem
 
 The filesystem `MemoryProvider`: one directory, one `meta.json` format stamp, and one append-only
 `entries.ndjson` log. State written into a store survives disposal and process restarts, which is
 what `state-survives-reopen` in the shared contract suite exists to prove.
 
 ```ts
-import { FilesystemMemoryProvider } from '@panda/memory-filesystem'
+import { FilesystemMemoryProvider } from '@skanl/panda-memory-filesystem'
 
 const provider = await FilesystemMemoryProvider.open({ storeDir: '/tmp/panda-memory' })
 await provider.save({
@@ -32,4 +32,4 @@ only to refuse, with `PANDA_CONTRACT_MEMORY_OVERWRITE_UNSUPPORTED`, having chang
 
 `packages/contracts/src/contract-suite/memory-clauses.ts` holds the clauses, and
 `test/contract.test.ts` runs every one of them against this provider. The identical array runs
-against `@panda/memory-sqlite`; that swap is FR-16 and scenario S2.
+against `@skanl/panda-memory-sqlite`; that swap is FR-16 and scenario S2.

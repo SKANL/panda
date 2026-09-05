@@ -1,7 +1,7 @@
 import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { describe, expect, it } from 'vitest'
 import { WRITABLE_CONFIG_KEYS, setConfigValue } from '../src/config-write.ts'
 
@@ -149,7 +149,7 @@ describe('M5.C row 11: the document has a mode panda did not choose', () => {
   // 0o444 target fails EPERM, and the failure escaped as a BARE Node errno —
   // no `PandaError`, no code, nothing a caller could classify (AD-7), while
   // `doctor` has reported this exact state as `not-writable` all along. Fixed
-  // at the root in `@panda/projection`, not here: every projection target
+  // at the root in `@skanl/panda-projection`, not here: every projection target
   // writes through the same function, so patching only this caller would have
   // left a vendor config in the same state throwing an unclassifiable error.
   it('refuses coded rather than widening the mode to get the write through', async () => {

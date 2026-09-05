@@ -77,7 +77,7 @@ describe('projection error codes', () => {
   })
 
   it('keeps PANDA_REGISTRY_* codes out of the projection surface (AD-7)', () => {
-    // The ledger borrowed @panda/registry's lock once; it leaked registry
+    // The ledger borrowed @skanl/panda-registry's lock once; it leaked registry
     // contention codes out of a projection API along with the dependency.
     const projectionErrors = Object.entries(PANDA_ERROR_CODES).filter(([key]) =>
       key.startsWith('projection'),

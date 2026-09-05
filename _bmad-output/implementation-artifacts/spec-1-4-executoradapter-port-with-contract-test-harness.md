@@ -16,11 +16,11 @@ context:
 
 **Problem:** There is no ExecutorAdapter port, no typed result envelope, and no runnable way to prove an adapter honors the execution contract — every future adapter (Claude Code, Codex, OpenCode) would be validated ad hoc. The workspace abstraction pandas executors run inside also does not exist.
 
-**Approach:** Define the ExecutorAdapter and WorkspaceProvider ports in `@panda/contracts` with Standard Schema interfaces and a typed result envelope `{status, data, summary, changedPaths?, errors?}`; publish a runnable contract-test suite that validates ANY adapter against named clauses; ship the local-directory WorkspaceProvider implementation passing those clauses.
+**Approach:** Define the ExecutorAdapter and WorkspaceProvider ports in `@skanl/panda-contracts` with Standard Schema interfaces and a typed result envelope `{status, data, summary, changedPaths?, errors?}`; publish a runnable contract-test suite that validates ANY adapter against named clauses; ship the local-directory WorkspaceProvider implementation passing those clauses.
 
 ## Boundaries & Constraints
 
-**Always:** ports live in `@panda/contracts` (zero runtime deps, Standard Schema v1 facing); a partially-implemented adapter FAILS the suite with each violated clause NAMED; the local-dir provider passes all workspace contract clauses incl. persistent state across sessions; `@panda/kernel` stays zero-dependency importing neither contracts nor implementations (guards already enforce); result envelopes are typed per FR-6 shape. New error codes join contracts canonically.
+**Always:** ports live in `@skanl/panda-contracts` (zero runtime deps, Standard Schema v1 facing); a partially-implemented adapter FAILS the suite with each violated clause NAMED; the local-dir provider passes all workspace contract clauses incl. persistent state across sessions; `@skanl/panda-kernel` stays zero-dependency importing neither contracts nor implementations (guards already enforce); result envelopes are typed per FR-6 shape. New error codes join contracts canonically.
 
 **Ask First:** any real process spawning in this story (adapters spawn in Story 1.5); changing envelope field names.
 
@@ -59,7 +59,7 @@ context:
 **Acceptance Criteria:**
 - Given a stub adapter implementing the port partially, when the contract suite runs, then it fails naming each violated clause
 - Given the workspace-local provider, when the workspace contract clauses run, then all pass including state persistence across sessions
-- Given `@panda/kernel`, then it remains zero-dependency importing neither contracts nor implementations (existing guards stay green)
+- Given `@skanl/panda-kernel`, then it remains zero-dependency importing neither contracts nor implementations (existing guards stay green)
 
 ## Spec Change Log
 

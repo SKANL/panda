@@ -19,8 +19,8 @@ import {
   isStoredEntryType,
   normalizeRegistryEntryPaths,
   registryEntryIssues,
-} from '@panda/contracts'
-import type { RegistryEntry, StoredEntryType } from '@panda/contracts'
+} from '@skanl/panda-contracts'
+import type { RegistryEntry, StoredEntryType } from '@skanl/panda-contracts'
 import { strictFaultLocation } from './document-fault.ts'
 
 /** Bumped only when a reader of an older build could MISREAD the document. */

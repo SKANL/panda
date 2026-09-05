@@ -17,7 +17,7 @@ context:
 
 **Problem:** Today the only way into the Registry is `RegistryStore.register()` called by hand. A plugin that wants to contribute a catalog of tools, or mirror a directory of skills, has no supported seam — it must drive the store imperatively and re-derive change detection itself. FR-13b/FR-13c require two ports so third parties extend the catalog without touching the engine.
 
-**Approach:** Two provider-side interfaces in `@panda/contracts` (`ToolProvider`, `SkillSource`) plus ONE ingestion function in `@panda/registry` that drives them. Ingestion is **two-phase**: collect and validate every contribution from every origin FIRST, then write. A schema-invalid definition therefore fails before any store mutation exists to roll back — nothing is registered, so nothing is projected. `SkillSource` contributions carry a `contentHash`; ingestion compares it against the hash recorded on the stored entry and re-registers only when it changed, so unchanged sources produce no store write and therefore a byte-identical projection.
+**Approach:** Two provider-side interfaces in `@skanl/panda-contracts` (`ToolProvider`, `SkillSource`) plus ONE ingestion function in `@skanl/panda-registry` that drives them. Ingestion is **two-phase**: collect and validate every contribution from every origin FIRST, then write. A schema-invalid definition therefore fails before any store mutation exists to roll back — nothing is registered, so nothing is projected. `SkillSource` contributions carry a `contentHash`; ingestion compares it against the hash recorded on the stored entry and re-registers only when it changed, so unchanged sources produce no store write and therefore a byte-identical projection.
 
 ## Boundaries & Constraints
 

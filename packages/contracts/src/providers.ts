@@ -4,7 +4,7 @@ import type { StandardSchemaV1 } from './standard-schema.ts'
 // Provider-side ports (FR-13b/FR-13c): the supported seam for third parties to
 // contribute catalog entries without driving `RegistryStore` imperatively and
 // re-deriving change detection themselves. Implementing either port only ever
-// requires installing @panda/contracts.
+// requires installing @skanl/panda-contracts.
 //
 // Each port is deliberately narrow to ONE family of entry types: a ToolProvider
 // contributes executables (`mcp-server`), a SkillSource contributes

@@ -6,7 +6,7 @@ import {
   PandaError,
   isRetiredEntryType,
   projectionTargetLocation,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type {
   DriftEntry,
   PandaErrorCode,
@@ -15,12 +15,12 @@ import type {
   ProjectionWarning,
   RegistryEntry,
   RegistryScope,
-} from '@panda/contracts'
-import { createMemoryLogSink } from '@panda/kernel'
-import type { LogSink } from '@panda/kernel'
-import { ProjectionLedger, groupByKind, runProjection, runRemediation } from '@panda/projection'
-import type { ProjectionMode } from '@panda/projection'
-import { RegistryStore } from '@panda/registry'
+} from '@skanl/panda-contracts'
+import { createMemoryLogSink } from '@skanl/panda-kernel'
+import type { LogSink } from '@skanl/panda-kernel'
+import { ProjectionLedger, groupByKind, runProjection, runRemediation } from '@skanl/panda-projection'
+import type { ProjectionMode } from '@skanl/panda-projection'
+import { RegistryStore } from '@skanl/panda-registry'
 import { EXECUTOR_PROFILES, detectExecutors } from './executors.ts'
 import type { ExecutorDetection, ExecutorProfile } from './executors.ts'
 

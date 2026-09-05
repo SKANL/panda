@@ -15,13 +15,13 @@ context:
 
 **Problem:** panda has no runnable foundation: integration failures between plugins currently have no load-time surface because neither the monorepo nor the plugin manifest machinery exists. Without eager manifest validation, misconfigured plugins would only fail mid-run.
 
-**Approach:** Bootstrap a pnpm 11 monorepo with exactly two packages (`@panda/kernel`, `@panda/contracts`) and implement the declarative plugin manifest: eager, I/O-free validation, service-graph resolution with hard/soft consumption, and cycle rejection naming both sides.
+**Approach:** Bootstrap a pnpm 11 monorepo with exactly two packages (`@skanl/panda-kernel`, `@skanl/panda-contracts`) and implement the declarative plugin manifest: eager, I/O-free validation, service-graph resolution with hard/soft consumption, and cycle rejection naming both sides.
 
 ## Boundaries & Constraints
 
-**Always:** `@panda/kernel` has zero runtime dependencies and never imports `@panda/contracts` or implementations (AD-1/AD-2). Manifest validation runs eagerly and synchronously before any file/network/process I/O (FR-1). Every failure raises an error carrying a stable `PANDA_<DOMAIN>_<REASON>` code string (AD-7). Schema-facing surfaces use Standard Schema v1 interfaces; Zod 4 may appear only inside implementation/test internals. Stack: TypeScript 7.0.x compiler (`@typescript/typescript6` alias for ESLint tooling), Node >=24, pnpm 11, Vitest 4, ESLint 10.
+**Always:** `@skanl/panda-kernel` has zero runtime dependencies and never imports `@skanl/panda-contracts` or implementations (AD-1/AD-2). Manifest validation runs eagerly and synchronously before any file/network/process I/O (FR-1). Every failure raises an error carrying a stable `PANDA_<DOMAIN>_<REASON>` code string (AD-7). Schema-facing surfaces use Standard Schema v1 interfaces; Zod 4 may appear only inside implementation/test internals. Stack: TypeScript 7.0.x compiler (`@typescript/typescript6` alias for ESLint tooling), Node >=24, pnpm 11, Vitest 4, ESLint 10.
 
-**Ask First:** creating any Structural Seed package beyond kernel/contracts; adding any runtime dependency to `@panda/kernel`; changing the declared package topology or error-code convention.
+**Ask First:** creating any Structural Seed package beyond kernel/contracts; adding any runtime dependency to `@skanl/panda-kernel`; changing the declared package topology or error-code convention.
 
 **Never:** no disposal lifecycle, ordering, double-dispose, or swap logic (Story 1.2); no event bus or layered config (Story 1.3); no ExecutorAdapter/workspace/contract-harness work (Story 1.4); no CLI package; no empty placeholder packages "for later".
 
@@ -69,7 +69,7 @@ Target layout to create:
 - Given a manifest missing required fields, when load is attempted, then it fails with a coded error before any I/O occurs
 - Given two plugins whose consumptions form a cycle, when the kernel resolves the graph, then rejection names both plugin ids
 - Given a hard-consumed service with no provider, when loading completes, then the plugin is not ready and a typed error names the service
-- Given `@panda/kernel`, when inspected, then its `package.json` declares zero runtime dependencies and its sources contain no `@panda/contracts` import (enforced by test)
+- Given `@skanl/panda-kernel`, when inspected, then its `package.json` declares zero runtime dependencies and its sources contain no `@skanl/panda-contracts` import (enforced by test)
 
 ## Spec Change Log
 
@@ -77,7 +77,7 @@ Target layout to create:
 
 ## Design Notes
 
-Error-model boundary: AD-1 forbids kernel importing contracts, AD-7 wants one shared code vocabulary. Resolution: kernel defines a minimal coded-error TYPE (string `code` field) and emits stable literal codes; `@panda/contracts` publishes the canonical constants; a contracts-side test asserts the expected kernel code literals verbatim, making drift a test failure rather than an import. Suggested prefixes: `PANDA_KERNEL_MANIFEST_INVALID`, `PANDA_KERNEL_CYCLE_DETECTED`, `PANDA_KERNEL_SERVICE_NOT_PROVIDED`.
+Error-model boundary: AD-1 forbids kernel importing contracts, AD-7 wants one shared code vocabulary. Resolution: kernel defines a minimal coded-error TYPE (string `code` field) and emits stable literal codes; `@skanl/panda-contracts` publishes the canonical constants; a contracts-side test asserts the expected kernel code literals verbatim, making drift a test failure rather than an import. Suggested prefixes: `PANDA_KERNEL_MANIFEST_INVALID`, `PANDA_KERNEL_CYCLE_DETECTED`, `PANDA_KERNEL_SERVICE_NOT_PROVIDED`.
 
 Manifest validation must be synchronous and side-effect free: no dynamic import, no fs, no env reads during validation — that is what makes "before any I/O" provable in tests.
 

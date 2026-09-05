@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
 
 /** The durable proof that a worktree is panda's. */
 export interface WorktreeRecord {
@@ -29,7 +29,7 @@ interface LedgerDocument {
  * it is created with `wx` (O_EXCL), so exactly one contender per host wins the
  * removal and every other one gets a coded refusal naming the holder. A flag
  * inside the record would need a read-modify-write, which two processes can
- * interleave — the same reasoning `@panda/registry`'s lockfile rests on, whose
+ * interleave — the same reasoning `@skanl/panda-registry`'s lockfile rests on, whose
  * rule this matches rather than answering a second time.
  *
  * It doubles as the crash marker: a process killed between writing this and
@@ -60,7 +60,7 @@ const INTENT_SUFFIX = '.removing.json'
 /**
  * How long a removal intent whose holder still looks alive is believed.
  *
- * Taken from `@panda/registry`'s `DEFAULT_MAX_AGE_MS` rather than chosen here,
+ * Taken from `@skanl/panda-registry`'s `DEFAULT_MAX_AGE_MS` rather than chosen here,
  * and for its reason: a pid on a long-lived machine gets reused, and without an
  * age fallback a reused pid would make one interrupted removal unresolvable
  * forever — a state panda reports and cannot leave, which is what M4.C abolishes.
@@ -192,7 +192,7 @@ export class WorktreeLedger {
     // marker some process wrote and did not finish — an empty file is exactly
     // what a crash between the exclusive create and the write leaves. It is
     // treated as a holder panda cannot identify, dated by the FILE's own mtime
-    // so the age fallback gives it the same grace `@panda/registry` gives a
+    // so the age fallback gives it the same grace `@skanl/panda-registry` gives a
     // corrupt lockfile. Reading it as absence would let two removals run.
     try {
       const parsed: unknown = JSON.parse(raw)
@@ -219,7 +219,7 @@ export class WorktreeLedger {
    *
    * ponytail: a healthy intent written by ANOTHER host is never taken over,
    * because panda cannot see that machine's processes — the identical ceiling
-   * `@panda/registry`'s lock accepts, with the identical consequence (a state
+   * `@skanl/panda-registry`'s lock accepts, with the identical consequence (a state
    * dir on a network share needs the age fallback to expire). Upgrade path: the
    * same one that lock records.
    */
@@ -357,7 +357,7 @@ export class WorktreeLedger {
   /**
    * Temp file in the destination directory, then rename over the target.
    *
-   * NOT `@panda/projection`'s `atomicWriteText`, and deliberately so: that one
+   * NOT `@skanl/panda-projection`'s `atomicWriteText`, and deliberately so: that one
    * resolves symlinks and copies file modes because it writes into VENDOR-owned
    * dotfiles a user may have linked into a repository, and it raises
    * `PANDA_PROJECTION_NATIVE_UNCLAIMABLE` when it cannot. Neither hazard exists
@@ -438,7 +438,7 @@ function isIntentShape(value: unknown): value is WorktreeRemovalIntent {
  * THIS machine, or it has outlived {@link INTENT_MAX_AGE_MS}.
  *
  * `process.kill(pid, 0)` throwing EPERM means the process exists under another
- * user — alive. Only ESRCH proves it is gone, which is `@panda/registry`'s rule
+ * user — alive. Only ESRCH proves it is gone, which is `@skanl/panda-registry`'s rule
  * and is not restated here for a second time by accident.
  */
 function isStale(intent: WorktreeRemovalIntent): boolean {

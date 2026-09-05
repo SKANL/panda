@@ -72,7 +72,7 @@ line.
 ## Boundaries & Constraints
 
 - **AD-1** — the kernel keeps zero runtime dependencies and never imports
-  `@panda/contracts`. Nothing here needs either.
+  `@skanl/panda-contracts`. Nothing here needs either.
 - **AD-2** — no new package, no new dependency. Changes land in
   `packages/kernel/`, `packages/registry/`, `packages/workspace-local/`.
 - **AD-5** — typed absence over silence. A teardown that did not finish is not a

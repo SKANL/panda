@@ -19,13 +19,13 @@ context:
 
 **Approach:** one selection resolved through the kernel's layered config — `defaults` → `global` → `project` → `invocation` — naming one of the three shipped adapters, handed to the session. The catalogue is keyed by each adapter's OWN `executorId` trait, never by a second list of names written beside them.
 
-**The session does not read the filesystem.** `runSession` takes the selection already made; `resolveExecutor` is what reads configuration. Two reasons, both load-bearing. A session primitive whose behaviour depends on files under the running user's home is not usable from a host that already knows what it wants — and it would make every existing `panda run` test depend on the `~/.panda` of whoever runs the suite, which is a test that passes or fails for reasons having nothing to do with the code. Both functions ship from `@panda/session`, so FR-29 holds: the CLI parses argv, calls the two, maps the result to an exit code.
+**The session does not read the filesystem.** `runSession` takes the selection already made; `resolveExecutor` is what reads configuration. Two reasons, both load-bearing. A session primitive whose behaviour depends on files under the running user's home is not usable from a host that already knows what it wants — and it would make every existing `panda run` test depend on the `~/.panda` of whoever runs the suite, which is a test that passes or fails for reasons having nothing to do with the code. Both functions ship from `@skanl/panda-session`, so FR-29 holds: the CLI parses argv, calls the two, maps the result to an exit code.
 
 **A configuration panda cannot read is an error, not a default.** The whole point of the feature is running the agent the user chose. Falling back to claude-code because the config file was malformed runs a DIFFERENT agent silently — the exact failure this feature exists to remove, wearing the disguise of robustness.
 
 ## Boundaries & Constraints
 
-**Always:** the selection resolves through `createLayeredConfig`, with panda's built-in default as the `defaults` LAYER and never as a constructor fallback; the catalogue is derived from the shipped trait records so a fourth adapter appears by being shipped, not by being listed twice; an unknown executor name fails with its own coded error naming every available one; the resolved selection AND the layer that decided it are reported, because a run whose output cannot tell you which agent produced it is not a swap you can trust; every existing `panda run` assertion keeps passing unmodified and machine-independently; `panda run` with nothing configured still runs Claude Code; the capability is reachable by importing `@panda/session` without `@panda/cli` (FR-29).
+**Always:** the selection resolves through `createLayeredConfig`, with panda's built-in default as the `defaults` LAYER and never as a constructor fallback; the catalogue is derived from the shipped trait records so a fourth adapter appears by being shipped, not by being listed twice; an unknown executor name fails with its own coded error naming every available one; the resolved selection AND the layer that decided it are reported, because a run whose output cannot tell you which agent produced it is not a swap you can trust; every existing `panda run` assertion keeps passing unmodified and machine-independently; `panda run` with nothing configured still runs Claude Code; the capability is reachable by importing `@skanl/panda-session` without `@skanl/panda-cli` (FR-29).
 
 **Ask First:** any change to `ResultEnvelope`; a configuration format other than the JSON document panda already uses for its own state; per-executor options (model, flags, binary path) inside that configuration; detecting which executors are installed as part of SELECTION — `panda doctor` owns detection and this story does not make the selector probe.
 
@@ -74,7 +74,7 @@ context:
 - Given the three shipped adapters, when `panda run` selects one, then that executor runs the prompt and the envelope is identical in shape across all three
 - And an unknown executor name exits non-zero listing the available ones
 - And the default is resolved through the layered config, not a hardcoded constructor (FR-7, FR-9)
-- And the same selection is reachable by importing `@panda/session` without `@panda/cli` (FR-29)
+- And the same selection is reachable by importing `@skanl/panda-session` without `@skanl/panda-cli` (FR-29)
 
 ## Spec Change Log
 
@@ -91,17 +91,17 @@ violation. Merging any of them with "your config file is corrupt" reproduces
 exactly the argument the story makes against reusing `executorUnavailable` — two
 failures with different fixes wearing one code. Both additions are additive.
 
-**The `.panda/config.json` location is spelled in `@panda/session`, not reused
-from `@panda/environment`.** `@panda/environment` owns the same `<scope>/.panda`
+**The `.panda/config.json` location is spelled in `@skanl/panda-session`, not reused
+from `@skanl/panda-environment`.** `@skanl/panda-environment` owns the same `<scope>/.panda`
 convention, but its `pandaDirOf` is private and its exported `scopeDirectory`
 requires the directory to already EXIST — which is the wrong semantics here,
 where a missing scope is an absent layer rather than an error. More decisively:
-`@panda/environment` is CONSUMER tier and so is `@panda/session`, and
-`packages/session/test/guard.test.ts` pins @panda/session's dependency set to
+`@skanl/panda-environment` is CONSUMER tier and so is `@skanl/panda-session`, and
+`packages/session/test/guard.test.ts` pins @skanl/panda-session's dependency set to
 exactly four packages, so depending on it is an AD-2 violation the gate rejects.
 The one-line `join(root, '.panda', 'config.json')` is therefore restated with a
 `ponytail:` comment naming the duplication; the upgrade path is to move the
-scope-directory convention down into `@panda/contracts` (shared tier) so both
+scope-directory convention down into `@skanl/panda-contracts` (shared tier) so both
 consumers read one spelling.
 
 **ENOENT and ENOTDIR are ABSENT; every other errno is an error.** The matrix
@@ -166,7 +166,7 @@ NO `createAdapter`. The same seam makes `createExecutorAdapter`'s `options`
 parameter live — a separate finding was that it had no production caller, so no
 host could point panda at a binary off PATH. Re-measured after the fix: the same
 deletion now fails three CLI clauses by assertion, naming `[ 'claude' ]` where
-`[ 'codex' ]` was expected. `@panda/session` re-exports the spawner vocabulary
+`[ 'codex' ]` was expected. `@skanl/panda-session` re-exports the spawner vocabulary
 for the same reason it re-exports the rest: a seam whose type a consumer cannot
 name is a seam it cannot use.
 
@@ -174,7 +174,7 @@ name is a seam it cannot use.
 faithful CLI-owned selection — its own `['claude-code','codex','opencode']`
 literal list, its own layered file reads, its own coded throws, `resolveExecutor`
 removed from the imports — passed tsc, eslint, the byte guard, CLI 45/45 and
-session 48/48. The thin-binding pin watches the dependency list and `@panda/*`
+session 48/48. The thin-binding pin watches the dependency list and `@skanl/panda-*`
 import specifiers, and owning selection needs neither, only `node:fs/promises`
 and `node:path`. Closed structurally rather than by a text scan (one was already
 tried and deleted on review for being evadable): `eslint.config.js` now forbids
@@ -258,7 +258,7 @@ exact shape 2.7a was bitten by, forwarded raw from the public
 `RunCommandOptions.homeDir` — loaded the PROJECT file and reported it as the
 `global` layer: a false claim on the one output this story exists to make
 trustworthy. Both scope roots are now rejected coded when blank
-(`PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE`, the same code `@panda/environment` uses)
+(`PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE`, the same code `@skanl/panda-environment` uses)
 and resolved to absolute. Related and fixed in the same move: when the two roots
 are the SAME directory (running `panda run` from your home), the one document was
 loaded into both layers and reported as `project` though no project existed —
@@ -317,13 +317,13 @@ refuses (`{"executor": 7}` in `~/.panda/config.json`: doctor exits 0 with empty
 stderr, run exits 2). Reproduced, and `run.test.ts` already pins this invariant
 class for `init`. Not closed because `diagnose` and `resolveExecutor` are both
 consumer tier and AD-2 forbids the edge, while duplicating the reader inside
-`@panda/environment` is the second-implementation failure correction-01 forbids.
+`@skanl/panda-environment` is the second-implementation failure correction-01 forbids.
 Recorded in `deferred-work.md` with the same upgrade path as the
-`.panda/config.json` spelling: move the convention down into `@panda/contracts`.
+`.panda/config.json` spelling: move the convention down into `@skanl/panda-contracts`.
 
 **Deliberately not done, on review's own instruction:** case-folding executor
 names, a configuration file size bound, an upward directory walk for the project
-scope (`@panda/environment` uses the same no-walk convention), and a warning on
+scope (`@skanl/panda-environment` uses the same no-walk convention), and a warning on
 duplicate `--executor` flags (last-wins is standard).
 
 **Triage, the patch changed a second thing and pinned only the first (patch):**

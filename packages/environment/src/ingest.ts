@@ -1,14 +1,14 @@
 import { homedir } from 'node:os'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
-import type { IngestOutcome } from '@panda/contracts'
-import { ProjectionLedger, SKILL_ENTRY_FILE } from '@panda/projection'
-import { createMachineMcpSource, createMachineSkillsSource, ingestProviders } from '@panda/registry'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
+import type { IngestOutcome } from '@skanl/panda-contracts'
+import { ProjectionLedger, SKILL_ENTRY_FILE } from '@skanl/panda-projection'
+import { createMachineMcpSource, createMachineSkillsSource, ingestProviders } from '@skanl/panda-registry'
 import type {
   McpSourceDropped,
   McpSourceExclusion,
   McpSourceWarning,
   SkillsSourceWarning,
-} from '@panda/registry'
+} from '@skanl/panda-registry'
 import { EXECUTOR_PROFILES } from './executors.ts'
 import { scopeDirectory, storeFor } from './init.ts'
 
@@ -17,7 +17,7 @@ import { scopeDirectory, storeFor } from './init.ts'
 // `toolProviders`, a port that shipped finished with no implementation at all.
 //
 // THIS FILE EXISTS BECAUSE NEITHER SOURCE CAN REACH ITS OWN PRECONDITIONS.
-// `@panda/registry` sits BELOW `@panda/projection` in AD-2's topology, so the
+// `@skanl/panda-registry` sits BELOW `@skanl/panda-projection` in AD-2's topology, so the
 // filesystem `SkillSource` can know neither what the projection calls a skill's
 // entry file nor which paths panda's ownership ledger already claims, and the
 // `ToolProvider` can know neither which vendor documents to read nor how to read

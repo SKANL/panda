@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import type { ProjectionLedgerRecord, ProjectionTarget, RegistryEntry } from '@panda/contracts'
+import type { ProjectionLedgerRecord, ProjectionTarget, RegistryEntry } from '@skanl/panda-contracts'
 import { ProjectionLedger } from '../src/ledger.ts'
 import type { ProjectionLedgerScope } from '../src/ledger.ts'
 import { createClaudeMcpTarget } from '../src/targets/claude-mcp.ts'

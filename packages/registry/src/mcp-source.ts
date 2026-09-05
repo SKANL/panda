@@ -1,5 +1,5 @@
-import { registryEntryIssues } from '@panda/contracts'
-import type { RegistryEntry, ToolProvider } from '@panda/contracts'
+import { registryEntryIssues } from '@skanl/panda-contracts'
+import type { RegistryEntry, ToolProvider } from '@skanl/panda-contracts'
 
 // The machine `ToolProvider` (FR-13b): the first implementation of a port that
 // shipped finished with none, and the twin of `skills-source.ts` for the other
@@ -12,17 +12,17 @@ import type { RegistryEntry, ToolProvider } from '@panda/contracts'
 //
 // WHAT THIS FILE DOES NOT KNOW, and must not:
 //
-//   - WHICH FILES. They are the `machineConfig` locations `@panda/environment`
+//   - WHICH FILES. They are the `machineConfig` locations `@skanl/panda-environment`
 //     derived from the shipped executor traits, every one verified against the
 //     real binary. A default path spelled here would be a second table drifting
 //     from the one panda writes into.
 //   - HOW to read one. Each vendor's document is a different format with a
-//     different entry shape, and both live in `@panda/projection`, which sits
+//     different entry shape, and both live in `@skanl/panda-projection`, which sits
 //     ABOVE this package in AD-2's topology. So a reader arrives per location
 //     rather than being imported — the same reason `skills-source.ts` takes
 //     `entryFileName` instead of copying `SKILL_ENTRY_FILE`.
 //   - WHICH ids panda already owns. The ownership ledger is
-//     `@panda/projection`'s too. The caller reads it and hands the pairs in.
+//     `@skanl/panda-projection`'s too. The caller reads it and hands the pairs in.
 //
 // That last one is load-bearing rather than a formality, and sharper here than
 // for skills: panda writes its own servers into the SAME file the user's live

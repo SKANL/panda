@@ -2,8 +2,8 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { createKernel } from '@panda/kernel'
-import type { WorkspaceProvider } from '@panda/contracts'
+import { createKernel } from '@skanl/panda-kernel'
+import type { WorkspaceProvider } from '@skanl/panda-contracts'
 import {
   createWorkspacePlugin,
   WORKSPACE_CONFIG_WARNING_EVENT,

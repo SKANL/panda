@@ -21,7 +21,7 @@ anything here, and the answer has changed.
 ROADMAP-01 measured **3,837 of 6,399 production lines with no production caller —
 60%**. Re-running that measure today returns ~0, and that number is worthless:
 every package's `index.ts` re-exports its whole surface, so importing
-`@panda/registry` pulls in `ingest.ts` transitively whether or not anything ever
+`@skanl/panda-registry` pulls in `ingest.ts` transitively whether or not anything ever
 calls `ingestProviders`. File-level reachability was the right measure when whole
 packages were unreferenced. It is the wrong one now.
 
@@ -57,10 +57,10 @@ this project has already paid four stories to learn about.
 
 Every package is `"private": true`, version `0.0.0`, `"exports": {".":
 "./src/index.ts"}`, and **no package has a build script**. `npm install
-@panda/session` cannot work.
+@skanl/panda-session` cannot work.
 
 FR-29's own checkable sentence is *"anything the CLI can do, a third party must be
-able to do by importing packages, without `@panda/cli`."* The consumer test that
+able to do by importing packages, without `@skanl/panda-cli`."* The consumer test that
 proves it runs **inside the workspace**, where pnpm resolves `workspace:*`. Outside
 it, the package cannot be installed at all. The promise the owner names first is
 currently unfalsifiable.
@@ -311,7 +311,7 @@ Two consequences make this the next story rather than a backlog note:
 2. **Two of `doctor`'s own exits name an operation the binary cannot perform.**
    `removed-by-user` and `unprojectable` both route the user to "the entry has to
    leave the registry", and both then admit *"panda ships no command for that yet,
-   only `RegistryStore.remove` in `@panda/environment`"*. M4.C reported the gap
+   only `RegistryStore.remove` in `@skanl/panda-environment`"*. M4.C reported the gap
    rather than papering over it (correction-01 C5), which is why it is visible at
    all — but a remediation catalogue whose exits terminate in a library call is
    not an exit for a user of the binary.

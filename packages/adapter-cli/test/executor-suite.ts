@@ -1,8 +1,8 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES, runExecutorContractSuite } from '@panda/contracts'
-import type { RunRequest, WorkspaceHandle } from '@panda/contracts'
+import { PANDA_ERROR_CODES, runExecutorContractSuite } from '@skanl/panda-contracts'
+import type { RunRequest, WorkspaceHandle } from '@skanl/panda-contracts'
 import type {
   ChildProcessSpawner,
   CliExecutorAdapter,

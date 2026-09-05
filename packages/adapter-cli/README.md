@@ -1,6 +1,6 @@
-# @panda/adapter-cli
+# @skanl/panda-adapter-cli
 
-Every shipped `ExecutorAdapter` (`@panda/contracts`) that drives an out-of-process coding CLI.
+Every shipped `ExecutorAdapter` (`@skanl/panda-contracts`) that drives an out-of-process coding CLI.
 One generic engine spawns the binary headlessly inside a workspace's root path and maps its
 output to a typed `ResultEnvelope`; each executor is a trait RECORD over that engine, never a
 class of its own.
@@ -30,7 +30,7 @@ the kernel plugin below has to perform that lookup for itself.
 
 ### As a kernel plugin
 
-`createExecutorPlugin()` mounts an adapter on a `@panda/kernel` container. It reads WHICH executor
+`createExecutorPlugin()` mounts an adapter on a `@skanl/panda-kernel` container. It reads WHICH executor
 from the kernel's composed configuration (its own `executor` key, the same one `.panda/config.json`
 spells), rejects activation when that key names nothing this package ships, and provides the
 `executor` service.

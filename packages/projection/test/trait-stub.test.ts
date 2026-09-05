@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import { createProjectionTargetFromTraits } from '../src/formats.ts'
 import type { ProjectionTargetTraits } from '../src/formats.ts'
 import { runProjectionClauseSuite } from './clause-suite.ts'

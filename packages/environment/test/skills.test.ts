@@ -5,9 +5,9 @@ import {
   CLAUDE_SKILLS_TRAITS,
   CODEX_SKILLS_TRAITS,
   OPENCODE_SKILLS_TRAITS,
-} from '@panda/projection'
-import type { SkillsTargetTraits } from '@panda/projection'
-import { RegistryStore } from '@panda/registry'
+} from '@skanl/panda-projection'
+import type { SkillsTargetTraits } from '@skanl/panda-projection'
+import { RegistryStore } from '@skanl/panda-registry'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { diagnose } from '../src/doctor.ts'
 import { EXECUTOR_PROFILES } from '../src/executors.ts'

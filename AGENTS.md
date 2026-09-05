@@ -25,10 +25,10 @@ and are not pretending otherwise.
 ## Architecture — enforced
 
 - **AD-1** — the kernel has ZERO runtime dependencies and NEVER imports
-  `@panda/contracts`. *Gate: `packages/kernel/test/guard.test.ts`.*
+  `@skanl/panda-contracts`. *Gate: `packages/kernel/test/guard.test.ts`.*
 - **AD-2** — package topology is strictly downward. *Gate:
   `packages/contracts/test/topology.test.ts`, which derives the ONE universal
-  clause for EVERY package — every `@panda/*` import in every
+  clause for EVERY package — every `@skanl/panda-*` import in every
   `packages/*/src`, against one declared role order restated from
   `ARCHITECTURE-SPINE.md` — and fails on a package the order does not name, or
   an order that names a package that is gone.*
@@ -39,8 +39,8 @@ and are not pretending otherwise.
   covers every package; what those four add is package-specific and is not
   derivable.
 - **Read a package's guard test before putting code in it, not only its
-  `package.json`.** A manifest is not an architecture: `@panda/environment`
-  declares `@panda/projection` and its guard test still refuses the import,
+  `package.json`.** A manifest is not an architecture: `@skanl/panda-environment`
+  declares `@skanl/panda-projection` and its guard test still refuses the import,
   permitting only `access`, `constants`, `mkdir`, `stat` from the filesystem and
   forbidding the literal string `atomicWriteText` in its source.
 - **A plugin's `manifest.id` IS the key its configuration lives under.** The
@@ -57,7 +57,7 @@ and are not pretending otherwise.
 - **FR-29 consumer install** — a packed tarball must import cleanly.
   *Gate: `pnpm proof:consumer-install`, a separate CI step (see below).*
 - **The third-party promise** (`ARCHITECTURE-SPINE.md`, AD-2) — a port is
-  implementable installing ONLY `@panda/contracts`. *Gate: the contracts-only
+  implementable installing ONLY `@skanl/panda-contracts`. *Gate: the contracts-only
   scenario in `pnpm proof:consumer-install`, which installs that one tarball
   into its own project, asserts nothing else arrived, imports it, and compiles a
   `WorkspaceProvider` against the shipped declarations.*

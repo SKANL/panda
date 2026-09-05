@@ -71,7 +71,7 @@ Executed on 2026-09-01 at `bb9f97f`, every claim re-read at the line.
    only after `drain()` (`log.ts:132-136`).
 
 7. **`cli` cannot import the kernel.** `packages/cli/package.json` dependencies
-   are exactly `@panda/environment` and `@panda/session`. AD-2 holds: the door
+   are exactly `@skanl/panda-environment` and `@skanl/panda-session`. AD-2 holds: the door
    must open in `packages/session/src/index.ts`, which today re-exports
    `createMemoryLogSink` (`:59`) and the `LogSink` type (`:71`) but not
    `createLogSink`.
@@ -167,13 +167,13 @@ holding a kernel, which M3.B removed. Filed, not done.
 
 | File | Change |
 | --- | --- |
-| `packages/session/src/index.ts` | re-export `createLogSink` from `@panda/kernel`; re-export the `LogRecord` type if not already (`:71` has it) |
+| `packages/session/src/index.ts` | re-export `createLogSink` from `@skanl/panda-kernel`; re-export the `LogRecord` type if not already (`:71` has it) |
 | `packages/cli/src/run.ts` | `--trace` in `parseRunTokens` above the `startsWith('--')` refusal; `renderLogRecord`; build and pass the sink; `drain()` + the dropped line; USAGE entry |
 | `packages/cli/test/run.test.ts` | the matrix above |
 
 ## Tasks & Acceptance
 
-1. Open the door in `@panda/session` (measurement 7).
+1. Open the door in `@skanl/panda-session` (measurement 7).
 2. `renderLogRecord` + its unit clauses.
 3. `--trace` parsing, including the four argv orders and the two refusals.
 4. Wire the sink, drain, report the dropped count.
@@ -231,7 +231,7 @@ are for.
 ### Falsification — five rules, five killed, none inconclusive, control green
 
 Harness at `.scratch/falsify-m7d.mjs` (gitignored). Each mutation applied to
-`packages/cli/src/run.ts`, the whole `@panda/cli` suite run, then the file
+`packages/cli/src/run.ts`, the whole `@skanl/panda-cli` suite run, then the file
 restored byte-for-byte.
 
 | Rule | Mutation | Outcome |

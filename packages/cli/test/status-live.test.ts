@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import { runPanda } from '../src/run.ts'
 import type { RunCommandOptions } from '../src/run.ts'
-import type { UsageReport } from '@panda/session'
+import type { UsageReport } from '@skanl/panda-session'
 
 // Story M15.A's acceptance criterion 1: `panda status` prints a REAL utilisation
 // from a REAL claude run, in the vendor's own window names — driven, not

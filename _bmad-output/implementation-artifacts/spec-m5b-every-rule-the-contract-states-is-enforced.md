@@ -111,7 +111,7 @@ Every claim below was executed on 2026-09-01 at `087e357`, never inferred.
 ## Boundaries & Constraints
 
 - **AD-1** — the kernel keeps zero runtime dependencies and is not touched here.
-- **AD-2** — `@panda/contracts` gains **no** dependency. `node:path` is already
+- **AD-2** — `@skanl/panda-contracts` gains **no** dependency. `node:path` is already
   imported by `registry.ts` in this package, but the path predicate below needs
   none and must not add one (see D1).
 - **AD-5** — typed absence over silence.
@@ -301,7 +301,7 @@ Stop and ask rather than deciding:
 
 - Any **new** `PANDA_*` error code (the Boundaries say none is needed; a new code
   is a published-surface decision).
-- Any dependency added to `@panda/contracts`, `node:path` included (AD-2, D1).
+- Any dependency added to `@skanl/panda-contracts`, `node:path` included (AD-2, D1).
 - Any change to `activateMethod`'s runtime behaviour, `METHOD_PLUGIN_SCHEMA`'s
   shape, or `METHOD_PLUGIN_ROOT_KEYS`.
 - Normalising or rewriting `path` rather than validating it (D1 says validate
@@ -350,7 +350,7 @@ Everything below was executed on 2026-09-01, not inferred.
   | adapter-cli | 148 passed / 6 skipped |
   | cli | 108 passed |
 
-- **Node 26.8.1 canary** — `@panda/contracts`, 142 passed.
+- **Node 26.8.1 canary** — `@skanl/panda-contracts`, 142 passed.
 
 ### The projection failure is not this story's
 
@@ -408,4 +408,4 @@ trading away the guard that was already there. Restored, `tsc` clean again.
 Nothing materialises `MethodArtifact.path` yet, so the rule is proven correct as
 a rule and has never been exercised by a materialiser — that is M6's to prove.
 The `path` value is validated and stored verbatim; no normalisation exists. And
-`@panda/projection`'s live-discovery accounting hole is recorded, not fixed.
+`@skanl/panda-projection`'s live-discovery accounting hole is recorded, not fixed.

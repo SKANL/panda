@@ -16,11 +16,11 @@ context:
 
 **Problem:** Shared tools/skills/MCP servers live in the Registry but never reach the executors' native configs — users hand-edit each CLI separately, and nothing marks which config regions panda owns.
 
-**Approach:** Projection engine (`@panda/projection`) that renders Registry entries into a target's native config through per-target `ProjectionTarget` strategies. Claude Code settings.json is the first target: strict JSON, so ownership is a reserved root subtree (`"panda"` key) spliced with surgical text edits (jsonc-parser modify+applyEdits) — foreign bytes untouched by construction, idempotent because the owned subtree serializes deterministically.
+**Approach:** Projection engine (`@skanl/panda-projection`) that renders Registry entries into a target's native config through per-target `ProjectionTarget` strategies. Claude Code settings.json is the first target: strict JSON, so ownership is a reserved root subtree (`"panda"` key) spliced with surgical text edits (jsonc-parser modify+applyEdits) — foreign bytes untouched by construction, idempotent because the owned subtree serializes deterministically.
 
 ## Boundaries & Constraints
 
-**Always:** projecting twice yields BYTE-IDENTICAL output; foreign content (everything outside the owned subtree) preserved byte-for-byte incl. formatting/key order/whitespace; malformed native file fails ONLY that target with a typed per-target error; sentinel grammar (versioned, namespaced) defined in `@panda/contracts` and consumed here; unknown/legacy panda markers in a native file classify as Drift entries in the result — reported, never silently overwritten; projection writes go through atomic temp+rename; new runtime deps allowed ONLY in `@panda/projection` (kernel/contracts stay clean).
+**Always:** projecting twice yields BYTE-IDENTICAL output; foreign content (everything outside the owned subtree) preserved byte-for-byte incl. formatting/key order/whitespace; malformed native file fails ONLY that target with a typed per-target error; sentinel grammar (versioned, namespaced) defined in `@skanl/panda-contracts` and consumed here; unknown/legacy panda markers in a native file classify as Drift entries in the result — reported, never silently overwritten; projection writes go through atomic temp+rename; new runtime deps allowed ONLY in `@skanl/panda-projection` (kernel/contracts stay clean).
 
 **Ask First:** any additional target beyond Claude in this story; writing to files outside the discovered config locations.
 
@@ -42,7 +42,7 @@ context:
 ## Code Map
 
 - `packages/contracts/src/projection.ts` -- NEW: `ProjectionTarget` port (format-specific merge behind interface), sentinel grammar vocabulary (version constant, owned-subtree shape), drift classification types
-- `packages/projection/` -- NEW package `@panda/projection` (runtime dep: `jsonc-parser`): engine orchestrating targets, Claude settings.json target implementing surgical splice, atomic write path
+- `packages/projection/` -- NEW package `@skanl/panda-projection` (runtime dep: `jsonc-parser`): engine orchestrating targets, Claude settings.json target implementing surgical splice, atomic write path
 - `packages/projection/test/` -- golden-file suites: idempotence, preservation, malformed isolation, legacy-marker drift
 - Root scaffold -- workspace glob covers new package
 
@@ -56,7 +56,7 @@ context:
 
 **Acceptance Criteria:**
 - Given a native Claude settings file with non-panda content, when projection runs twice, then outputs are byte-identical and foreign content is preserved byte-for-byte
-- Given the projected section, then it carries the versioned namespaced sentinel from @panda/contracts
+- Given the projected section, then it carries the versioned namespaced sentinel from @skanl/panda-contracts
 - Given a malformed native file, then only that target fails with a per-target typed error
 - Given a native file with legacy/unknown panda markers, then they classify as Drift entries without silent overwrite
 

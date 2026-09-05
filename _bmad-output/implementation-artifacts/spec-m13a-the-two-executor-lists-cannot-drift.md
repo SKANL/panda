@@ -61,7 +61,7 @@ is a gate that fails in CI before the disagreement can ship.
 
 The obvious fix is the catalogue's own: derive the id from the trait record so a
 profile cannot name an executor no adapter ships. It is refused here, measured:
-`environment` would have to import `@panda/adapter-cli`, and
+`environment` would have to import `@skanl/panda-adapter-cli`, and
 `packages/environment/test/guard.test.ts` pins its dependency set by exact
 equality. Weakening an existing guard to enable a convenience is the trade this
 repository has already refused once (M12.A's Ask First forbids it by name).
@@ -190,7 +190,7 @@ skipped.
 `git diff --stat` over `packages/` shows no `package.json` changed and no
 `guard.test.ts` touched. The gate reaches the runnable ids through
 `resolveExecutor`'s `ExecutorSelection.available` — the way the PRODUCT surfaces
-them — rather than through `@panda/adapter-cli`, which `@panda/cli` deliberately
+them — rather than through `@skanl/panda-adapter-cli`, which `@skanl/panda-cli` deliberately
 does not depend on. That follows the rule `executor-selection.test.ts` already
 states in its own imports.
 
@@ -218,7 +218,7 @@ states in its own imports.
 
 The catalogue's own fix — derive the id from the trait record so a profile cannot
 name an executor no adapter ships — is the better shape and is refused here on
-measured grounds: `@panda/environment` would have to import `@panda/adapter-cli`,
+measured grounds: `@skanl/panda-environment` would have to import `@skanl/panda-adapter-cli`,
 and `packages/environment/test/guard.test.ts` pins its dependency set by EXACT
 equality. Weakening an existing guard to enable a convenience is the trade M12.A
 refused by name one commit ago. The upgrade path is in the test's own comment: if

@@ -1,8 +1,8 @@
 import { homedir } from 'node:os'
 import { resolve, sep as SEP } from 'node:path'
 
-import { setConfigValue } from '@panda/environment'
-import { resolveExecutor, resolveMethod } from '@panda/session'
+import { setConfigValue } from '@skanl/panda-environment'
+import { resolveExecutor, resolveMethod } from '@skanl/panda-session'
 
 // `panda swap <noun> <id>` — the verb that WRITES a selection.
 //
@@ -12,8 +12,8 @@ import { resolveExecutor, resolveMethod } from '@panda/session'
 // active thing (§6.1's CLI list, and FR-28's `panda swap method`), so this is a
 // verb Story 5.4 extends with a second NOUN rather than a second verb.
 //
-// Thin, like every other binding here: the write is `@panda/environment`'s, the
-// id check and the effective selection are `@panda/session`'s. This file parses
+// Thin, like every other binding here: the write is `@skanl/panda-environment`'s, the
+// id check and the effective selection are `@skanl/panda-session`'s. This file parses
 // argv, orders the two calls and prints. It decides nothing.
 
 /**

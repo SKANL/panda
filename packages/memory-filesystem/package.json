@@ -1,5 +1,5 @@
 {
-  "name": "@panda/memory-filesystem",
+  "name": "@skanl/panda-memory-filesystem",
   "version": "0.1.0",
   "description": "The filesystem MemoryProvider: one directory, one format stamp, one append-only log.",
   "repository": {
@@ -29,7 +29,7 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*"
+    "@skanl/panda-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

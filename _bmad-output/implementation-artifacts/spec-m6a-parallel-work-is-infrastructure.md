@@ -36,10 +36,10 @@ Every claim below was executed, not remembered, on 2026-08-27 at `d66d59c`.
 3. **The premise Epic 4 stands on is already paid.** Story M4.A ("the workspace
    is a boundary or panda says it is not") is `done` in `sprint-status.yaml`.
 4. **Package topology, measured from the manifests**: `workspace-local` depends
-   on exactly `@panda/contracts` + `@panda/kernel`. `registry` depends on the
+   on exactly `@skanl/panda-contracts` + `@skanl/panda-kernel`. `registry` depends on the
    same two. They are siblings; AD-2 permits no edge between them.
 5. **No process-spawn helper is reachable.** `node-child-spawner.ts` exists only
-   in `@panda/adapter-cli` — a sibling. Control: it is the sole
+   in `@skanl/panda-adapter-cli` — a sibling. Control: it is the sole
    `node:child_process` importer under `packages/*/src`.
 6. **The five error codes this provider needs already exist**:
    `PANDA_CONTRACT_WORKSPACE_UNKNOWN_ID`, `…_INVALID_HANDLE`,
@@ -48,9 +48,9 @@ Every claim below was executed, not remembered, on 2026-08-27 at `d66d59c`.
 ## Boundaries & Constraints
 
 - **AD-1** — the kernel keeps zero runtime dependencies. Untouched here.
-- **AD-2** — `workspace-*` imports `@panda/contracts` (and `@panda/kernel` for
-  the plugin) and **nothing else**. No `@panda/registry`, no
-  `@panda/projection`, no `@panda/adapter-cli`.
+- **AD-2** — `workspace-*` imports `@skanl/panda-contracts` (and `@skanl/panda-kernel` for
+  the plugin) and **nothing else**. No `@skanl/panda-registry`, no
+  `@skanl/panda-projection`, no `@skanl/panda-adapter-cli`.
 - **AD-5** — typed absence over silence. A worktree panda cannot classify is
   reported, never guessed at.
 - **AD-6** — identity: a name identifies exactly one tree, forever.
@@ -120,7 +120,7 @@ reissues every name the repo ever used. It refuses instead.
 
 ```
 packages/workspace-git-worktree/
-  package.json            deps: @panda/contracts, @panda/kernel  (AD-2)
+  package.json            deps: @skanl/panda-contracts, @skanl/panda-kernel  (AD-2)
   tsconfig.json  tsconfig.build.json  vitest.config.ts   copied from workspace-local
   src/
     index.ts                      public surface
@@ -155,7 +155,7 @@ Stop and ask rather than deciding:
 
 - Any need for a **new** `PANDA_*` error code (measurement 6 says none is needed;
   if that turns out wrong, the code is a published-surface decision).
-- Any import in this package beyond `@panda/contracts` + `@panda/kernel` (AD-2).
+- Any import in this package beyond `@skanl/panda-contracts` + `@skanl/panda-kernel` (AD-2).
 - Any change to `WORKSPACE_CLAUSES` or `packages/contracts/src/workspace.ts` —
   the port is published and shared with `workspace-local`.
 - Any move of `atomic-write.ts` (D1 says no).
@@ -175,7 +175,7 @@ Everything below was executed on 2026-08-27, not inferred.
 
 ### The gate
 
-- `pnpm check` — **exit 0**, all ten packages. `@panda/workspace-git-worktree`
+- `pnpm check` — **exit 0**, all ten packages. `@skanl/panda-workspace-git-worktree`
   13 passed (2 files); nothing else moved.
 - Node 26.8.1 canary — the new package, **13 passed**.
 - `eslint packages/workspace-git-worktree` — clean. `tsc --noEmit` — clean.

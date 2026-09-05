@@ -127,9 +127,9 @@ function isNonEmptyString(value: unknown): value is string {
 // approximations differ exactly where it matters: `1.2` (too few parts), `v1.0.0` (prefix) and
 // `01.0.0` (leading zero) are the strings a hand-rolled `\d+\.\d+\.\d+` lets through.
 //
-// DUPLICATED, deliberately: `@panda/contracts` enforces the same rule on a MethodPlugin's `version`
+// DUPLICATED, deliberately: `@skanl/panda-contracts` enforces the same rule on a MethodPlugin's `version`
 // and carries its own copy, because AD-1 forbids this package a runtime dependency on anything —
-// `@panda/contracts` included. `packages/contracts/test/method.test.ts` asserts the two agree on
+// `@skanl/panda-contracts` included. `packages/contracts/test/method.test.ts` asserts the two agree on
 // every string, so the copies cannot drift silently.
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/

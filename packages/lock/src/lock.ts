@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { open, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
+import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
 
 // Hand-rolled portable lockfile protocol for machine-scoped write serialization
 // (no locking dependency). A lock is a file at the caller's chosen path, created
@@ -9,16 +9,16 @@ import { PandaError, PANDA_ERROR_CODES } from '@panda/contracts'
 // `{ pid, host, acquiredAt, token }`. Contenders poll until a bounded timeout
 // and then fail with a typed CONTENTION error naming the holder.
 //
-// This code was MOVED here from `@panda/registry`, unchanged apart from its
+// This code was MOVED here from `@skanl/panda-registry`, unchanged apart from its
 // error codes and the word "registry" leaving its messages. It is a leaf: it
-// depends on `@panda/contracts` and nothing else (AD-2), so any package can
+// depends on `@skanl/panda-contracts` and nothing else (AD-2), so any package can
 // serialize writes to a file without importing a sibling's domain — which is
-// what `@panda/projection`'s ledger needed and could not have.
+// what `@skanl/panda-projection`'s ledger needed and could not have.
 //
 // The codes are NEUTRAL on purpose (AD-7): a lock owned by no domain may not
 // raise another package's code. Callers translate `lockContention` and
 // `lockUnavailable` into their own vocabulary at their own boundary, which is
-// how `@panda/registry` goes on raising exactly the two codes it always did.
+// how `@skanl/panda-registry` goes on raising exactly the two codes it always did.
 //
 // Staleness rules:
 // - SAME HOST: the holder pid is provably dead (`process.kill(pid, 0)` fails

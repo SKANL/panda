@@ -63,16 +63,16 @@ Executed on 2026-09-01 at `49b7294`. Behavioural claims come from running code.
    machine. FR-22's own words are *"installs a Bundle into a fresh machine
    home"* — so the exportable unit is the **global** scope. See D2.
 
-6. **`@panda/environment` cannot write the file, by a guard test that has
+6. **`@skanl/panda-environment` cannot write the file, by a guard test that has
    already caught two evasions.** `packages/environment/test/guard.test.ts` pins
    its filesystem imports to exactly `access`, `constants`, `mkdir`, `stat`,
    counts every mention of the fs module to defeat namespace/dynamic imports, and
    asserts no source file contains the string `atomicWriteText`.
 
-7. **`@panda/registry` already writes atomically, and is the thing being
+7. **`@skanl/panda-registry` already writes atomically, and is the thing being
    exported.** `store.ts:363-386`: temp file in the same directory, `rename` over
    the target, with a bounded retry for Windows `EPERM`. Its dependencies are
-   `@panda/contracts` and `@panda/kernel` only, and `@panda/environment` already
+   `@skanl/panda-contracts` and `@skanl/panda-kernel` only, and `@skanl/panda-environment` already
    re-exports `RegistryStore` as the CLI's facade (`environment/src/index.ts:57`).
 
 8. **The binary passes NO options.** `packages/cli/bin/panda.ts` is
@@ -176,12 +176,12 @@ different bytes. Sorting costs one comparator and makes the artifact comparable,
 which is what anyone diffing two bundles will expect. Serialisation is
 `JSON.stringify(bundle, null, 2)` — the same writer the store uses.
 
-### D6 — it lives in `@panda/registry`
+### D6 — it lives in `@skanl/panda-registry`
 
 Measurements 6 and 7. Environment cannot write; projection is the vendor-file and
 ownership-ledger package and a bundle is neither; the registry already writes its
 own document atomically and the bundle IS its own document leaving the machine.
-`@panda/environment` re-exports the facade, exactly as it does `RegistryStore`.
+`@skanl/panda-environment` re-exports the facade, exactly as it does `RegistryStore`.
 
 This deliberately does NOT trigger the deferred-work item about extracting a leaf
 atomic-write package "when a THIRD caller appears": the bundle does not need the

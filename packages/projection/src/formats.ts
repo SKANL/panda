@@ -5,7 +5,7 @@ import {
   REGISTRY_ENTRY_TYPES,
   UNPROJECTABLE_ENTRY_IDS,
   isRecord,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type {
   DriftEntry,
   ProjectionClaim,
@@ -17,7 +17,7 @@ import type {
   ProjectionConfigTarget,
   RegistryEntriesByKind,
   RegistryEntry,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import type { Node, ParseError } from 'jsonc-parser'
 import { parse, parseTree } from 'jsonc-parser'
 import { FAULT_UNLOCATED, faultDetail, positionOf, strictFaultLocation } from './document-fault.ts'

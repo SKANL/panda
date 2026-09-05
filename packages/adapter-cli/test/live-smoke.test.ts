@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { WorkspaceHandle } from '@panda/contracts'
+import type { WorkspaceHandle } from '@skanl/panda-contracts'
 import { createClaudeCodeAdapter, createNodeChildSpawner } from '../src/index.ts'
 
 // Live smoke against the real `claude` CLI. Gating is deterministic:

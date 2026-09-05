@@ -134,7 +134,7 @@ support it natively — by panda's own comments.
 `packages/projection/src/ledger.ts:205-214`:
 
 > `ponytail:` in-process only, so two panda **PROCESSES** can still interleave and
-> lose a claim. A cross-process lock cannot be borrowed from `@panda/registry`
+> lose a claim. A cross-process lock cannot be borrowed from `@skanl/panda-registry`
 > (AD-2/AD-7: that edge was removed in Story 2.8 and leaked `PANDA_REGISTRY_*`
 > codes out of a projection API); **extracting a leaf lock package with its own
 > codes is the upgrade path**, recorded in `deferred-work.md`.

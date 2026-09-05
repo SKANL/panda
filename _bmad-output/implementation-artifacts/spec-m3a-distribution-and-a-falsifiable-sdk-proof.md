@@ -15,9 +15,9 @@ context:
 
 ## Intent
 
-**Problem:** FR-29's checkable sentence is *"anything the CLI can do, a third party must be able to do by importing packages, without `@panda/cli`."* The test that proves it runs **inside the workspace**, where pnpm resolves `workspace:*` and every package exports raw TypeScript. Outside it, nothing can be installed: all nine packages are `"private": true`, version `0.0.0`, `"exports": {".": "./src/index.ts"}`, and **no package has a build script**. The promise the product is named for is currently unfalsifiable — the one condition under which a claim can never be wrong.
+**Problem:** FR-29's checkable sentence is *"anything the CLI can do, a third party must be able to do by importing packages, without `@skanl/panda-cli`."* The test that proves it runs **inside the workspace**, where pnpm resolves `workspace:*` and every package exports raw TypeScript. Outside it, nothing can be installed: all nine packages are `"private": true`, version `0.0.0`, `"exports": {".": "./src/index.ts"}`, and **no package has a build script**. The promise the product is named for is currently unfalsifiable — the one condition under which a claim can never be wrong.
 
-**Approach:** an installable artifact, and a proof that installs it somewhere the workspace cannot help. The build is the compiler this repo already has: TypeScript 7.0.2 emits JavaScript, declarations and maps, and `rewriteRelativeImportExtensions` turns `./run-session.ts` into `./run-session.js` in the output while leaving `@panda/*` specifiers alone. No bundler and no new dependency.
+**Approach:** an installable artifact, and a proof that installs it somewhere the workspace cannot help. The build is the compiler this repo already has: TypeScript 7.0.2 emits JavaScript, declarations and maps, and `rewriteRelativeImportExtensions` turns `./run-session.ts` into `./run-session.js` in the output while leaving `@skanl/panda-*` specifiers alone. No bundler and no new dependency.
 
 **Source-first in the repo, dist-first in the tarball.** `publishConfig` overrides `exports` and `bin` only in the packed manifest; the workspace keeps pointing at `src`. That is not a convenience — the absence of a build step is what makes vitest, the type checker and the linter run against source today, and a story that forces a compile into the development loop would tax every story after it.
 
@@ -27,7 +27,7 @@ context:
 
 **Always:** the FR-29 proof installs BUILT TARBALLS into a project OUTSIDE the workspace and runs a real session there, so it fails when the packaged artifact is wrong rather than when the monorepo is; the development loop is unchanged — `pnpm check` needs no build to typecheck, test or lint, and every existing test keeps passing unmodified; the emitted package is what the tarball exports, and the tarball's own manifest is asserted rather than assumed; every package that another package depends on is built, because a partial build produces a tarball that installs and then fails at import; declarations ship, so a consumer gets types; the build is reproducible from a clean checkout with one command.
 
-**Ask First:** publishing to any registry; choosing a package name other than the current `@panda/*`; a license file or SPDX identifier; a version-bump or release-automation policy; removing `"private": true` (it blocks publish, not pack, so the proof does not need it gone).
+**Ask First:** publishing to any registry; choosing a package name other than the current `@skanl/panda-*`; a license file or SPDX identifier; a version-bump or release-automation policy; removing `"private": true` (it blocks publish, not pack, so the proof does not need it gone).
 
 **Never:** no bundler and no new build dependency — the compiler in the lockfile emits this; no second source of truth for the public surface (the tarball exports what the build emits, not a hand-written list); no proof that resolves through the workspace, a symlink, a `file:` path into the repo, or `pnpm link` — those are the failure this story exists to remove; no change to what any package exports today.
 
@@ -36,7 +36,7 @@ context:
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
 | Build from clean | No `dist/` anywhere | One command emits JS, `.d.ts` and maps for every package | Non-zero on any package failing |
-| Specifier rewriting | Source imports `./x.ts` | Emitted JS imports `./x.js`; `@panda/*` untouched | N/A |
+| Specifier rewriting | Source imports `./x.ts` | Emitted JS imports `./x.js`; `@skanl/panda-*` untouched | N/A |
 | Dev loop untouched | `pnpm check` with no `dist/` | Typecheck, test and lint all pass exactly as today | N/A |
 | Tarball manifest | A packed package | Its `exports` and `bin` point into `dist`; `workspace:*` replaced by a concrete version | N/A |
 | Install outside the workspace | Tarballs installed into a temp project | A real session runs and returns the same envelope shape `panda run` prints | Coded errors surface |
@@ -88,9 +88,9 @@ emit config turns it off, and that fails: every source file imports `./x.ts`, so
 `tsc` reports TS5097 on all of them. Keeping it on alongside
 `rewriteRelativeImportExtensions: true` is legal and is exactly what produces the
 rewrite. Measured: `packages/session/dist/index.js` emits
-`from './run-session.js'` and leaves `from '@panda/kernel'` untouched.
+`from './run-session.js'` and leaves `from '@skanl/panda-kernel'` untouched.
 
-**2. `rootDir: "."` for `@panda/cli`, `rootDir: "src"` for the other eight.**
+**2. `rootDir: "."` for `@skanl/panda-cli`, `rootDir: "src"` for the other eight.**
 `bin/panda.ts` sits outside `src/` and imports `../src/run.ts`, so `rootDir:
 "src"` cannot cover it. Two shapes were considered; moving the binary into `src`
 was rejected because `eslint.config.js` pins `packages/cli/bin/**/*.ts` as its
@@ -115,7 +115,7 @@ Measured order from a clean tree: `kernel`, `contracts`, then
 
 CORRECTION — an earlier version of this entry presented that ordering as a
 verified invariant. It is not one, and a later reader should not defend it.
-Re-measured after #13: `@panda/session` builds from a clean tree with none of
+Re-measured after #13: `@skanl/panda-session` builds from a clean tree with none of
 its four dependencies built, exit 0, because the `panda-source` condition sends
 the compiler at its dependencies' SOURCE rather than at their `dist`. The
 ordering is real and free; it is not load-bearing, and no assertion rests on it.
@@ -145,7 +145,7 @@ because an earlier version of this entry said "the work" and meant only half of
 it: `vitest.consumer-install.config.ts` sits at the package ROOT, which no
 `include` covers, so it is linted and never typechecked — the same as the nine
 `vitest.config.ts` files and every other config in this repo. It imports nothing from any package, so AD-2 is
-untouched: every `@panda/*` name in it is a directory to pack or a tarball to
+untouched: every `@skanl/panda-*` name in it is a directory to pack or a tarball to
 read.
 
 **7. The gate is a separate vitest config; an env flag is the opt-out only.**
@@ -164,16 +164,16 @@ actually makes it run.
 SUPERSEDED by #26 — the override half was silently ignored by pnpm 11 and broke
 CI. The tarball-only, registry-free half survives; the mechanism changed.
 
-The packed manifest carries `"@panda/contracts": "0.0.0"` — pnpm rewrote
+The packed manifest carries `"@skanl/panda-contracts": "0.0.0"` — pnpm rewrote
 `workspace:*` on pack, measured — and no registry has that version, so each
-transitive `@panda/*` needs an override naming its tarball. The tarballs are
+transitive `@skanl/panda-*` needs an override naming its tarball. The tarballs are
 copied INTO the temp project and referenced relatively, so no `file:` path points
 back into the repo. `pnpm install --ignore-workspace --offline` succeeds:
-`@panda/session`'s whole subtree (contracts, kernel, workspace-local,
+`@skanl/panda-session`'s whole subtree (contracts, kernel, workspace-local,
 adapter-cli) has zero registry dependencies, so `--offline` is an assertion
 rather than a convenience — it means nothing but the tarballs was resolved.
-Measured `import.meta.resolve('@panda/session')` inside the consumer:
-`file:///…/panda-installed-consumer-…/project/node_modules/.pnpm/@panda+session@file+tarballs+panda-session-0.0.0.tgz/node_modules/@panda/session/dist/index.js`.
+Measured `import.meta.resolve('@skanl/panda-session')` inside the consumer:
+`file:///…/panda-installed-consumer-…/project/node_modules/.pnpm/@panda+session@file+tarballs+panda-session-0.0.0.tgz/node_modules/@skanl/panda-session/dist/index.js`.
 
 **9. Tarballs are read by a small ustar reader, not by `tar`.** Shelling out was tried first and failed: the GNU `tar` on this PATH
 reads `C:\Users\…` as a `host:path` remote spec and answers `Cannot connect to
@@ -181,7 +181,7 @@ C: resolve failed`, which made the assertion depend on which `tar` a machine has
 `node:zlib` plus 512-byte headers removes the external binary entirely.
 
 **10. The CLI is asserted from its tarball rather than installed.**
-`@panda/cli` → `@panda/environment` → `@panda/projection` → `jsonc-parser`, which
+`@skanl/panda-cli` → `@skanl/panda-environment` → `@skanl/panda-projection` → `jsonc-parser`, which
 IS a registry dependency, so installing the CLI would need the network and make
 the proof depend on a warm store. The claim in the matrix — the binary is emitted
 JavaScript with its shebang intact and the packed manifest points at it — is
@@ -190,14 +190,14 @@ fully checkable from the tarball's own bytes, which is where a consumer gets it.
 **11. Falsifiability was demonstrated twice, not asserted.** Both demonstrations
 predate #13, so they name `publishConfig`; the export map they broke now lives in
 the manifest itself, and #17 records the round-1 demonstrations against it.
-(a) With `@panda/session`'s `publishConfig.exports["."]` repointed at
+(a) With `@skanl/panda-session`'s `publishConfig.exports["."]` repointed at
 `./dist/entry.js` (a path the build does not emit), the proof went red with
 `ERR_MODULE_NOT_FOUND … node_modules\@panda\session\dist\entry.js imported from
 …\project\consumer.mjs`. Restored, it went green again. (The suite has since grown from 7 clauses to 8;
 the current counts are in Verification.)
-(b) With `"files"` deleted from `@panda/registry` — the partial-artifact case,
-on a package `@panda/session` does not depend on, so the session still ran — the
-per-package clause went red naming it: `@panda/registry does not ship
+(b) With `"files"` deleted from `@skanl/panda-registry` — the partial-artifact case,
+on a package `@skanl/panda-session` does not depend on, so the session still ran — the
+per-package clause went red naming it: `@skanl/panda-registry does not ship
 ./dist/index.js, which its packed manifest points at`. That is also the direct
 evidence for #3: remove `files` and `dist` leaves the tarball.
 
@@ -235,7 +235,7 @@ block's escape hatch was therefore NOT taken. Re-measured with `npm pack`: the
 
 Two things it does not fix, both stated rather than papered over:
 
-- `npm pack` still emits `"@panda/contracts": "workspace:*"`. npm has no
+- `npm pack` still emits `"@skanl/panda-contracts": "workspace:*"`. npm has no
   workspace protocol at all, so no manifest shape reaches it; only pnpm and yarn
   rewrite it, and pnpm does (measured: `0.0.0`). The proof now asserts this
   rather than assuming it (#17).
@@ -257,11 +257,11 @@ not a gate change.
 
 **15. `ssr.resolve.conditions`, not `resolve.conditions` (HIGH-1, mechanism).**
 Setting `resolve: { conditions: ['panda-source'] }` alone was measured NOT to
-work: `@panda/contracts` and `@panda/kernel` both failed with `Failed to resolve
+work: `@skanl/panda-contracts` and `@skanl/panda-kernel` both failed with `Failed to resolve
 entry for package`. Vitest 4 drives the node environment through the SSR
 pipeline. `ssr: { resolve: { conditions: ['panda-source'] } }` alone fixes it,
 and it ADDS rather than replaces — `jsonc-parser`, a real registry dependency of
-`@panda/projection`, still resolves.
+`@skanl/panda-projection`, still resolves.
 
 **16. A missing or broken pnpm now FAILS the proof (HIGH-2).** It used to skip
 all seven assertions and exit 0, and the reason was a `console.warn` at
@@ -281,7 +281,7 @@ manifest for all nine (HIGH-4, M1, M2, M3).** The old clause checked only the
 entry points a manifest named, and only the WORKSPACE manifest for seven of the
 nine. Four defects, one rewrite:
 
-- `files: ["dist/index.js","dist/index.d.ts"]` on `@panda/registry` shipped an
+- `files: ["dist/index.js","dist/index.d.ts"]` on `@skanl/panda-registry` shipped an
   entry point re-exporting four modules the archive did not contain — a package
   that throws on the first line of its own import — and the proof passed 7/7. The
   graph is now walked from every target, following `./x.js` in JavaScript and
@@ -290,13 +290,13 @@ nine. Four defects, one rewrite:
   and the entry each was reached from.
 - The `types` condition was never read. Now it is. Measured with a `files` list
   carrying the complete JavaScript graph and no declarations: red on
-  `@panda/registry does not ship package/dist/index.d.ts`.
+  `@skanl/panda-registry does not ship package/dist/index.d.ts`.
 - Manifests are read out of the tarballs, so a packer that stopped projecting the
   publish-time shape cannot pass — which is exactly what npm did (#13).
 - Dependency ranges are checked against the packed versions, because the
-  `pnpm.overrides` that keep the install offline resolve every `@panda/*` to a
+  `pnpm.overrides` that keep the install offline resolve every `@skanl/panda-*` to a
   tarball whatever the range says. NOT DEMONSTRATED, and the reason is concrete:
-  producing that drift needs a manifest whose `@panda/*` range no workspace
+  producing that drift needs a manifest whose `@skanl/panda-*` range no workspace
   package satisfies, and any such edit breaks `pnpm install` for the repository
   itself. The clause is exact-string equality (`ponytail:` documented in place),
   so it errs strict — a legitimate `workspace:^` would pack as `^0.0.0` and turn
@@ -306,7 +306,7 @@ nine. Four defects, one rewrite:
 **18. The consumer typecheck runs strict (M4).** `skipLibCheck: false` and
 `types: ["node"]`, with `@types/node` pinned to the exact version the repository
 resolved (24.13.3) so the consumer install stays `--offline`. Measured: exit 0.
-The requirement it makes visible is real — `@panda/contracts/dist/executor.d.ts`
+The requirement it makes visible is real — `@skanl/panda-contracts/dist/executor.d.ts`
 needs an ambient `AbortSignal`, and with `skipLibCheck: false` and no
 `@types/node` it fails `TS2304` — and it belongs in Verification, which is where
 it now is.
@@ -369,11 +369,11 @@ deleted. It is publish-time cosmetics, and publishing is Ask-First.
 ### Review round 2 — CI, red on Linux only
 
 **26. The consumer install was resolving through `pnpm.overrides`, which pnpm 11
-does not read. The consumer now declares its whole `@panda/*` closure — five
+does not read. The consumer now declares its whole `@skanl/panda-*` closure — five
 direct `file:` dependencies — and installs them with npm.**
 
 The symptom was `ERR_PNPM_NO_OFFLINE_META: Failed to resolve
-@panda/adapter-cli@0.0.0 in package mirror …/registry.npmjs.org/@panda/adapter-cli.jsonl`,
+@skanl/panda-adapter-cli@0.0.0 in package mirror …/registry.npmjs.org/@skanl/panda-adapter-cli.jsonl`,
 on both Node 24 and 26, with `pnpm check` green on both — and passing on Windows.
 
 IT IS NOT THE OPERATING SYSTEM. The temp project carried no `packageManager`
@@ -390,7 +390,7 @@ The following keys were ignored: "pnpm.overrides".
 ```
 
 So under pnpm 11 the overrides were dropped silently, the transitive
-`@panda/adapter-cli@0.0.0` went looking for registry metadata, and `--offline`
+`@skanl/panda-adapter-cli@0.0.0` went looking for registry metadata, and `--offline`
 refused. The proof's own `pnpm --version` probe read the REPOSITORY's pnpm —
 11.23.0 — while the consumer install ran a different one. Nothing connected the
 two, and nothing could have noticed.
@@ -407,9 +407,9 @@ package left for a store to have been warm about. A guard over the fixture this
 file writes itself would assert nothing a reader could not already see.
 
 THE DIRECT-DEPENDENCY SHAPE DOES NOT WORK UNDER pnpm, measured before switching:
-with all five `@panda/*` declared as top-level `file:` dependencies and no
+with all five `@skanl/panda-*` declared as top-level `file:` dependencies and no
 overrides at all, pnpm 11.23.0 still answers `ERR_PNPM_NO_OFFLINE_META: Failed
-to resolve @panda/contracts@0.0.0`. pnpm does not satisfy a dependency's
+to resolve @skanl/panda-contracts@0.0.0`. pnpm does not satisfy a dependency's
 registry-shaped `"0.0.0"` requirement from a top-level `file:` install of that
 same version. npm does — measured on npm 11.11.0, `added 5 packages`, exit 0,
 `--offline`, with the runtime session and the strict typecheck both green
@@ -423,12 +423,12 @@ binary to probe.
 
 THE COST, stated rather than hidden: npm's flat `node_modules` is a weaker
 isolation than pnpm's strict layout. Under pnpm, a consumer that installed only
-`@panda/session` structurally could not resolve `@panda/contracts`, and that was
+`@skanl/panda-session` structurally could not resolve `@skanl/panda-contracts`, and that was
 part of what the old shape proved. With every transitive declared directly —
 which is what the fix requires under any package manager — that property is gone
 regardless of which one installs. It is still pinned inside the workspace by
 `packages/session/test/guard.test.ts` and by `consumer.test.ts`'s single-import
-rule, and the consumer script executed here still imports `@panda/session` and
+rule, and the consumer script executed here still imports `@skanl/panda-session` and
 nothing else.
 
 **27. The consumer typecheck installs no type package at all (amends #18).**
@@ -455,7 +455,7 @@ ENOENT: no such file or directory, open '/w/packages/cli/dist/bin/panda.js'
 
 The install still exits 0 and everything downstream is green, so this is noise
 rather than breakage — but it is noise on every install, in CI included, and it
-comes from the root `@panda/cli` devDependency whose only purpose was the
+comes from the root `@skanl/panda-cli` devDependency whose only purpose was the
 `pnpm exec panda` that #14 already retired. Removing that devDependency would
 silence it and would change `pnpm-lock.yaml`; that is the owner's call, not a
 patch to slip in here.
@@ -488,7 +488,7 @@ quietly re-run until green:
   (where the fixture lives, via `os.tmpdir()`) `mtimeMs` came back
   `1787729302141.4963` BOTH times, while the bind mount moved 13 ms. So a
   same-size rewrite inside one millisecond is undetectable by that check. Real,
-  small, and owned by `@panda/projection`; the upgrade path is
+  small, and owned by `@skanl/panda-projection`; the upgrade path is
   `stat(path, { bigint: true }).mtimeNs` or a content hash.
 - `packages/registry/test/lock.test.ts` — "release never deletes a successor's
   lock" — failed once on Windows with `ENOENT` on the restored lock file, then
@@ -504,9 +504,9 @@ after.
 
 ## Design Notes
 
-**Why the compiler and not a bundler.** Verified before speccing: TypeScript 7.0.2 with `rewriteRelativeImportExtensions` emits exactly what is needed — `./run-session.js` from `./run-session.ts`, `@panda/kernel` left alone, declarations and maps beside them. A bundler would be a new dependency solving a problem the lockfile already solves, and it would flatten the package boundaries AD-2 exists to keep visible.
+**Why the compiler and not a bundler.** Verified before speccing: TypeScript 7.0.2 with `rewriteRelativeImportExtensions` emits exactly what is needed — `./run-session.js` from `./run-session.ts`, `@skanl/panda-kernel` left alone, declarations and maps beside them. A bundler would be a new dependency solving a problem the lockfile already solves, and it would flatten the package boundaries AD-2 exists to keep visible.
 
-**Why the proof must leave the workspace.** A consumer test inside the repo resolves `@panda/session` through pnpm's workspace links no matter what the export map says. It cannot fail for the reason this story cares about. Installing a tarball into a directory outside the repo is the smallest thing that can.
+**Why the proof must leave the workspace.** A consumer test inside the repo resolves `@skanl/panda-session` through pnpm's workspace links no matter what the export map says. It cannot fail for the reason this story cares about. Installing a tarball into a directory outside the repo is the smallest thing that can.
 
 **Why publishing is not in scope.** It is irreversible and it decides things this story has no business deciding — the name, the license, the versioning policy. Packing proves the artifact; publishing is a separate, human call.
 
@@ -524,6 +524,6 @@ after.
 - Verified on Linux as well as Windows, because the CI-only failure this replaced was invisible here: `podman run --rm -e CI=true -v <clean checkout>:/w -w /w node:24-alpine` with `corepack enable`, then `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm proof:consumer-install`. `CI=true` is needed or pnpm refuses to purge a modules directory without a TTY. Expect ONE red clause from `pnpm check` in a container that this story does not own and CI does not see — `packages/projection/test/inspect.test.ts`, explained in Spec Change Log #29.
 
 **Stated limitations of the artifact, recorded rather than solved:**
-- **Nothing installs by name.** All nine packages are `"private": true`, version `0.0.0` and unpublished, so a consumer must be handed all nine tarballs and wire every transitive `@panda/*` by hand -- which is what the proof's `pnpm.overrides` do. That is the direct, intended consequence of the frozen block's Ask-First on publishing, not a defect to fix here.
-- **A strict consumer needs an ambient `AbortSignal`.** The shipped declarations use it and need nothing else outside `es2023`; either `@types/node` or the DOM lib supplies it. With neither, `@panda/contracts/dist/executor.d.ts` fails `TS2304` under `skipLibCheck: false` — measured. The proof compiles a consumer under exactly those strict settings, taking `AbortSignal` from `lib: ["es2023", "dom"]` and installing no type package at all.
+- **Nothing installs by name.** All nine packages are `"private": true`, version `0.0.0` and unpublished, so a consumer must be handed all nine tarballs and wire every transitive `@skanl/panda-*` by hand -- which is what the proof's `pnpm.overrides` do. That is the direct, intended consequence of the frozen block's Ask-First on publishing, not a defect to fix here.
+- **A strict consumer needs an ambient `AbortSignal`.** The shipped declarations use it and need nothing else outside `es2023`; either `@types/node` or the DOM lib supplies it. With neither, `@skanl/panda-contracts/dist/executor.d.ts` fails `TS2304` under `skipLibCheck: false` — measured. The proof compiles a consumer under exactly those strict settings, taking `AbortSignal` from `lib: ["es2023", "dom"]` and installing no type package at all.
 - **`npm pack` still leaves `workspace:*` in dependencies.** npm has no workspace protocol; pnpm and yarn rewrite it, npm cannot. Pack with pnpm.

@@ -2,18 +2,18 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError, PROJECTION_LEDGER_VERSION, isRecord } from '@panda/contracts'
-import type { ProjectionLedgerRecord, ProjectionWarning } from '@panda/contracts'
-import { acquireLock } from '@panda/lock'
-import type { StaleLockBreak } from '@panda/lock'
+import { PANDA_ERROR_CODES, PandaError, PROJECTION_LEDGER_VERSION, isRecord } from '@skanl/panda-contracts'
+import type { ProjectionLedgerRecord, ProjectionWarning } from '@skanl/panda-contracts'
+import { acquireLock } from '@skanl/panda-lock'
+import type { StaleLockBreak } from '@skanl/panda-lock'
 import { atomicWriteText } from './atomic-write.ts'
 import { strictFaultLocation } from './document-fault.ts'
 
 // The durable ownership ledger (AD-6, correction-01 C2): panda's own record of
 // every entry it placed in someone else's file. It lives beside the registry
 // store in panda's own directory and follows the same atomic temp+rename
-// discipline, but it owns its state alone — @panda/projection depends on
-// @panda/contracts and nothing else (AD-2), so rendering a config file never
+// discipline, but it owns its state alone — @skanl/panda-projection depends on
+// @skanl/panda-contracts and nothing else (AD-2), so rendering a config file never
 // drags the Registry store or the microkernel in behind it.
 //
 // The ledger is the ONLY proof of ownership. That is deliberate: no vendor
@@ -230,7 +230,7 @@ const LEDGER_QUEUES = new Map<string, Promise<unknown>>()
 
 /**
  * The leaf lock's neutral codes, translated at this package's boundary (AD-7).
- * `@panda/lock` may not raise a projection code and this package may not
+ * `@skanl/panda-lock` may not raise a projection code and this package may not
  * publish a `PANDA_LOCK_*` one, so the mapping lives exactly here.
  */
 function asLedgerFailure(filePath: string, error: unknown): unknown {

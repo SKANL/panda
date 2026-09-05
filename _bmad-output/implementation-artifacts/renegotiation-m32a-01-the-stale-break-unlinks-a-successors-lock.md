@@ -14,7 +14,7 @@ The move works and closes 99% of the window. It does not close all of it,
 because **`acquireLock`'s stale-break path has a TOCTOU that lets two processes
 hold the lock at the same time**, and no amount of work at the ledger can fix
 that from outside. The defect is in `breakLock`, it is byte-identical to what
-`@panda/registry` shipped at `5de8e8a`, and it is reachable from
+`@skanl/panda-registry` shipped at `5de8e8a`, and it is reachable from
 `RegistryStore.register` today.
 
 Fixing it means changing `acquireLock`'s concurrency behaviour. The spec froze
@@ -153,7 +153,7 @@ $ grep -A7 '^async function breakLock' packages/lock/src/lock.ts
 …
 ```
 
-## And it is already losing user data in `@panda/registry`
+## And it is already losing user data in `@skanl/panda-registry`
 
 Not a projection-only concern. Eight processes each calling
 `RegistryStore.register` behind a shared barrier, control first:
@@ -226,7 +226,7 @@ worth saying out loud rather than burying in a verification section.
 Implemented, uncommitted, and green apart from the acceptance criteria this
 document blocks:
 
-- `packages/lock/` — the new leaf, `@panda/contracts` and nothing else, with
+- `packages/lock/` — the new leaf, `@skanl/panda-contracts` and nothing else, with
   `test/guard.test.ts` and a neutral-code pin. 8 tests pass.
 - `packages/registry/src/lock.ts` — the translating façade; 189 registry tests
   pass, including `lock.test.ts` and `contention.test.ts`, so no published
@@ -240,8 +240,8 @@ document blocks:
 - `packages/contracts/test/topology.test.ts` — **the spec did not name this
   file.** It is the repo-wide AD-2 gate, and it pins a TIER for every package by
   exact equality in both directions, so a new package cannot be added without
-  placing it in the order. `@panda/lock` is a genuinely new layer: it sits on
-  `@panda/contracts` (so it cannot join tier 0, where the rule is "imports
+  placing it in the order. `@skanl/panda-lock` is a genuinely new layer: it sits on
+  `@skanl/panda-contracts` (so it cannot join tier 0, where the rule is "imports
   nothing at all"), and both `registry` and `projection` import it (so it cannot
   sit beside them). The order gained tier 1 and everything above shifted by one.
   Worth flagging because the spec's M5 measurement says "AD-2 is enforced by a

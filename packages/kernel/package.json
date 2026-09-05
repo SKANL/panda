@@ -1,5 +1,5 @@
 {
-  "name": "@panda/kernel",
+  "name": "@skanl/panda-kernel",
   "version": "0.1.0",
   "description": "The plugin kernel: manifests, service graph, typed events and ordered teardown, with zero runtime dependencies.",
   "repository": {

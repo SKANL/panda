@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { PANDA_ERROR_CODES, PandaError, registryEntryIssues } from '@panda/contracts'
-import type { RegistryEntry, SkillSource, SourcedSkill } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError, registryEntryIssues } from '@skanl/panda-contracts'
+import type { RegistryEntry, SkillSource, SourcedSkill } from '@skanl/panda-contracts'
 
 // The filesystem `SkillSource` (FR-13c): the first implementation of a port that
 // had none, so `ingestProviders` — 375 finished lines with zero production
@@ -15,15 +15,15 @@ import type { RegistryEntry, SkillSource, SourcedSkill } from '@panda/contracts'
 //
 // WHAT THIS FILE DOES NOT KNOW, and must not:
 //
-//   - WHICH roots. They are the `machineSkills` locations `@panda/environment`
+//   - WHICH roots. They are the `machineSkills` locations `@skanl/panda-environment`
 //     derived from the shipped executor traits, every one of them verified by
 //     running the real binary. A default root spelled here would be a second
 //     table drifting from the one panda writes into.
 //   - WHAT the entry file is called. `SKILL_ENTRY_FILE` belongs to
-//     `@panda/projection`, which sits ABOVE this package in AD-2's topology, so
+//     `@skanl/panda-projection`, which sits ABOVE this package in AD-2's topology, so
 //     it arrives as an option rather than as a copied string constant.
 //   - WHICH paths panda already owns. The ownership ledger is
-//     `@panda/projection`'s too, and reaching it from here would invert the
+//     `@skanl/panda-projection`'s too, and reaching it from here would invert the
 //     topology. The caller reads it and hands the paths in.
 //
 // That third one is the load-bearing one, not a formality: panda PROJECTS skills

@@ -155,7 +155,7 @@ to learn a second mapping for the same outcome.
 ### D6 — normalized paths become separator-neutral
 
 `normalizePathValue` emits `/` in the remainder it keeps. This is a change to
-`@panda/contracts`, not to import, because the artifact is produced by the
+`@skanl/panda-contracts`, not to import, because the artifact is produced by the
 WRITER and a fix inside the reader would leave every already-written store
 unportable while pretending otherwise.
 

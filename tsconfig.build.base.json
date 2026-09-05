@@ -12,13 +12,13 @@
     // tarball, not by a bundler. `allowImportingTsExtensions` stays on (sources
     // import `./x.ts`) and `rewriteRelativeImportExtensions` is what makes that
     // legal alongside emit: it rewrites `./x.ts` to `./x.js` in the output and
-    // leaves bare `@panda/*` specifiers untouched.
+    // leaves bare `@skanl/panda-*` specifiers untouched.
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "rewriteRelativeImportExtensions": true,
     // `customConditions` is inherited from the development base, so each package
     // compiles against its dependencies' SOURCE. That keeps the build free of
-    // any dependency ordering and still emits bare `@panda/*` specifiers.
+    // any dependency ordering and still emits bare `@skanl/panda-*` specifiers.
     "declaration": true
     // ponytail: no `declarationMap` and no `sourceMap`. They were shipped once
     // and measured: 108 map files, 281,530 of 748,160 uncompressed bytes — 37.6%

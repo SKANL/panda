@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { PandaError } from '@panda/contracts'
+import { PandaError } from '@skanl/panda-contracts'
 import { GitWorktreeWorkspaceProvider, WorktreeLedger } from '../src'
 
 const run = promisify(execFile)

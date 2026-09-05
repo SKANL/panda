@@ -2,13 +2,13 @@ import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, uti
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { PANDA_ERROR_CODES, PandaError } from '@panda/contracts'
+import { PANDA_ERROR_CODES, PandaError } from '@skanl/panda-contracts'
 import type {
   DriftEntry,
   ProjectionTarget,
   RegistryEntriesByKind,
   RegistryEntry,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 import { ProjectionLedger } from '../src/ledger.ts'
 import { createClaudeMcpTarget } from '../src/targets/claude-mcp.ts'
 import { groupByKind, hasFileChangedSince, runProjection } from '../src/engine.ts'

@@ -218,7 +218,7 @@ suite on the `LIVE_SUITES` roster, untouched by this change.
 
 1. `packages/session/src/index.ts` re-exports the pair (and
    `packages/session/test/kernel-composition.test.ts`'s exact export roster widens by two).
-   `@panda/cli` depends only on `@panda/environment` and `@panda/session`, so this is how
+   `@skanl/panda-cli` depends only on `@skanl/panda-environment` and `@skanl/panda-session`, so this is how
    the CLI reaches the capability — the same route `inspectWorktrees`/`removeWorktree`
    already take.
 2. `WorktreeInspection.storeDirectories` (+ `InspectLocalWorkspacesOptions.ignore`).

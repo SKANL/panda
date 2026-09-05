@@ -26,7 +26,7 @@ export default tseslint.config(
   {
     // Repo-wide, because a cross-package RELATIVE import needs no manifest entry
     // and therefore no dependency test can see it. A working composition was
-    // planted in @panda/cli through `../../workspace-local/src/index.ts` with the
+    // planted in @skanl/panda-cli through `../../workspace-local/src/index.ts` with the
     // whole gate green; this is the rule that rejects it, and it holds the same
     // line for every package (AD-2: the topology is manifests, not paths).
     files: ['packages/*/**/*.ts'],
@@ -46,7 +46,7 @@ export default tseslint.config(
     },
   },
   {
-    // `@panda/cli` is argv, formatting and exit codes. It has no business
+    // `@skanl/panda-cli` is argv, formatting and exit codes. It has no business
     // touching the filesystem AT ALL — every path it names is handed to a
     // capability package, and the two it depends on do the reading.
     //
@@ -55,7 +55,7 @@ export default tseslint.config(
     // `['claude-code','codex','opencode']` literal list, its own layered file
     // reads, its own coded throws — deleted `resolveExecutor` from the imports,
     // and the WHOLE gate stayed green: the existing pin watches the dependency
-    // list and `@panda/*` import specifiers, and owning selection needs neither,
+    // list and `@skanl/panda-*` import specifiers, and owning selection needs neither,
     // only `node:fs/promises` and `node:path`. Config-driven selection cannot be
     // reimplemented here without a filesystem read, so forbidding the read is
     // what closes it — a text scan for composition vocabulary was already tried
@@ -69,10 +69,10 @@ export default tseslint.config(
         'error',
         {
           paths: [
-            { name: 'node:fs', message: '@panda/cli reads no files; the capability packages do (thin-binding pin)' },
-            { name: 'node:fs/promises', message: '@panda/cli reads no files; the capability packages do (thin-binding pin)' },
-            { name: 'fs', message: '@panda/cli reads no files; the capability packages do (thin-binding pin)' },
-            { name: 'fs/promises', message: '@panda/cli reads no files; the capability packages do (thin-binding pin)' },
+            { name: 'node:fs', message: '@skanl/panda-cli reads no files; the capability packages do (thin-binding pin)' },
+            { name: 'node:fs/promises', message: '@skanl/panda-cli reads no files; the capability packages do (thin-binding pin)' },
+            { name: 'fs', message: '@skanl/panda-cli reads no files; the capability packages do (thin-binding pin)' },
+            { name: 'fs/promises', message: '@skanl/panda-cli reads no files; the capability packages do (thin-binding pin)' },
           ],
           patterns: [
             {
@@ -84,19 +84,19 @@ export default tseslint.config(
               // The thin-binding pin, made STRUCTURAL. It has now been defeated
               // twice by the same shape of move and never by a new idea: Story
               // 2.0 by relative cross-package imports (closed by the clause
-              // above), and Story M3.B by RE-EXPORT — `@panda/session` briefly
+              // above), and Story M3.B by RE-EXPORT — `@skanl/panda-session` briefly
               // re-exported `createKernel` and both plugin factories, and a
               // complete working session composition was planted in
-              // `packages/cli/src/` importing only `@panda/session`, with
+              // `packages/cli/src/` importing only `@skanl/panda-session`, with
               // eslint, tsc and all 53 CLI assertions green. The dependency
               // test watches the manifest and the specifier scan watches the
               // package NAME; neither can see a capability that arrived through
               // a package the CLI is allowed to import.
               //
-              // So the restriction is on the NAMES, from any `@panda/*` module.
+              // So the restriction is on the NAMES, from any `@skanl/panda-*` module.
               // Which package re-exports them stops mattering, which is the
               // property the two previous versions lacked.
-              group: ['@panda/*'],
+              group: ['@skanl/panda-*'],
               importNames: [
                 'createKernel',
                 'createSessionKernel',
@@ -110,7 +110,7 @@ export default tseslint.config(
                 'WORKSPACE_SERVICE',
               ],
               message:
-                '@panda/cli composes nothing: it may not hold a kernel, mount a plugin, resolve a service or build an adapter, whichever package re-exports the capability (thin-binding pin, AD-2)',
+                '@skanl/panda-cli composes nothing: it may not hold a kernel, mount a plugin, resolve a service or build an adapter, whichever package re-exports the capability (thin-binding pin, AD-2)',
             },
           ],
         },
@@ -125,13 +125,13 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@panda/contracts', '@panda/contracts/*'],
-              message: 'the kernel never imports @panda/contracts (AD-1)',
+              group: ['@skanl/panda-contracts', '@skanl/panda-contracts/*'],
+              message: 'the kernel never imports @skanl/panda-contracts (AD-1)',
             },
             {
               regex: String.raw`^\.\.[\\/]\.\.`,
               message:
-                'relative imports must stay inside @panda/kernel; cross-package imports are forbidden (AD-1)',
+                'relative imports must stay inside @skanl/panda-kernel; cross-package imports are forbidden (AD-1)',
             },
           ],
         },

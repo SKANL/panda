@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { runPanda } from '../src'
 import type { RunCommandOptions } from '../src'
 import { renderLogRecord } from '../src/run.ts'
-import type { ExecutorAdapter, ResultEnvelope, WorkspaceProvider } from '@panda/contracts'
-import { RegistryStore } from '@panda/environment'
+import type { ExecutorAdapter, ResultEnvelope, WorkspaceProvider } from '@skanl/panda-contracts'
+import { RegistryStore } from '@skanl/panda-environment'
 
 function capture(): RunCommandOptions & { out: string[]; err: string[] } {
   const out: string[] = []
@@ -111,7 +111,7 @@ describe('panda run', () => {
   })
 
   it('answers --version with the version its own manifest carries, in both layouts', async () => {
-    // The first thing anyone types after `npm i -g @panda/cli`, and it did not
+    // The first thing anyone types after `npm i -g @skanl/panda-cli`, and it did not
     // exist until M37.A -- the absence surfaced the moment the consumer proof
     // INSTALLED the packaged binary instead of only packing it, and the run
     // printed the usage block and exited non-zero.
@@ -290,8 +290,8 @@ describe('panda run exit-code mapping', () => {
 //
 // Everything above pins BEHAVIOUR. This block pins the SHAPE that behaviour is
 // allowed to live in: the composition — create a workspace, obtain an adapter,
-// run under a signal, release, dispose — belongs to `@panda/session`, and
-// `@panda/cli` is argv parsing, output formatting and exit-code mapping.
+// run under a signal, release, dispose — belongs to `@skanl/panda-session`, and
+// `@skanl/panda-cli` is argv parsing, output formatting and exit-code mapping.
 //
 // These two clauses are the cheap, exact half of that rule. They are NOT the
 // whole enforcement, and it matters that nobody reads them as such:
@@ -326,20 +326,20 @@ function importSpecifiersOf(source: string): string[] {
 
 /**
  * A composition cannot be written without reaching into at least one of these.
- * `@panda/projection` and `@panda/registry` joined the list with Story 2.7a:
+ * `@skanl/panda-projection` and `@skanl/panda-registry` joined the list with Story 2.7a:
  * `panda init` is exactly the command that would be tempting to write by reading
  * the registry and driving a projection target from here, and the whole point of
- * `@panda/environment` is that a third party gets that without the CLI.
+ * `@skanl/panda-environment` is that a third party gets that without the CLI.
  */
 const COMPOSITION_PACKAGES = [
-  '@panda/adapter-cli',
-  '@panda/workspace-local',
-  '@panda/kernel',
-  '@panda/projection',
-  '@panda/registry',
+  '@skanl/panda-adapter-cli',
+  '@skanl/panda-workspace-local',
+  '@skanl/panda-kernel',
+  '@skanl/panda-projection',
+  '@skanl/panda-registry',
 ]
 
-describe('@panda/cli stays a thin binding', () => {
+describe('@skanl/panda-cli stays a thin binding', () => {
   it('shipped sources exist to scan', () => {
     // Guards against the pin passing because a path typo made every scan empty.
     expect(shippedSourceFiles(join(cliPackageDir, 'src')).length).toBeGreaterThan(0)
@@ -348,18 +348,18 @@ describe('@panda/cli stays a thin binding', () => {
 
   it('depends on the consumer-tier capability packages and on nothing else at runtime', () => {
     const pkg = JSON.parse(readFileSync(join(cliPackageDir, 'package.json'), 'utf8')) as Record<string, unknown>
-    // `@panda/contracts` moved to devDependencies once `describe()` stopped
+    // `@skanl/panda-contracts` moved to devDependencies once `describe()` stopped
     // needing `instanceof PandaError`: the shipped CLI imports only consumer-tier
     // packages, and the tests keep contracts only to type their fakes.
     //
-    // Story 2.7a added `@panda/environment` beside `@panda/session`. This list is
+    // Story 2.7a added `@skanl/panda-environment` beside `@skanl/panda-session`. This list is
     // a SNAPSHOT of the CONSUMER TIER, not a cap of one: what the pin is for is
     // the clause below it — the CLI may never reach past a capability package
     // into the implementations one composes. A new entry here is only legitimate
     // for another package of the same tier, whose own guard test proves the tier.
     expect(Object.keys((pkg['dependencies'] ?? {}) as Record<string, unknown>)).toEqual([
-      '@panda/environment',
-      '@panda/session',
+      '@skanl/panda-environment',
+      '@skanl/panda-session',
     ])
   })
 
@@ -535,7 +535,7 @@ describe('panda init argv and diagnostics', () => {
 // --- panda doctor / panda project doctor (Story 2.7b) ----------------------
 //
 // Same division of labour as init: the CLI's job is argv, output and exit codes,
-// and WHAT was diagnosed belongs to `@panda/environment` (proven in
+// and WHAT was diagnosed belongs to `@skanl/panda-environment` (proven in
 // `packages/environment/test/doctor.test.ts`, including the byte-level
 // writes-nothing clause). What is pinned here is the part a script depends on —
 // clean exits 0, any finding exits 1, unable-to-look exits 2 — and that the

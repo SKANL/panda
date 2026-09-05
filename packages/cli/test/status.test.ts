@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { runPanda } from '../src/run.ts'
 import type { RunCommandOptions } from '../src/run.ts'
-import type { ChildProcessSpawner, SpawnedChild, SpawnOutcome, UsageReport } from '@panda/session'
+import type { ChildProcessSpawner, SpawnedChild, SpawnOutcome, UsageReport } from '@skanl/panda-session'
 
 // `panda status` (Story M15.A): the report of what each executor last said about
 // its own quota.

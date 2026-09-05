@@ -196,7 +196,7 @@ before pushing.
 ## 5. Architecture rules that are not negotiable
 
 - **AD-1** — the kernel has ZERO runtime dependencies and NEVER imports
-  `@panda/contracts`.
+  `@skanl/panda-contracts`.
 - **AD-2** — package topology strictly downward.
 - **AD-5** — typed absence over silence. Unavailable is not failed.
 - **AD-7** — coded errors via `PandaError` / `PANDA_ERROR_CODES`.
@@ -236,7 +236,7 @@ before pushing.
    Engram project `camtom-side_projects`, topic_key `panda/build-progress`.
 
 **Worktree trap:** `packages/*/node_modules` are junctions into the main
-checkout with RELATIVE `@panda/*` links, so a cross-package source mutation
+checkout with RELATIVE `@skanl/panda-*` links, so a cross-package source mutation
 inside a worktree is INVISIBLE to the binary and to other packages' suites — it
 reads exactly like "not a derivation". Either verify byte-identity first, or add
 a `resolve.alias` to the downstream `vitest.config.ts` files. Assume any past
@@ -304,7 +304,7 @@ nearly every review — and finally inside the mechanism built to prevent it.
   FEEDS the validator, not only what the validator returns. Caught by driving the
   binary and confirmed against a stashed baseline.
 - **A package manifest is not an architecture.** M5.C's frozen spec measured that
-  `@panda/environment` declares `@panda/projection` and concluded AD-2 permitted
+  `@skanl/panda-environment` declares `@skanl/panda-projection` and concluded AD-2 permitted
   the import. `packages/environment/test/guard.test.ts` refused it: that package
   may import only `access`, `constants`, `mkdir` and `stat` from the filesystem,
   and its source may not contain the string `atomicWriteText` — a clause that

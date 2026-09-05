@@ -1,5 +1,5 @@
 {
-  "name": "@panda/session",
+  "name": "@skanl/panda-session",
   "version": "0.1.0",
   "description": "The panda session: everything `panda run` does except argv, JSON and exit codes.",
   "repository": {
@@ -29,11 +29,11 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/adapter-cli": "workspace:*",
-    "@panda/contracts": "workspace:*",
-    "@panda/kernel": "workspace:*",
-    "@panda/workspace-git-worktree": "workspace:*",
-    "@panda/workspace-local": "workspace:*"
+    "@skanl/panda-adapter-cli": "workspace:*",
+    "@skanl/panda-contracts": "workspace:*",
+    "@skanl/panda-kernel": "workspace:*",
+    "@skanl/panda-workspace-git-worktree": "workspace:*",
+    "@skanl/panda-workspace-local": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

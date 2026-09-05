@@ -1,5 +1,5 @@
 {
-  "name": "@panda/lock",
+  "name": "@skanl/panda-lock",
   "version": "0.1.0",
   "description": "The portable lockfile protocol: machine-scoped write serialization for any package, with neutral codes and no sibling dependency.",
   "repository": {
@@ -29,7 +29,7 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@panda/contracts": "workspace:*"
+    "@skanl/panda-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

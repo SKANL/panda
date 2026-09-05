@@ -8,7 +8,7 @@ import type {
   ProjectionMaterialiseRequest,
   ProjectionMaterialiseTarget,
   ProjectionSkip,
-} from '@panda/contracts'
+} from '@skanl/panda-contracts'
 
 // Skills materialisation, one trait record per executor.
 //

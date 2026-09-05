@@ -23,7 +23,7 @@ context:
 
 ## Boundaries & Constraints
 
-**Always:** the pipeline is the ONLY exported way to execute a registered action — no raw runner is exported, and a test pins that; stages run in the declared order `pre → guard → around → post`, with `post` running even when the action fails; a guard rejection and a policy violation raise CODED kernel errors from `KERNEL_ERROR_CODES`; policies are DECLARATIVE data (caps over counts, summed cost, and concurrency), never imperative callbacks that could read a prompt; one stage's failure is contained the way AD-5 contains a plugin's — a broken interceptor never takes the kernel down and never silently lets an action through; every invocation and every violation is recorded through the Story 1.6 sink; `@panda/kernel` keeps ZERO runtime dependencies and never imports `@panda/contracts` (AD-1).
+**Always:** the pipeline is the ONLY exported way to execute a registered action — no raw runner is exported, and a test pins that; stages run in the declared order `pre → guard → around → post`, with `post` running even when the action fails; a guard rejection and a policy violation raise CODED kernel errors from `KERNEL_ERROR_CODES`; policies are DECLARATIVE data (caps over counts, summed cost, and concurrency), never imperative callbacks that could read a prompt; one stage's failure is contained the way AD-5 contains a plugin's — a broken interceptor never takes the kernel down and never silently lets an action through; every invocation and every violation is recorded through the Story 1.6 sink; `@skanl/panda-kernel` keeps ZERO runtime dependencies and never imports `@skanl/panda-contracts` (AD-1).
 
 **Ask First:** enforcing any budget expressed in a unit the kernel would have to interpret (tokens are a NUMBER to the kernel — who counts them is the caller's business); persisting counters across processes; any retry or backoff behaviour in the pipeline.
 
@@ -89,7 +89,7 @@ context:
 
 ## Design Notes
 
-**Why an action and not an executor.** AD-1 forbids the kernel from importing `@panda/contracts`, so it cannot type an `ExecutorAdapter`. That constraint is a gift here: a generic action seam is what lets a budget cover anything an agent does, not only executor spawns. Tokens are a plain number to the kernel; who counts them is the caller's problem.
+**Why an action and not an executor.** AD-1 forbids the kernel from importing `@skanl/panda-contracts`, so it cannot type an `ExecutorAdapter`. That constraint is a gift here: a generic action seam is what lets a budget cover anything an agent does, not only executor spawns. Tokens are a plain number to the kernel; who counts them is the caller's problem.
 
 **Why declarative policy, not callbacks.** A callback can read anything, including a prompt, which is exactly the failure AD-10 names. Caps expressed as data can be dumped, diffed and reasoned about without executing them — and a policy nobody can execute is a policy nobody can trick.
 
