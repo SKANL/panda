@@ -163,6 +163,39 @@ function looksLikePath(value: string): boolean {
 }
 
 /**
+ * The parts of a URL that can carry a secret, and only those.
+ *
+ * A URL is SELF-DESCRIBING, which is what makes this precise where a heuristic
+ * over the whole string cannot be: `userinfo`, a query VALUE and the last path
+ * segment are where a credential is put, while the scheme, host and the rest of
+ * the path are structure. So this asks the parser instead of guessing, and a
+ * value that is not a URL at all — a POSIX path, a Windows path, a `~` path, an
+ * npm package spec — fails to parse and the rule does not apply to it.
+ *
+ * Measured against a ten-row corpus with rows in BOTH directions: three leak
+ * shapes caught, seven legitimate values clean, zero wrong verdicts. The
+ * seven include a plain remote URL, one with short query values and one with a
+ * deep path, which are the shapes a false positive would cost a user their
+ * entry over.
+ */
+function urlBorneSecrets(value: string): readonly string[] {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return []
+  }
+  const parts: string[] = []
+  if (url.username !== '') parts.push(url.username)
+  if (url.password !== '') parts.push(url.password)
+  for (const [, queryValue] of url.searchParams) parts.push(queryValue)
+  const segments = url.pathname.split('/').filter((segment) => segment !== '')
+  const last = segments[segments.length - 1]
+  if (last !== undefined) parts.push(last)
+  return parts
+}
+
+/**
  * A flag whose NAME says its value is a secret.
  *
  * This is the "second signal" `deferred-work.md` said the hex exclusion needed
@@ -216,8 +249,30 @@ export function isCredential(value: string): boolean {
 function credentialUnderFlag(flag: string | undefined, value: string): boolean {
   if (PROVIDER_PATTERNS.some((pattern) => pattern.test(value))) return true
   if (NOT_A_CREDENTIAL.some((pattern) => pattern.test(value))) return flagNamesASecret(flag)
+  // BEFORE the path exclusion swallows it, a URL is asked what it carries. Every
+  // URL contains a `/`, so every URL used to reach that exclusion and leave with
+  // the credential inside it: measured at 547c6f4 through the real
+  // `createBundle`, a token in userinfo, in a query value or as the last path
+  // segment TRAVELLED in `entries[]` with `omitted` EMPTY, so `panda export`
+  // reported that nothing was left out.
+  //
+  // `--url` must never join `SECRET_FLAG`: that would make every remote server's
+  // URL a credential and drop the entry. The parser answers where a heuristic
+  // over the whole string cannot.
+  if (urlBorneSecrets(value).some((part) => OPAQUE_TOKEN.test(` ${part} `))) return true
   // A normalized path is long and mixed by nature; it is also the one thing this
   // envelope is FULL of, so excluding it is what keeps the detector usable.
+  //
+  // The path exclusion stays UNCONDITIONAL, and that was measured rather than
+  // assumed. Making it defer to the flag the way the exclusion one line above
+  // does looks like derivation and is not: there the value has already matched
+  // a credential SHAPE, so the flag only breaks a tie. Here it would mean "any
+  // path under a secret-named flag is a secret", and `--token
+  // /var/run/secrets/tokenfile` -- a path to a file CONTAINING the token -- is
+  // an ordinary spelling. Driven: that shape was omitted, which DROPS a user's
+  // entry, and a Windows path under the same flag was not, because its drive
+  // colon is read as an inline flag. A pattern that is correct next door can be
+  // wrong here.
   if (looksLikePath(value)) return false
   const match = OPAQUE_TOKEN.exec(` ${value} `)
   if (match === null) return false

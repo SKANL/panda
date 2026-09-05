@@ -61,6 +61,16 @@ export const FAKE = {
 } as const
 
 describe('the secret detector', () => {
+  /**
+   * A 32-char opaque token: the shape the generic rule catches, with no provider
+   * prefix. Assembled from parts like the `FAKE` fixtures above, so no scannable
+   * literal exists on disk -- GitHub push protection rejected this repo's first
+   * M8.A push over exactly that (a real credential SHAPE is the point of a
+   * corpus, and the unblock URL marks a fake as an allowed real secret, which is
+   * the wrong answer).
+   */
+  const OPAQUE_32 = `a9F3kQ2mZ7pX${'1vN8sT4wR6yB'}0cD5eG3h`
+
   const CREDENTIALS: readonly (readonly [string, string])[] = [
     ['an OpenAI-style key', FAKE.openai],
     ['an Anthropic-style key', FAKE.anthropic],
@@ -151,6 +161,58 @@ describe('the secret detector', () => {
 
   it.each(NOT_CREDENTIALS)('leaves %s alone', (_label, value) => {
     expect(isCredential(value)).toBe(false)
+  })
+
+  /**
+   * A credential inside a URL (M34.A). Measured at 547c6f4 through the real
+   * `createBundle`: all three of these TRAVELLED in `entries[]` with `omitted`
+   * EMPTY, so `panda export` reported that nothing was left out while the token
+   * left the machine. `looksLikePath` is true for anything containing `/`, so
+   * every URL short-circuited to "not a credential" before the opaque-token
+   * rule ran -- and it returned a flat `false` where the exclusion one line
+   * above already deferred to the flag.
+   *
+   * Two rules close it and they are not interchangeable. The flag fallback
+   * catches a path-shaped value under a flag that NAMES a secret; the URL rule
+   * catches a URL-borne secret whatever the flag is called, which is the case
+   * that matters because `--url` must never join `SECRET_FLAG` -- that would
+   * make every remote server's URL a credential and DROP the user's entry.
+   */
+  const URL_BORNE: readonly (readonly [string, string])[] = [
+    ['a token in userinfo', `https://user:${OPAQUE_32}@mcp.example.com/sse`],
+    ['a token in a query value', `https://mcp.example.com/sse?token=${OPAQUE_32}`],
+    ['a token as the last path segment', `https://mcp.example.com/mcp/${OPAQUE_32}`],
+  ]
+
+  const URL_CLEAN: readonly (readonly [string, string])[] = [
+    ['a plain remote server url', 'https://mcp.sentry.dev/mcp'],
+    ['a url with short query values', 'https://mcp.example.com/sse?v=2&mode=fast'],
+    ['a url with a deep but plain path', 'https://api.example.com/v1/servers/weather/sse'],
+    ['an npm package spec, which is not a url at all', '@modelcontextprotocol/server-filesystem'],
+  ]
+
+  it.each(URL_BORNE)('reads %s as a credential', (_label, value) => {
+    expect(isCredential(value)).toBe(true)
+  })
+
+  it.each(URL_CLEAN)('leaves %s alone, because a false positive DROPS the entry', (_label, value) => {
+    expect(isCredential(value)).toBe(false)
+  })
+
+  it('leaves the path exclusion UNCONDITIONAL, because deferring to the flag drops entries', () => {
+    // Measured, and it is why this rule is the URL parser and not a second flag
+    // heuristic. Making `looksLikePath` defer to the flag the way its sibling
+    // exclusion does looks like derivation and is not: there the value already
+    // matched a credential SHAPE and the flag only breaks a tie.
+    const under = (flag: string, value: string) =>
+      createBundle([{ type: 'mcp-server', id: 'srv', command: 'npx', args: [flag, value] }], HOME).omitted.length === 1
+    // A path to a FILE holding a token is an ordinary spelling; dropping it
+    // costs the user their entry, which is the direction the exclusion exists
+    // to prevent.
+    expect(under('--token', '/var/run/secrets/mcp-token')).toBe(false)
+    expect(under('--root', '/home/me/projects/some-server/bin')).toBe(false)
+    // CONTROL: the detector is still strict where it can be precise.
+    expect(under('--url', `https://h/x/${OPAQUE_32}`)).toBe(true)
   })
 
   it('draws its one admitted blind spot where the spec says it does', () => {
