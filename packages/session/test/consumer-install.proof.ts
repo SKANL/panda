@@ -771,6 +771,37 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       )}\n`,
       'utf8',
     )
+    // PRIME THE CACHE for the closure's EXTERNAL dependencies, derived rather
+    // than listed. `--offline` is the point of this whole file -- it is what
+    // makes a `@panda/*` name unable to resolve from a registry -- but the
+    // closure also carries third-party packages, and an offline install cannot
+    // invent one.
+    //
+    // This clause was GREEN on the machine that wrote it and RED on CI, because
+    // that machine's npm cache happened to hold `jsonc-parser` and the runner's
+    // did not. The session arm never hit it: its five packages have no external
+    // dependency at all. A harness that supplies what the real caller does not
+    // is testing a caller that does not exist -- caught by CI rather than by me.
+    const external = [
+      ...new Set(
+        closure.flatMap((dir) =>
+          Object.entries(
+            (
+              JSON.parse(readFileSync(join(repoRoot, 'packages', dir, 'package.json'), 'utf8')) as {
+                dependencies?: Record<string, string>
+              }
+            ).dependencies ?? {},
+          )
+            .filter(([name]) => !name.startsWith('@panda/'))
+            .map(([name, range]) => `${name}@${range}`),
+        ),
+      ),
+    ]
+    for (const spec of external) {
+      const primed = await run('npm', ['cache', 'add', spec], cliDir, RUN_TIMEOUT_MS)
+      expect(primed.code, `could not prime the npm cache with ${spec}`).toBe(0)
+    }
+
     const installed = await run('npm', ['install', '--offline'], cliDir, RUN_TIMEOUT_MS)
     expect(installed.code, `npm install of the cli tarball failed:\n${installed.output}`).toBe(0)
 
