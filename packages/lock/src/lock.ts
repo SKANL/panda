@@ -65,6 +65,14 @@ export interface LockOptions {
    * lockfile away but before it verifies ownership of the renamed file.
    */
   readonly beforeReleaseVerify?: (renamedPath: string) => void | Promise<void>
+  /**
+   * Injection seam for break-race tests: invoked after the stale break renames
+   * the lockfile away but before it verifies that the renamed file still
+   * carries the identity judged stale. AWAITED, exactly like
+   * `beforeReleaseVerify` — a seam that is not awaited lets a clause BET on a
+   * successor's write winning a race instead of forcing it.
+   */
+  readonly beforeBreakVerify?: (renamedPath: string) => void | Promise<void>
 }
 
 export interface FileLock {
@@ -75,7 +83,8 @@ export interface FileLock {
 
 type LockFileState =
   | { readonly kind: 'held'; readonly holder: LockHolder }
-  | { readonly kind: 'corrupt'; readonly reason: string }
+  /** `raw` is the document read at judgement time: the only identity a corrupt lock has. */
+  | { readonly kind: 'corrupt'; readonly reason: string; readonly raw: string }
   | { readonly kind: 'missing' }
 
 function currentHolder(): LockHolder {
@@ -109,7 +118,7 @@ async function readLockFile(path: string): Promise<LockFileState> {
       typeof parsed.acquiredAt !== 'string' ||
       typeof parsed.token !== 'string'
     ) {
-      return { kind: 'corrupt', reason: 'lockfile does not contain a valid holder document' }
+      return { kind: 'corrupt', reason: 'lockfile does not contain a valid holder document', raw }
     }
     return {
       kind: 'held',
@@ -121,7 +130,7 @@ async function readLockFile(path: string): Promise<LockFileState> {
       },
     }
   } catch {
-    return { kind: 'corrupt', reason: 'lockfile contains truncated or invalid JSON' }
+    return { kind: 'corrupt', reason: 'lockfile contains truncated or invalid JSON', raw }
   }
 }
 
@@ -162,13 +171,85 @@ function unavailable(operation: string, path: string, cause: unknown): PandaErro
   )
 }
 
-async function breakLock(path: string): Promise<void> {
+/**
+ * The identity a break must still find on the file before it may delete it.
+ * It differs per call site, deliberately: a dead holder is identified by its
+ * acquire-time TOKEN — the same identity release already trusts — while a
+ * CORRUPT lockfile has no readable holder at all, so its identity is the raw
+ * document BYTES read at judgement time. A reader who assumes one rule for both
+ * sites would be wrong about the corrupt one.
+ */
+type BreakIdentity =
+  | { readonly kind: 'token'; readonly token: string }
+  | { readonly kind: 'bytes'; readonly bytes: string }
+
+function carriesIdentity(raw: string, identity: BreakIdentity): boolean {
+  if (identity.kind === 'bytes') return raw === identity.bytes
   try {
-    await unlink(path)
+    return (JSON.parse(raw) as Partial<LockHolder>)?.token === identity.token
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Ownership-safe stale break, the mirror of `releaseAcquired` below: RENAME the
+ * lockfile away FIRST — that rename IS the mutual exclusion, because exactly one
+ * process can move a given file away and every loser gets ENOENT — then re-read
+ * the renamed file and unlink it ONLY if it still carries the identity that was
+ * judged stale; otherwise a live successor's lock was moved and must be put
+ * back. Checking ownership before an unlink would be the same TOCTOU one line
+ * later; only the rename makes two breakers impossible.
+ *
+ * Returns true when the stale lock was really removed, false when nothing was
+ * broken — another breaker won the rename, or a successor's lock was restored.
+ * The caller must not report a break it did not perform.
+ *
+ * ponytail: the restore has a window — the rename frees `path`, so a third
+ * contender can create a lock there and the restore would rename over it. NOT
+ * closed here, on purpose: `releaseAcquired` has carried the IDENTICAL window
+ * since Story 2.1 and it is where M32.A's once-in-160 `EPERM` comes from. On
+ * Windows a rename onto an existing open file FAILS, so the symptom is a loud
+ * coded `EPERM` and not silent loss; on POSIX `rename` SILENTLY REPLACES the
+ * destination, so the same window is quieter on Linux — which is what CI runs.
+ * Recorded in `deferred-work.md`; it is the first thing to look at if a claim is
+ * ever lost after this ships.
+ */
+async function breakLock(
+  path: string,
+  identity: BreakIdentity,
+  options: LockOptions,
+): Promise<boolean> {
+  const breakingPath = `${path}.${randomUUID()}.breaking`
+  let raw: string
+  try {
+    await rename(path, breakingPath)
+    await options.beforeBreakVerify?.(breakingPath)
+    raw = await readFile(breakingPath, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return
+    // ENOENT on the rename: someone else already broke it. ENOENT on the read:
+    // it vanished under us. Either way we broke nothing.
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false
     throw unavailable('stale-break', path, error)
   }
+
+  if (carriesIdentity(raw, identity)) {
+    try {
+      await unlink(breakingPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw unavailable('stale-break', path, error)
+      }
+    }
+    return true
+  }
+
+  // Not the lock we judged: a successor acquired inside the break window. Put
+  // their lock back so it keeps protecting the store, and report no break.
+  await rename(breakingPath, path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw unavailable('stale-break', path, error)
+  })
+  return false
 }
 
 /**
@@ -225,9 +306,15 @@ export async function acquireLock(path: string, options: LockOptions = {}): Prom
           ? `holder ${state.holder.pid}@${state.holder.host} is provably dead on this machine (process.kill(${state.holder.pid}, 0) === ESRCH)`
           : `holder ${state.holder.pid}@${state.holder.host} exceeded maxAgeMs (${maxAgeMs}ms); pid may have been reused`
         const broken: StaleLockBreak = { path, holder: state.holder, evidence: `${why}; breaking stale lock` }
-        await breakLock(path)
-        options.onStaleBreak?.(broken)
-        continue
+        // Identity judged stale here: the holder TOKEN of the process we proved
+        // dead. Anything else on that path is somebody else's live lock.
+        if (await breakLock(path, { kind: 'token', token: state.holder.token }, options)) {
+          options.onStaleBreak?.(broken)
+          continue
+        }
+        // Nothing was broken — a successor holds the path now, or another
+        // breaker won. Fall through and contend like anyone else: wait, or time
+        // out coded. Reporting a break we did not perform would be a lie.
       }
     } else if (state.kind === 'corrupt') {
       const mtimeMs = await stat(path).then(
@@ -244,9 +331,15 @@ export async function acquireLock(path: string, options: LockOptions = {}): Prom
           holder: undefined,
           evidence: `lockfile is corrupt (${state.reason}) and older than corruptGraceMs (${corruptGraceMs}ms); breaking regardless of host`,
         }
-        await breakLock(path)
-        options.onStaleBreak?.(broken)
-        continue
+        // A corrupt lockfile carries no token, so the identity to verify is the
+        // raw document BYTES read at judgement time — a different rule than the
+        // dead-pid site above. This is the more dangerous of the two sites: the
+        // evidence above says "regardless of host", so a delete-by-path here
+        // could destroy a CROSS-HOST successor's live lock.
+        if (await breakLock(path, { kind: 'bytes', bytes: state.raw }, options)) {
+          options.onStaleBreak?.(broken)
+          continue
+        }
       }
     } else {
       // Missing: released between our failed create and the read; retry at once.
