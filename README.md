@@ -18,6 +18,25 @@ panda export / import      # move an environment between machines, secrets left 
 panda status               # what is installed, and how much quota is left where a vendor publishes it
 ```
 
+That binary is a thin argv binding — it reads no files at all, and `eslint` forbids
+it from importing `node:fs`. Every capability behind it is a package, so a host
+composes the same session directly and brings its own executor:
+
+```ts
+import { runSession } from '@skanl/panda-session'
+
+const envelope = await runSession({ prompt: 'list files in this workspace' })
+// or hand panda an executor of your own, which wins over any configured selection:
+// await runSession({ prompt: '…', createAdapter: () => myAdapter })
+```
+
+The return value is the same `ResultEnvelope` `panda run` prints, and every port —
+executor, workspace, memory — ships a public clause suite that tells your
+implementation whether it conforms. Start at
+[`packages/contracts/README.md`](./packages/contracts/README.md), whose examples CI
+extracts and runs against the packed tarball; the block above is illustrative and
+nothing executes it.
+
 ## Install
 
 ```bash
@@ -25,7 +44,7 @@ npm i -g @skanl/panda-cli      # the binary
 npm i -D @skanl/panda-contracts # implementing a port
 ```
 
-Thirteen packages ship under the `@panda` scope at one shared version. That is
+Thirteen packages ship under the `@skanl` scope at one shared version. That is
 NFR-8's "Contracts semver together" taken literally: one semver decision per
 release rather than thirteen, so a breaking change is one number moving, not a
 coordination problem.
@@ -34,7 +53,8 @@ coordination problem.
 is still changing its contracts; the version says so rather than a paragraph
 promising it.
 
-**The packaged artifact is proven, not assumed.** A CI job on every push packs
+**The packaged artifact is proven, not assumed.** A CI job on every push to
+`main` and on every pull request packs
 all thirteen, installs them into a project **outside** this repository, offline,
 runs a real session there, installs the `@skanl/panda-cli` tarball and runs the binary
 a user would get. It also refuses to let a package stop being publishable — a
@@ -62,7 +82,7 @@ at [`packages/contracts/README.md`](./packages/contracts/README.md).
 
 ## The directories
 
-- **`packages/`** — the product. Twelve packages, topology strictly downward.
+- **`packages/`** — the product. Thirteen packages, topology strictly downward.
 - **`_bmad/` and `_bmad-output/`** — the planning trail: roadmaps, epics, one frozen
   spec per shipped story, and an append-only ledger of deliberate simplifications.
   It is checked in on purpose, because the reasoning behind a decision outlives the

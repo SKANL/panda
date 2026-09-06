@@ -16,7 +16,7 @@ an engine-owned `data` key) with a coded error.
 
 | Executor | Invocation | Prompt | Payload | Result |
 |---|---|---|---|---|
-| `claude-code` | `claude --print --output-format json --no-session-persistence --dangerously-skip-permissions` | stdin | one JSON object | `result` |
+| `claude-code` | `claude --print --output-format stream-json --verbose --no-session-persistence --dangerously-skip-permissions` | stdin | JSONL events | `result` where `type == "result"` |
 | `codex` | `codex exec --json --skip-git-repo-check` | stdin (positional omitted) | JSONL events | `item.text` where `item.type == "agent_message"` |
 | `opencode` | `opencode run --format json -- <prompt>` | final argv entry | JSONL events | `part.text` where `part.type == "text"` |
 
@@ -128,8 +128,12 @@ after a broken stdin pipe, no child may remain unsettled-and-unkilled.
 
 Two suites do spawn real processes, and neither runs an executor: `test/overhead.test.ts` and
 `test/tree-kill.test.ts` spawn `process.execPath` (part of `pnpm check`, no network, no auth).
-Three suites run a real coding CLI: `test/live-smoke.test.ts`, `test/usage-live.test.ts` and
-`test/confinement-live.test.ts`.
+Four suites run a real coding CLI, and each one spends account credit:
+`test/live-smoke.test.ts`, `test/usage-live.test.ts`, `test/confinement-live.test.ts` and
+`test/stream-mode-live.test.ts`. The authoritative roster is
+`packages/contracts/test/live-suite-naming.test.ts`, which reddens when a live suite
+escapes the exclusion glob — this sentence used to say "three", and the fourth was
+the one the glob had already learned to catch twice.
 
 The spawner also decides the child's ENVIRONMENT, which is otherwise inherited whole. Exactly one
 variable is changed: `PWD` is set to the cwd the child is given, because it is the only inherited

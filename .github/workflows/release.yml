@@ -8,6 +8,15 @@ on:
   push:
     tags: ['v*']
 
+# Publishing is the one action here that cannot be taken back, so two runs of it
+# must never overlap. A tag can be deleted and re-pushed, and `cancel-in-progress`
+# is deliberately FALSE: cancelling a run mid-publish is how a partial set lands
+# with no record of where it stopped. A second run waits, and then finds the
+# already-published versions and skips them.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -62,8 +71,41 @@ jobs:
           fi
           echo "releasing ${VERSION}"
 
+      # `--provenance` is a FLAG here, and that is the whole point of this line.
+      # It used to be `NPM_CONFIG_PROVENANCE: 'true'` in the env below, which
+      # pnpm 11 does not read: measured against the pinned 11.23.0, an
+      # `NPM_CONFIG_REGISTRY` pointing at a dead port is IGNORED while
+      # `PNPM_CONFIG_REGISTRY` is honoured, and `provenance` travels the same
+      # config path as `registry`. So the publish would have exited 0 with
+      # thirteen packages on the registry carrying no attestation, and nothing
+      # would have failed -- a guarantee stated in configuration that the tool
+      # never read. `--report-summary` writes `pnpm-publish-summary.json`, which
+      # is the only durable record of WHICH packages landed when a run aborts
+      # partway; without it a partial publish leaves evidence only in the log.
       - name: Publish
-        run: pnpm publish -r --access public --no-git-checks
+        run: pnpm publish -r --access public --no-git-checks --provenance --report-summary
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: 'true'
+
+      # The attestation is ASSERTED, not assumed. `--provenance` failing to take
+      # effect is exactly what just went unnoticed, and a release that claims
+      # provenance without one is the same defect wearing the fix's clothes.
+      # Reads the registry rather than the publish log, because the log is what
+      # was already trusted.
+      - name: The published packages actually carry provenance
+        run: |
+          for name in $(node -e "
+            const {readdirSync,readFileSync}=require('node:fs')
+            for (const d of readdirSync('packages')) {
+              try { console.log(JSON.parse(readFileSync('packages/'+d+'/package.json','utf8')).name) } catch {}
+            }
+          "); do
+            if ! npm view "$name@$(node -p "require('./packages/contracts/package.json').version")" --json \
+              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+                  const m=JSON.parse(s)
+                  if (!m?.dist?.attestations?.provenance) { console.error('no provenance: '+m.name); process.exit(1) }
+                  console.log('provenance ok: '+m.name)
+                })"; then
+              exit 1
+            fi
+          done

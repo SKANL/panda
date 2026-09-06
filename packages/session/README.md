@@ -34,9 +34,14 @@ try {
 
 ## What it writes, and what it owns
 
-- **Disk.** Each call creates `<cwd>/.panda/workspaces/<uuid>` and **nothing ever
-  removes it**: `release()` ends a lease and `dispose()` leaves the tree so work
-  survives. Cleaning up is the caller's.
+- **Disk.** Each call creates `<cwd>/.panda/workspaces/<uuid>`, and the session
+  itself never removes it: `release()` ends a lease and `dispose()` leaves the
+  tree so work survives. Removal is a separate, named capability this package
+  exports — `inspectLocalWorkspaces` / `removeLocalWorkspace` and
+  `inspectWorktrees` / `removeWorktree`, which is what `panda workspace remove`
+  calls. It is deliberately NOT on the `WorkspaceProvider` port: `dispose()` is
+  documented in five places as preserving state, so making it the removal would
+  invert a published clause.
 - **The provider.** The session disposes whatever `createProvider` returns, on
   every path. Return a **fresh** provider per session; a pooled one comes back
   disposed and the next session fails with `PANDA_CONTRACT_PROVIDER_DISPOSED`.

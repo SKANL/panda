@@ -32,8 +32,10 @@ backstop until a cross-process lock exists.
 Every handle is an independent single-use lease. Releasing the SAME handle twice raises
 `PANDA_CONTRACT_WORKSPACE_DOUBLE_RELEASE`; after `dispose()` every operation raises
 `PANDA_CONTRACT_PROVIDER_DISPOSED`. `dispose()` removes **nothing** — a worktree outliving its
-provider is what makes parallel work resumable, and tree removal, branch lifecycle and the recovery
-sweep are Story 4.3.
+provider is what makes parallel work resumable. Removal ships beside the provider rather than on
+it: `inspectWorktrees` and `removeWorktree` are free functions this package exports, keyed on the
+ownership record panda wrote at creation, so a worktree panda did not make is named and refused
+rather than deleted.
 
 ## As a kernel plugin
 

@@ -9,11 +9,21 @@ installing it. It reads no files itself; `eslint.config.js` forbids this package
 from importing `node:fs` at all, because a capability that needs a filesystem
 read is a capability that belongs in `@skanl/panda-session` or `@skanl/panda-environment`.
 
+## Install
+
+```sh
+npm i -g @skanl/panda-cli
+```
+
+The binary is `panda`. Every command below is written the way it works after
+that install; inside this repository's own checkout the same commands run as
+`pnpm panda …`, which is a development convenience and not what a consumer types.
+
 ## Usage
 
 ```sh
-pnpm panda run "list files in this workspace"
-pnpm panda run --executor codex "list files in this workspace"
+panda run "list files in this workspace"
+panda run --executor codex "list files in this workspace"
 ```
 
 Output: the `ResultEnvelope` as pretty-printed JSON on stdout.
@@ -30,7 +40,10 @@ which one runs through layered configuration, widest to narrowest:
 | `project` | `<project>/.panda/config.json` |
 | `invocation` | `--executor <id>` (or `--executor=<id>`) |
 
-The document is JSON with one key this command reads:
+The document is JSON. `executor` is the key this table resolves; the same file
+carries the other selections panda reads — `method` (see `panda swap method`) and
+the `workspace` subtree that `@skanl/panda-workspace-local` and
+`@skanl/panda-workspace-git-worktree` document:
 
 ```json
 { "executor": "codex" }
@@ -56,10 +69,10 @@ there was no way to put anything in it from the binary — the store shipped, th
 surface did not.
 
 ```sh
-pnpm panda add skill commit-lint --entry-path ./skills/commit-lint/SKILL.md
-pnpm panda add mcp-server fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem
-pnpm panda list
-pnpm panda remove skill commit-lint
+panda add skill commit-lint --entry-path ./skills/commit-lint/SKILL.md
+panda add mcp-server fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem
+panda list
+panda remove skill commit-lint
 ```
 
 The scope comes from the GRAMMAR, never from a flag: `panda <verb>` is the
@@ -117,8 +130,8 @@ to be terminal: the only exit was hand-editing `~/.panda/projection-ledger.json`
 the file every safety guarantee in that subsystem is stored in.
 
 ```sh
-pnpm panda remediate adopt --executor claude-code --entry context7          # describes
-pnpm panda remediate adopt --executor claude-code --entry context7 --apply  # performs
+panda remediate adopt --executor claude-code --entry context7          # describes
+panda remediate adopt --executor claude-code --entry context7 --apply  # performs
 ```
 
 One finding at a time, named by the user, and only a finding the same run just
@@ -146,7 +159,7 @@ exit are one string.
 ## How much quota is left
 
 ```sh
-pnpm panda status
+panda status
 ```
 
 One row per executor, reporting what that executor published about its own usage

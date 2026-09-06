@@ -33,8 +33,9 @@ and are not pretending otherwise.
   `ARCHITECTURE-SPINE.md` — and fails on a package the order does not name, or
   an order that names a package that is gone.*
 - **AD-2, the package-SPECIFIC half** — a `test/guard.test.ts` in `environment`,
-  `kernel`, `projection`, `session` — **4 of 12 packages**. `adapter-cli`,
-  `cli`, `contracts`, `registry`, `workspace-git-worktree` and `workspace-local`
+  `kernel`, `lock`, `projection`, `session` — **5 of 13 packages**. `adapter-cli`,
+  `cli`, `contracts`, `memory-filesystem`, `memory-sqlite`, `registry`,
+  `workspace-git-worktree` and `workspace-local`
   have none, which is a known gap, not a permission. The universal clause above
   covers every package; what those four add is package-specific and is not
   derivable.
