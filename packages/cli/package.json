@@ -32,11 +32,11 @@
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@skanl/panda-contracts": "workspace:*",
     "@skanl/panda-environment": "workspace:*",
     "@skanl/panda-session": "workspace:*"
   },
   "devDependencies": {
+    "@skanl/panda-contracts": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

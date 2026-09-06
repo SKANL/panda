@@ -1,5 +1,5 @@
-import { PANDA_VERSION } from '@skanl/panda-contracts'
 import {
+  PANDA_VERSION,
   REGISTRY_ENTRY_TYPES,
   REMEDIATION_KINDS,
   REMOVABLE_ENTRY_TYPES,

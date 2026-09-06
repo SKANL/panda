@@ -172,6 +172,75 @@ describe('M5.C rows 13 and 14: panda project swap executor', () => {
     expect(await readConfig(elsewhere)).toEqual({ executor: 'codex' })
     await expect(readFile(configPath(projectDir), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
+
+  /**
+   * PANDA BINDS A PROJECT, IT DOES NOT CREATE ONE — and `swap` was the one verb
+   * that did not honour it.
+   *
+   * `scopeDirectory` is described in `@skanl/panda-environment`'s own index as
+   * "the trust boundary that keeps a project verb from building a tree panda was
+   * asked to bind rather than create", and `project init`, `project add`,
+   * `project list`, `project doctor` and `project remove` all pass through it.
+   * `swap-command.ts` took `extra[0]` raw. Driven before this clause existed:
+   *
+   *   project init ./nope                 exit 2, nothing created
+   *   project add  ./nope                 exit 2, nothing created
+   *   project swap ./nope                 exit 0, created ./nope/.panda/
+   *   project swap ../../../../ESCAPE     exit 0, wrote OUTSIDE the sandbox
+   *
+   * The clause above passes because it calls `mkdir` first, which is exactly the
+   * shape that hid this: a harness that supplies what the real caller does not.
+   * The printed path was RELATIVE too, where every sibling prints an absolute
+   * one, so a user could not see where it had landed.
+   */
+  it('refuses a directory that does not exist, and creates nothing', async () => {
+    const { homeDir, projectDir } = await fixture()
+    const missing = join(projectDir, 'no-such-directory')
+
+    const result = await panda(['project', 'swap', 'executor', 'codex', missing], { homeDir, projectDir })
+
+    expect(result.code).toBe(2)
+    expect(result.err).toContain('PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE')
+    await expect(readFile(join(missing, '.panda', 'config.json'), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    // CONTROL: the same argv against a directory that DOES exist still works, so
+    // this clause cannot be satisfied by a `swap` that refuses everything.
+    const real = join(projectDir, 'real')
+    await mkdir(real, { recursive: true })
+    const ok = await panda(['project', 'swap', 'executor', 'codex', real], { homeDir, projectDir })
+    expect(ok.code).toBe(0)
+    expect(await readConfig(real)).toEqual({ executor: 'codex' })
+  })
+
+  /**
+   * A RELATIVE argument, resolved where the user is standing.
+   *
+   * `chdir` rather than a `../..` string, and the reason is a defect this clause
+   * caused while it was red: `scopeDirectory` resolves against `process.cwd()`,
+   * which under vitest is the PACKAGE root, so the first draft of this test made
+   * the unfixed binary create `<repo>/ESCAPED-BY-A-TYPO/.panda/` — inside the
+   * repository. `git status` stayed clean, because `.panda/` is gitignored and
+   * git does not track an otherwise-empty directory, so "nothing was created"
+   * read as true when it was false. A test that litters outside its sandbox on
+   * the red run is a test that has to be run once to be believed.
+   */
+  it('refuses a relative path that names nothing, rather than creating it', async () => {
+    const { homeDir, projectDir } = await fixture()
+    const previous = process.cwd()
+    process.chdir(projectDir)
+    try {
+      const result = await panda(['project', 'swap', 'executor', 'codex', './typo-dir'], { homeDir })
+
+      expect(result.code).toBe(2)
+      expect(result.err).toContain('PANDA_ENVIRONMENT_SCOPE_UNAVAILABLE')
+      await expect(
+        readFile(join(projectDir, 'typo-dir', '.panda', 'config.json'), 'utf8'),
+      ).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      process.chdir(previous)
+    }
+  })
 })
 
 describe('M5.C row 15: the selection persists across PROCESSES', () => {

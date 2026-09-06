@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { resolve, sep as SEP } from 'node:path'
 
-import { setConfigValue } from '@skanl/panda-environment'
+import { scopeDirectory, setConfigValue } from '@skanl/panda-environment'
 import { resolveExecutor, resolveMethod } from '@skanl/panda-session'
 
 // `panda swap <noun> <id>` — the verb that WRITES a selection.
@@ -102,7 +102,32 @@ export async function runSwap(
   // refuses without one, so leaving it undefined made `panda project swap` exit
   // 2 for every real user while the suite — which always passes a `cwd` — stayed
   // green. Defaulted HERE so the validation and the write see one directory.
-  const projectDir = (scope === 'project' ? extra[0] : undefined) ?? options.cwd ?? process.cwd()
+  const requestedDir = (scope === 'project' ? extra[0] : undefined) ?? options.cwd ?? process.cwd()
+
+  // PANDA BINDS A PROJECT, IT DOES NOT CREATE ONE — and this verb was the one
+  // that did not honour it. `scopeDirectory` is what `project init`, `add`,
+  // `list`, `doctor` and `remove` all pass their directory through;
+  // `@skanl/panda-environment`'s own index calls it "the trust boundary that
+  // keeps a project verb from building a tree panda was asked to bind rather
+  // than create". This file took `extra[0]` raw, so driven side by side:
+  //
+  //   project init ./nope              exit 2, nothing created
+  //   project swap ./nope              exit 0, CREATED ./nope/.panda/
+  //   project swap ../../../../ESCAPE  exit 0, wrote outside the tree entirely
+  //
+  // The refusal its siblings print — "panda binds an existing directory and
+  // never creates one" — was a guarantee one verb did not keep. It also resolves
+  // the path, so what is reported afterwards is absolute like every sibling's
+  // rather than the relative string the user typed, which is what made a typo
+  // impossible to locate.
+  let projectDir: string
+  try {
+    projectDir =
+      scope === 'project' ? await scopeDirectory('the project directory', requestedDir) : requestedDir
+  } catch (error) {
+    err(describe(error))
+    return 2
+  }
 
   // WHAT THIS VALIDATES MUST MEAN THE SAME THING WHERE IT IS STORED.
   //

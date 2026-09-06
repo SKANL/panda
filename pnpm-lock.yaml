@@ -57,9 +57,6 @@ importers:
 
   packages/cli:
     dependencies:
-      '@skanl/panda-contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@skanl/panda-environment':
         specifier: workspace:*
         version: link:../environment
@@ -67,6 +64,9 @@ importers:
         specifier: workspace:*
         version: link:../session
     devDependencies:
+      '@skanl/panda-contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3

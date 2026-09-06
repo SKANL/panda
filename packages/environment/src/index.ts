@@ -66,6 +66,18 @@ export { BUNDLE_KIND, BUNDLE_VERSION, OMITTED_FIELDS, createBundle, isCredential
 export type { OmittedEntry, OmittedField, RegistryBundle } from '@skanl/panda-registry'
 export {
   DRIFT_KINDS,
+  // `panda --version`'s value, re-exported for the same reason every other
+  // constant on this list is: `@skanl/panda-cli` is a THIN BINDING on the
+  // consumer tier, pinned by `packages/cli/test/run.test.ts` to
+  // `@skanl/panda-environment` and `@skanl/panda-session` and nothing else.
+  // M37.B put `import { PANDA_VERSION } from '@skanl/panda-contracts'` at the top
+  // of `run.ts` and the pin's own comment records the premise that broke:
+  // "contracts moved to devDependencies once `describe()` stopped needing
+  // `instanceof PandaError`: the shipped CLI imports only consumer-tier
+  // packages". It did not any more, and the manifest and the import disagreed
+  // for a whole milestone -- the published binary importing a package it did not
+  // declare, which starts only because npm hoists the tree flat.
+  PANDA_VERSION,
   REGISTRY_ENTRY_TYPES,
   REMEDIATION_KINDS,
   REMOVABLE_ENTRY_TYPES,
