@@ -58,6 +58,16 @@ export const FAKE = {
   // is what said so.
   google: fixture('AIza', 'SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q'),
   gitlab: fixture('glpat', '-Ab3dEfGh1jKlMn0pQrSt'),
+  // The three shapes an adversarial pass drove through `panda export` and
+  // watched TRAVEL with `omitted: []`. Each is DOT- or DASH-structured, which is
+  // why the generic rule cannot see them: `OPAQUE_TOKEN`'s alphabet is
+  // `[A-Za-z0-9_-]`, so one `.` splits a 40-character run into two 20s and the
+  // 32-character floor is never reached.
+  jwt: fixture('eyJ', 'hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.Ab3dEfGh1jKlMn0pQrStUvWxYz123456'),
+  sendgrid: fixture('SG.', 'Ab3dEfGh1jKlMn0pQrStUv.Ab3dEfGh1jKlMn0pQrStUvWxYz1234567890abcde'),
+  // A header, not a key: the marker is what the pattern matches, and no private
+  // material has to exist on disk for the row to be real.
+  pem: fixture('-----BEGIN ', 'RSA PRIVATE KEY-----'),
 } as const
 
 describe('the secret detector', () => {
@@ -83,6 +93,26 @@ describe('the secret detector', () => {
     ['a raw hex token with no prefix', 'a3f9c1e7b25d48f0a9c3e1b7d5f2a8c4'],
     ['a base64-ish token', 'Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg'],
     ['a flag and its token in one argument', '--api-key=9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c'],
+    // DOT-STRUCTURED CREDENTIALS. An adversarial pass drove all three through
+    // the real `panda export` and each one TRAVELLED with `omitted: []`, so the
+    // command reported that nothing was left out. They are caught by
+    // PREFIX-CERTAIN patterns rather than by widening `OPAQUE_TOKEN`'s alphabet
+    // to include `.`, and that choice was measured: the three NOT_CREDENTIALS
+    // rows added below this corpus — a versioned release filename, a hostname
+    // carrying a digit, a reverse-DNS identifier — all carry letters AND digits
+    // across 32+ characters, so a widened alphabet reads every one of them as a
+    // secret and DROPS a user's entry. `eyJ`, `SG.` and the PEM marker cannot
+    // do that: they are the value announcing itself.
+    ['a JWT', FAKE.jwt],
+    ['a SendGrid key', FAKE.sendgrid],
+    ['a PEM private key block', FAKE.pem],
+    // URL PARTS THE PARSER WAS NEVER ASKED ABOUT. M34.A asked `new URL()` for
+    // userinfo, query values and the LAST path segment, and its own comment
+    // called the rest of the path "structure". Measured against real hosted MCP
+    // endpoints, that is false: `https://host/<token>/sse` and `.../mcp` are the
+    // ordinary shape, and `#access_token=` is the OAuth implicit-flow shape.
+    ['a token in a URL fragment', `https://mcp.example/x#access_token=${OPAQUE_32}`],
+    ['a token in a middle path segment', `https://mcp.example/${OPAQUE_32}/sse`],
   ]
 
   const NOT_CREDENTIALS: readonly (readonly [string, string])[] = [
@@ -108,6 +138,16 @@ describe('the secret detector', () => {
     ['a sha256 digest', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
     ['an OCI digest', 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
     ['a long numeric id', '123456789012345678901234567890123456'],
+    // THE PRICE OF THE OBVIOUS FIX, pinned so nobody pays it later. Widening
+    // `OPAQUE_TOKEN` to admit `.` is what catches a JWT by shape instead of by
+    // prefix, and each of these three is 32+ characters carrying BOTH letters
+    // and digits — the generic rule's exact criteria — so that widening reads
+    // all three as secrets and DROPS the entry carrying them. Every one is an
+    // ordinary argv value. This is why the dotted shapes above are caught by
+    // prefix-certain patterns instead.
+    ['a versioned release filename', 'some-mcp-server-v2.0.1-linux-x64.tar.gz'],
+    ['a hostname carrying a digit', 'mcp-gateway-v2.internal.example.com'],
+    ['a reverse-DNS identifier', 'com.example.tooling.mcp.Handler2026'],
   ]
 
   it.each(CREDENTIALS)('detects %s', (_label, value) => {

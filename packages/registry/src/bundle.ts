@@ -130,6 +130,24 @@ const PROVIDER_PATTERNS: readonly RegExp[] = [
   /\bAKIA[0-9A-Z]{16}\b/, // AWS access key id
   /\bAIza[0-9A-Za-z_-]{35}\b/, // Google
   /\bglpat-[A-Za-z0-9_-]{20,}/, // GitLab
+  // DOT-STRUCTURED CREDENTIALS, and they are here rather than in the generic
+  // rule for a measured reason. `OPAQUE_TOKEN`'s alphabet is `[A-Za-z0-9_-]`,
+  // so a single `.` splits a 40-character secret into two 20s and the
+  // 32-character floor is never reached — a JWT, a SendGrid key and a PEM block
+  // all TRAVELLED through `panda export` with `omitted: []`, which is worse than
+  // no detector because the user reads that as a clean bill and shares the
+  // bundle.
+  //
+  // The obvious fix is to admit `.` into the alphabet. MEASURED AND REFUSED: a
+  // versioned release filename, a hostname carrying a digit and a reverse-DNS
+  // identifier are each 32+ characters with BOTH letters and digits, so the
+  // widened rule reads all three as secrets and DROPS the entry carrying them.
+  // All three are pinned in `NOT_CREDENTIALS`. These three patterns cost
+  // nothing instead, because each is the value ANNOUNCING ITSELF: `eyJ` is
+  // base64url for `{"`, so a JWT header cannot begin any other way.
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/, // JWT
+  /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/, // SendGrid
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/, // any PEM private key block
 ]
 
 /**
@@ -189,9 +207,25 @@ function urlBorneSecrets(value: string): readonly string[] {
   if (url.username !== '') parts.push(url.username)
   if (url.password !== '') parts.push(url.password)
   for (const [, queryValue] of url.searchParams) parts.push(queryValue)
-  const segments = url.pathname.split('/').filter((segment) => segment !== '')
-  const last = segments[segments.length - 1]
-  if (last !== undefined) parts.push(last)
+  // EVERY path segment, not just the last. The comment above used to call the
+  // rest of the path "structure", and measured against real hosted MCP
+  // endpoints that is false: `https://host/<token>/sse` and `.../mcp` are the
+  // ordinary shape, so the token sits in the middle and the suffix is the
+  // structure. Widening costs nothing, because each part is still put to
+  // `OPAQUE_TOKEN` — `sse`, `mcp`, `v1` and `panda.git` are far under its
+  // 32-character floor, which is why the legitimate-URL rows in the corpus stay
+  // clean.
+  for (const segment of url.pathname.split('/')) if (segment !== '') parts.push(segment)
+  // THE FRAGMENT, which nothing had ever asked for. `#access_token=…` is the
+  // OAuth implicit-flow shape, and it never reaches the server — which is
+  // exactly why a token put there is easy to forget is a token. Read as
+  // parameters first, then whole, so both `#access_token=x` and a bare `#x`
+  // are covered.
+  if (url.hash.length > 1) {
+    const fragment = url.hash.slice(1)
+    for (const [, fragmentValue] of new URLSearchParams(fragment)) parts.push(fragmentValue)
+    parts.push(fragment)
+  }
   return parts
 }
 
