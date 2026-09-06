@@ -9,3 +9,9 @@ graphify-out/
 # Package-local test scratch dirs (e.g. packages/*/test/__scratch/): the root
 # .scratch/ rule does not reach them, and a probe left behind turns the gate red.
 **/__scratch/
+
+# `pnpm publish --report-summary` writes this at the repository root, and it does
+# so on a DRY RUN too -- measured, which is how it first appeared here. It is a
+# release artifact (shasum, integrity and every packed path for all thirteen),
+# useful in a CI log and never something a commit should carry.
+pnpm-publish-summary.json

@@ -82,8 +82,29 @@ jobs:
       # never read. `--report-summary` writes `pnpm-publish-summary.json`, which
       # is the only durable record of WHICH packages landed when a run aborts
       # partway; without it a partial publish leaves evidence only in the log.
+      # `--tag latest` is written out on purpose, and it is not decoration.
+      # It was the UNEXAMINED DEFAULT of `pnpm publish -r` -- `--tag` appeared
+      # nowhere in this repository (control: `--access`, `--provenance`,
+      # `--report-summary` and `--no-git-checks` all appear on this line) -- and
+      # it sat on the same line where another unexamined default had just been
+      # measured to fail in silence. Two position papers argued the alternative.
+      #
+      # WHY `latest` AND NOT `next`, measured rather than assumed: `--tag next`
+      # does not gate an npm consumer at all. Driven through npm 11's own bundled
+      # `npm-pick-manifest@11.0.3`, a packument whose ONLY dist-tag is `next`
+      # still RESOLVES 0.1.0 for a bare `npm i <pkg>`, because a tagless install
+      # becomes the range `*` and falls through the missing default tag to sort
+      # versions. Control: the same packument under `latest` resolves
+      # identically. Only a PRERELEASE VERSION hides it -- `0.1.0-rc.1` under
+      # `next` throws ETARGET -- and that is a version change, which this
+      # release's spec puts out of scope.
+      #
+      # So `next` would gate pnpm users only, make `npm i -g @skanl/panda-cli`
+      # false on the pages it ships inside every tarball, and burn the same
+      # thirteen names at the same version anyway. It buys nothing on the one
+      # axis ROADMAP-03 calls irreversible.
       - name: Publish
-        run: pnpm publish -r --access public --no-git-checks --provenance --report-summary
+        run: pnpm publish -r --access public --no-git-checks --provenance --report-summary --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -93,19 +114,4 @@ jobs:
       # Reads the registry rather than the publish log, because the log is what
       # was already trusted.
       - name: The published packages actually carry provenance
-        run: |
-          for name in $(node -e "
-            const {readdirSync,readFileSync}=require('node:fs')
-            for (const d of readdirSync('packages')) {
-              try { console.log(JSON.parse(readFileSync('packages/'+d+'/package.json','utf8')).name) } catch {}
-            }
-          "); do
-            if ! npm view "$name@$(node -p "require('./packages/contracts/package.json').version")" --json \
-              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
-                  const m=JSON.parse(s)
-                  if (!m?.dist?.attestations?.provenance) { console.error('no provenance: '+m.name); process.exit(1) }
-                  console.log('provenance ok: '+m.name)
-                })"; then
-              exit 1
-            fi
-          done
+        run: node scripts/assert-provenance.mjs
