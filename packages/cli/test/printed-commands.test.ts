@@ -40,8 +40,13 @@ const NOT_A_COMMAND = new Map<string, string>([
   ["panda does not persist a '<value>' setting; it writes <value>", 'the config writer refusing a key outside its allowlist'],
   ["panda could not load the method '<value>': <value>", 'the method resolver refusing a module specifier it could not import or validate'],
   ['panda project <verb> [directory]', 'the project GRAMMAR, same placeholder'],
-  ['panda <value> needs an entry type: <value>', 'a usage error whose verb came from argv the dispatcher had already accepted'],
-  ['panda <value> needs the id of the <value> entry', 'the same usage error, for a missing id'],
+  // `verbAt`'s two branches. They are the only place the machine and project
+  // grammars are spelled, and neither is dispatchable on its own — the verb
+  // arrives from argv the dispatcher has already accepted. Every sentence built
+  // on them is DRIVEN instead, at both scopes, by `test/scope-grammar.test.ts`,
+  // which is stronger than a scan: it reads what the binary actually said.
+  ['panda <value>', 'the machine branch of `verbAt`, with a placeholder where the verb goes'],
+  ['panda project <value>', 'the project branch of the same helper'],
   ['panda run ... | head', 'a SHELL PIPELINE in a comment about EPIPE, not an argv'],
   ['panda has no registry document at \'<value>\'', 'doctor\'s not-initialised detail'],
   ['panda would rewrite \'<value>\' and the location is not writable', 'doctor\'s not-writable detail'],

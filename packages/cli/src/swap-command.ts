@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { resolve, sep as SEP } from 'node:path'
 
 import { scopeDirectory, setConfigValue } from '@skanl/panda-environment'
+import { verbAt } from './registry-commands.ts'
 import { resolveExecutor, resolveMethod } from '@skanl/panda-session'
 
 // `panda swap <noun> <id>` — the verb that WRITES a selection.
@@ -75,13 +76,13 @@ export async function runSwap(
 ): Promise<number> {
   const noun = tokens[0]
   if (!isSwapNoun(noun)) {
-    err(`panda swap needs one of: ${SWAP_NOUNS.join(', ')}`)
+    err(`${verbAt(scope, 'swap')} needs one of: ${SWAP_NOUNS.join(', ')}`)
     err(usage)
     return 2
   }
   const requested = tokens[1]
   if (requested === undefined || requested.trim().length === 0) {
-    err(`panda swap ${noun} needs the id to select`)
+    err(`${verbAt(scope, 'swap')} ${noun} needs the id to select`)
     err(usage)
     return 2
   }

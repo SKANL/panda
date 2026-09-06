@@ -43,6 +43,7 @@ import {
   runImportCommand,
   runIngestCommand,
   runRegistryCommand,
+  verbAt,
   type RegistryVerb,
 } from './registry-commands.ts'
 import { SWAP_NOUNS, runSwap } from './swap-command.ts'
@@ -970,7 +971,13 @@ function parseRemediateTokens(
     return { usageError: `unexpected argument '${token}'` }
   }
   if (remediation === undefined) {
-    return { usageError: `panda remediate needs a remediation: ${REMEDIATION_KINDS.join(', ')}` }
+    // `maxPositionals` IS the scope here — the project form takes a directory
+    // and the machine form takes none, which the comment above already says.
+    // Reading it is what stops this sentence naming a verb that acts on the
+    // other registry.
+    return {
+      usageError: `${verbAt(maxPositionals === 2 ? 'project' : 'machine', 'remediate')} needs a remediation: ${REMEDIATION_KINDS.join(', ')}`,
+    }
   }
   return { remediation, executorId, entryId, directory, apply }
 }

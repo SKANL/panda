@@ -174,13 +174,31 @@ function acceptedTypes(verb: RegistryVerb): readonly StoredEntryType[] {
  * error about the command line — the user has not named an entry yet — while
  * everything about the entry ITSELF is the contract's to answer.
  */
+/**
+ * The verb a user at THIS scope can actually run.
+ *
+ * `panda project add` with no type answered `panda add needs an entry type`. The
+ * verb was right and the grammar was not: at project scope `panda add` is a
+ * different command against a different registry, so the sentence named
+ * something that would act on the wrong one. `scope` was already a parameter at
+ * every one of these sites and was simply not read.
+ *
+ * Two spellings rather than one interpolation, so the printed-command invariant
+ * sees a real verb in each — the same shape `doctor.ts` uses for its exits.
+ */
+export function verbAt(scope: 'machine' | 'project', verb: string): string {
+  return scope === 'machine' ? `panda ${verb}` : `panda project ${verb}`
+}
+
 function readType(
   verb: RegistryVerb,
   token: string | undefined,
   scope: 'machine' | 'project',
 ): StoredEntryType | { usageError: string } {
   const accepted = acceptedTypes(verb)
-  if (token === undefined) return { usageError: `panda ${verb} needs an entry type: ${knownTypes()}` }
+  if (token === undefined) {
+    return { usageError: `${verbAt(scope, verb)} needs an entry type: ${knownTypes()}` }
+  }
   const found = accepted.find((candidate) => candidate === token)
   if (found === undefined) {
     // A retired word reaching `add` gets the sentence that is USEFUL rather than
@@ -293,7 +311,7 @@ export async function runRegistryCommand(
   }
   const id = parsed.positionals[1]
   if (id === undefined) {
-    err(`panda ${verb} needs the id of the ${type} entry`)
+    err(`${verbAt(scope, verb)} needs the id of the ${type} entry`)
     err(context.defaultUsage)
     return 2
   }
@@ -347,7 +365,7 @@ async function performAdd(
   )
   err(`registered: ${describeEntry(bound.registryScope, entry)}`)
   err(`stored in '${bound.registryPath}'`)
-  for (const line of deliveryLines(entry, delivery)) err(line)
+  for (const line of deliveryLines(entry, delivery, bound.scope)) err(line)
   return 0
 }
 
@@ -357,7 +375,11 @@ async function performAdd(
  * this entry at this scope, the targets' own refusals where it found none, and
  * the other scope when that one would take it.
  */
-function deliveryLines(entry: RegistryEntry, delivery: EntryDelivery): string[] {
+function deliveryLines(
+  entry: RegistryEntry,
+  delivery: EntryDelivery,
+  scope: 'machine' | 'project',
+): string[] {
   const lines: string[] = []
   if (delivery.undetermined !== undefined) {
     // No claim about delivery is made, because none was established. The
@@ -390,7 +412,12 @@ function deliveryLines(entry: RegistryEntry, delivery: EntryDelivery): string[] 
       `NOTHING TAKES IT, ANYWHERE: an mcp-server with no command renders into nothing — on every executor and at every scope, not just this one`,
     )
     lines.push(
-      `the entry is registered and stays listed by \`panda list\`; give it a command with \`panda add mcp-server ${entry.id} --command <c>\`, which updates this entry in place`,
+      // THE SHARPEST OF THIS CLASS. Printed at project scope, the machine
+      // spelling of add-with-a-command does not update this entry — it creates a
+      // SECOND one, in the MACHINE registry, and the sentence promising "in
+      // place" is what sends the user there. (Spelled out, that sentence wrapped
+      // across two lines and the unclosed-command guard refused it. Describe.)
+      `the entry is registered and stays listed by \`${verbAt(scope, 'list')}\`; give it a command with \`${verbAt(scope, 'add')} mcp-server ${entry.id} --command <c>\`, which updates this entry in place`,
     )
     return lines
   }
@@ -407,12 +434,12 @@ function deliveryLines(entry: RegistryEntry, delivery: EntryDelivery): string[] 
     // Said rather than left blank: a target that skips an entry without a reason
     // has given panda nothing to pass on, and inventing one here is the failure
     // the headline above was just corrected for.
-    lines.push(`  no target said why; \`panda doctor\` reports what each one would do`)
+    lines.push(`  no target said why; \`${verbAt(scope, 'doctor')}\` reports what each one would do`)
   }
   const elsewhere = delivery.elsewhere
   if (elsewhere === undefined) {
     lines.push(
-      `no other scope takes it either; it stays in the registry, listed by \`panda list\`, and removable with \`panda remove\``,
+      `no other scope takes it either; it stays in the registry, listed by \`${verbAt(scope, 'list')}\`, and removable with \`${verbAt(scope, 'remove')}\``,
     )
     return lines
   }
@@ -512,7 +539,7 @@ async function runList(
       ),
     )
     if (rows.length === 0) {
-      err(`the registry is empty; \`panda add <type> <id>\` puts an entry in it`)
+      err(`the registry is empty; \`${verbAt(scope, 'add')} <type> <id>\` puts an entry in it`)
       return 0
     }
     for (const row of rows) err(describeEntry(row.scope, row.entry))
