@@ -126,6 +126,29 @@ node --conditions=panda-source packages/cli/bin/panda.ts <args>   # drive the bi
 - **A test that BETS instead of forcing its precondition** fails when it should
   not AND passes when it should not. Force the ordering; never `void` a promise a
   later step awaits.
+- **A gate that OVER-FIRES is worse than no gate.** One built here flagged 15
+  strings, several of them examples inside doc comments its scanner could not
+  tell from printed output. The only way to green was an exemption list tuned
+  until the run passed, which is a gate that checks nothing. It was reverted for
+  a DRIVEN clause that executes the command panda printed — a comment cannot fool
+  that one.
+- **A test can pass for the wrong reason, and the reason is usually that it
+  measured too much.** A clause meant to check one printed exit collected every
+  command in the whole report and ran them all; one of them worked, so it went
+  green over a live defect. Isolate the thing under test, and give the clause a
+  control that the state it needs actually existed.
+- **A test that LITTERS on its red run is a test you have to run to believe.**
+  One made the unfixed binary write inside this repository, and `git status`
+  stayed clean because the only content was a gitignored directory and git does
+  not track an empty one. "Nothing was created" read true while it was false.
+- **A mutation that breaks the BUILD proves nothing.** Deleting a line can leave
+  a syntax error, and a harness that counts any red as a kill will report a
+  guarantee it never tested. Mutate by REPLACING, keep the file compiling, and
+  make the harness say "red with no test count" instead of "detected".
+- **When shell quoting eats a measurement, stop quoting.** It cost four
+  measurements in one session — a mutation driver, a `find`, an MSYS path and a
+  needle with escaped backticks — before every driver became a script under
+  `.scratch/`. The rule is not "quote more carefully".
 - **`git stash push -- <file>`, re-run the binary, read the output, `stash pop`**
   is the cheapest proof a fix is not theatre.
 - Verify a generated line with `cat -v`. Escaping bugs here are silent, and a

@@ -261,6 +261,83 @@ and `ls -d packages/*/` returns 13 — it omitted `lock`, `memory-filesystem` an
 the file that tells an agent what is true here, and it was wrong about the shape
 of the repository it governs.
 
+### 8 — the SECOND audit pass found seven more, and one of them was mine
+
+The owner held the tag on a RATE argument, not a readiness one, and the rate did
+not fall. A second pass over ground no earlier pass had touched — the binary
+driven verb by verb, an adversarial security review of what publishing exposes
+permanently, and the SDK surface from a consumer's seat — returned seven
+blocking defects. Each shipped with a gate and CI green against its own SHA.
+
+1. **`panda export` shipped credentials while reporting `omitted: []`.** A JWT, a
+   SendGrid key, a PEM block, a token in the MIDDLE of a URL and one in the
+   FRAGMENT all travelled. `OPAQUE_TOKEN`'s alphabet is `[A-Za-z0-9_-]`, so one
+   interior `.` splits a 40-character secret into two 20s and the 32-character
+   floor is never reached; `Authorization: Basic` was caught while `Bearer` was
+   not, which is a character-class accident rather than a policy. Fixed with
+   PREFIX-CERTAIN patterns after the obvious widening was measured and REFUSED —
+   admitting `.` reads a versioned release filename and a reverse-DNS identifier
+   as secrets, and a false positive DROPS a user's entry. `urlBorneSecrets` now
+   reads every path segment and the fragment.
+2. **`PANDA_VERSION` threw at IMPORT inside any bundle**, taking 12 of 13
+   packages down. Two position papers argued build-time generation against a
+   lazy typed absence and both concluded AGAINST THEMSELVES in the same
+   direction; a literal pinned by `versions.test.ts` is where both arrived. The
+   walk's own justification was also false: this package's `dist` is FLAT.
+3. **The published binary imported a package it did not declare.** One manifest
+   line — and MY FIRST FIX WAS THE WRONG DIRECTION. I moved the manifest to
+   match the import; `packages/cli/test/run.test.ts` refused it, correctly, and
+   that commit went RED IN CI. The CLI is a thin binding pinned to the consumer
+   tier; the manifest was right and the IMPORT was wrong. `PANDA_VERSION` now
+   comes through `@skanl/panda-environment`. I had not read that package's guard
+   test before changing its manifest, which is the instruction AGENTS.md repeats
+   most.
+4. **`panda project swap` created directories its siblings refuse**, and followed
+   `../../..` outside the tree, while `project init` and `project add` both exit
+   2 saying "panda binds an existing directory and never creates one".
+5. **`panda project doctor` named exits that answer about the machine.**
+   `FINDING_EXITS` is a `Record` with one command per kind and no scope axis.
+6. **Nine CLI usage errors and delivery lines named the machine verb at project
+   scope.** The sharpest was not a usage error: `panda add mcp-server <id>
+   --command <c>`, printed as "updates this entry in place", creates a SECOND
+   entry in the MACHINE registry when run there.
+7. **The `adopt` consequence sentence named the wrong `init`**, and nothing
+   asserted it — `rg "REPLACES what is there"` over every `test/` returns
+   nothing against a control of one hit in `src`, which is why 343 projection
+   clauses stayed green through it.
+
+### 9 — three instruments of my own were wrong before the code was
+
+Recorded because the repository's rule is that a measurement instrument needs its
+own control, and mine kept failing it.
+
+- **A STRING GATE THAT OVER-FIRES IS WORSE THAN NONE.** I built one for the scope
+  class — a scope-sensitive verb must be printed in both grammars — and it fired
+  on 15 strings, several of them examples inside doc comments the scanner cannot
+  tell from printed output. Tuning an exemption list until a run goes green is a
+  gate that checks nothing. REVERTED, and replaced with a DRIVEN clause that
+  takes the command out of panda's own output and executes it.
+- **A TEST THAT PASSES FOR THE WRONG REASON.** That driven clause's first draft
+  collected every `panda …` in the whole report. The RESOLUTION half already
+  named both spellings while the EXIT half named only the machine one, so
+  running both fixed the project and HID the defect. It now isolates the sentence
+  `FINDING_EXITS` renders, and carries a control that the state existed at all.
+- **A TEST THAT CAUSED A DEFECT WHILE RED.** Its first draft made the unfixed
+  binary create `<repo>/ESCAPED-BY-A-TYPO/.panda/` inside this repository, and
+  `git status` stayed CLEAN — `.panda/` is gitignored and git does not track an
+  otherwise-empty directory. My "nothing was created" check read true when it was
+  false.
+- **A MUTATION THAT BREAKS SYNTAX PROVES NOTHING.** One falsification run
+  reported ROJO with no count; it was a compile error, not a behavioural kill.
+  The harness now says which it got instead of counting the wrong one.
+- **SHELL QUOTING ATE FOUR MEASUREMENTS** — a mutation driver, a `find`, an MSYS
+  path and a needle with escaped backticks. The repository already records this
+  and prescribes writing the driver as a script; I relearned it four times in one
+  session before doing so consistently.
+- **A SCANNER OVER RAW SOURCE READS COMMENTS**, twice more here: a sentence
+  spelling an import broke `topology.test.ts`, and a sentence spelling a command
+  broke the unclosed-command guard. Describe the example; never write it out.
+
 ### 6 — the release workflow asked for provenance in a way pnpm never reads
 
 **The finding that stopped the tag.** `release.yml:69` set
