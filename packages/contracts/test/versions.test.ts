@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { isSemver } from '../src'
+import { PANDA_VERSION, isSemver } from '../src'
 
 const packagesDir = join(import.meta.dirname, '..', '..')
 
@@ -87,6 +87,16 @@ describe('the Contracts version together (NFR-8)', () => {
   it('carries one valid semver across every manifest', () => {
     const versions = packages.map((name) => [name, manifestOf(name).version] as const)
     expect(versionDisagreements(versions)).toEqual([])
+  })
+
+  it('says the same version the manifests do', () => {
+    // `PANDA_VERSION` is a LITERAL since the `readFileSync` walk it replaced
+    // threw at import inside any bundle, taking 12 of 13 packages down with it.
+    // A literal without this clause would be the defect the walk was avoiding —
+    // a fourteenth place the number lives and nothing checking it — so the
+    // clause is the whole justification for the literal. Bump the manifests and
+    // forget the constant and this reddens naming both values.
+    expect(PANDA_VERSION).toBe(manifestOf('contracts').version)
   })
 
   it('keeps every package PUBLISHABLE, because publishing is a decision that was taken', () => {

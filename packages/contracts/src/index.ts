@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 export { PandaError, PANDA_ERROR_CODES, type PandaErrorCode } from './errors.ts'
 export {
   type StandardSchemaIssue,
@@ -163,53 +160,48 @@ export {
 } from './contract-suite/index.ts'
 
 /**
- * The version all thirteen packages carry, read from this package's manifest.
+ * The version all thirteen packages carry.
  *
- * WHY HERE. `panda --version` is what needs it, and `@skanl/panda-cli` is FORBIDDEN to
- * read files at all -- eslint's thin-binding pin, whose comment records that a
- * reviewer once planted a whole executor-selection capability inside `run.ts`
- * and the entire gate stayed green, because owning it needed only `node:fs` and
- * no new import specifier. The blunt rule is the point, so the CLI is not where
- * this can live. `@skanl/panda-environment` was tried next and its OWN guard test
- * refused it: that package may import `mkdir` and `stat` from the filesystem and
- * nothing else. Both refusals are correct, and they are why this sits in the one
- * package that owns version VOCABULARY -- `STORE_VERSION`, `BUNDLE_VERSION`,
- * `PROJECTION_LEDGER_VERSION` are all here, and so is the lockstep gate in
- * `test/versions.test.ts` that makes one package's version answer for all of
- * them.
+ * WHY HERE, unchanged and still true. `panda --version` is what needs it, and
+ * `@skanl/panda-cli` is FORBIDDEN to read files at all — eslint's thin-binding
+ * pin. `@skanl/panda-environment` was tried next and its OWN guard test refused
+ * it: that package may import `mkdir` and `stat` from the filesystem and nothing
+ * else. Both refusals are correct, and they are why this sits in the one package
+ * that owns version VOCABULARY — `STORE_VERSION`, `BUNDLE_VERSION` and
+ * `PROJECTION_LEDGER_VERSION` are all here.
  *
- * THE COST, stated rather than hidden: `@skanl/panda-contracts` is the SDK leaf a port
- * author installs alone, and it now performs one synchronous read at import.
- * That is microseconds against NFR-9's 300ms cold-start budget, and it is a
- * genuine widening of what this package does at load time. The alternative was
- * widening an architectural pin for a convenience, which is the worse trade.
+ * WHY A LITERAL, and it replaces a `readFileSync` walk that ran at IMPORT time.
+ * Any bundler collapses `import.meta.url` to the bundle's own path, the walk
+ * found nothing, and the module THREW — not on `--version`, but on `import`.
+ * Measured with two independent bundlers over every package entry point: 12 of
+ * 13 died on a bare import of the package by name, and the survivor was
+ * `@skanl/panda-kernel`, which AD-1 forbids from importing this package at all.
+ * (That sentence used to SPELL the import, and `topology.test.ts` read it as a
+ * real specifier and failed — a scanner over raw source reads comments too, for
+ * the third time in this repository. Describe the example, never write it out.)
+ * A bundled panda could not print its own HELP TEXT. For a project whose PRD
+ * says it "ships as an SDK first: a headless kernel usable from any project",
+ * that is every serverless, Next.js server and Electron main bundle.
  *
- * WALKED rather than a fixed relative path, and that was measured: the two
- * layouts this module runs in sit at different depths -- `src/` in development,
- * `dist/src/` in the published tarball -- so a single `../package.json` resolves
- * to the manifest in exactly one of them and to `dist/package.json`, a file no
- * tarball carries, in the other. The wrong one is the one a USER gets.
+ * TWO POSITION PAPERS argued build-time generation against a lazy typed absence,
+ * and both concluded against themselves in the same direction: generation is
+ * net-new codegen machinery in a repo that has none, and laziness RELOCATES the
+ * failure rather than removing it — a bundled `--version` would answer
+ * "unavailable", which is honest and is not an answer. A literal is what both
+ * arrived at, and it costs no exported type, no new file and no build step.
+ *
+ * IT IS NOT A SECOND SOURCE OF TRUTH, which is the objection `versions.test.ts`
+ * raises against a thirteenth file holding the version. It is a fourteenth place
+ * the number appears, and it is PINNED: that suite asserts this constant equals
+ * this package's own manifest, so a bump that forgets it reddens by name. The
+ * number without the gate would be the defect; the gate is the point.
+ *
+ * AND THE WALK'S OWN JUSTIFICATION WAS FALSE, which is why removing it costs
+ * nothing. Its comment claimed "the two layouts this module runs in sit at
+ * different depths — `src/` in development, `dist/src/` in the published
+ * tarball". Measured: `tsconfig.build.json` is `rootDir: src, outDir: dist`, so
+ * this package's built output is FLAT (`dist/index.js`), one directory below the
+ * manifest in both layouts. The four-level walk was bought to solve a depth
+ * difference that does not exist.
  */
-function readOwnVersion(): string {
-  let dir = dirname(fileURLToPath(import.meta.url))
-  for (let up = 0; up < 4; up += 1) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-        name?: string
-        version?: string
-      }
-      if (manifest.name === '@skanl/panda-contracts' && typeof manifest.version === 'string') {
-        return manifest.version
-      }
-    } catch {
-      // Not here, or not readable: keep walking.
-    }
-    dir = dirname(dir)
-  }
-  // Loud rather than a plausible '0.0.0'. A version this cannot find is a
-  // packaging defect, and inventing one hides it behind a number a user quotes
-  // into a bug report.
-  throw new Error('@skanl/panda-contracts could not read its own version from any package.json above this module')
-}
-
-export const PANDA_VERSION: string = readOwnVersion()
+export const PANDA_VERSION = '0.1.0'
