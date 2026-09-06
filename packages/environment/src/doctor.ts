@@ -10,7 +10,7 @@ import type {
   RemediationKind,
 } from '@skanl/panda-contracts'
 import type { ExecutorDetection } from './executors.ts'
-import { noExecutorsDetected, runScope, scopeDirectory } from './init.ts'
+import { noExecutorsDetected, projectCommandFor, runScope, scopeDirectory } from './init.ts'
 import type {
   LegacyBlock,
   RetiredEntry,
@@ -351,11 +351,32 @@ export function findingKindsFor(remediation: RemediationKind): DiagnosisFindingK
  * the command the product prints and the command the capability accepts are one
  * string, and a remediation renamed upstream renames itself here.
  */
-function exitSentence(kind: DiagnosisFindingKind, command?: string): string {
+function exitSentence(
+  kind: DiagnosisFindingKind,
+  /**
+   * WHICH STATE THE EXIT HAS TO LEAVE. `FINDING_EXITS` is a
+   * `Record<DiagnosisFindingKind, FindingExit>` with ONE command per kind and no
+   * scope axis, so every exit was rendered in the machine grammar. Driven at
+   * project scope: `panda project doctor` reported an `edited` finding and named
+   * `panda remediate adopt`, which exits 1 with
+   * `PANDA_PROJECTION_REMEDIATION_REFUSED` — panda never remediates a state it
+   * did not just report, and the machine scope reported none. The command that
+   * works was never printed.
+   *
+   * The verb is spelled twice rather than interpolated, because that is what
+   * makes the printed-command invariant see a real verb in each — the same shape
+   * `retired-type` arrived at 300 lines below, after it printed
+   * `panda project remove` for a global entry.
+   */
+  scope: 'machine' | 'project',
+  command?: string,
+): string {
   const exit = FINDING_EXITS[kind]
   if (exit.by === 'remediation') {
     return `To LEAVE this state, name it: ${exit.remediations
-      .map((remediation) => `\`panda remediate ${remediation}\``)
+      .map((remediation) =>
+        scope === 'machine' ? `\`panda remediate ${remediation}\`` : `\`panda project remediate ${remediation}\``,
+      )
       .join(' or ')}. ${exit.detail}`
   }
   // `command` is the SPELLING for this one finding, where the caller holds the
@@ -531,7 +552,25 @@ export function hasProblem(diagnosis: Diagnosis): boolean {
   return diagnosis.findings.some((found) => found.severity === 'problem')
 }
 
-function finding(
+/**
+ * `finding`, bound to the scope being diagnosed.
+ *
+ * A CLOSURE rather than a parameter on all fourteen call sites, and that is the
+ * point: every one of them is inside `findingsFor`, which holds
+ * `diagnosis.scope`, so binding it once makes a scope-blind exit impossible to
+ * write here rather than possible-but-discouraged.
+ */
+function findingIn(scope: 'machine' | 'project') {
+  return (
+    kind: DiagnosisFindingKind,
+    detail: string,
+    about: Omit<DiagnosisFinding, 'kind' | 'severity' | 'detail' | 'resolution'> = {},
+    command?: string,
+  ): DiagnosisFinding => buildFinding(scope, kind, detail, about, command)
+}
+
+function buildFinding(
+  scope: 'machine' | 'project',
   kind: DiagnosisFindingKind,
   detail: string,
   about: Omit<DiagnosisFinding, 'kind' | 'severity' | 'detail' | 'resolution'> = {},
@@ -546,7 +585,7 @@ function finding(
     severity: SEVERITY[kind],
     ...about,
     detail,
-    resolution: `${RESOLUTION[kind]} — ${exitSentence(kind, command)}`,
+    resolution: `${RESOLUTION[kind]} — ${exitSentence(kind, scope, command)}`,
   }
 }
 
@@ -628,6 +667,8 @@ async function findingsFor(
   retired: readonly RetiredEntry[],
   worktreeLeftovers: readonly WorktreeLeftover[],
 ): Promise<DiagnosisFinding[]> {
+  // Bound once, so no exit below can be rendered in the wrong grammar.
+  const finding = findingIn(diagnosis.scope)
   const findings: DiagnosisFinding[] = []
   if (registryError !== undefined) {
     findings.push(
@@ -643,9 +684,16 @@ async function findingsFor(
     // `panda project init` anywhere would otherwise make the machine scope read
     // as initialised forever — on the ordinary path, not an exotic one.
     findings.push(
-      finding('not-initialised', `panda has no registry document at '${diagnosis.registryPath}'`, {
-        filePath: diagnosis.registryPath,
-      }),
+      finding(
+        'not-initialised',
+        `panda has no registry document at '${diagnosis.registryPath}'`,
+        { filePath: diagnosis.registryPath },
+        // The override this parameter was built for. `FINDING_EXITS` holds
+        // `panda init`, and at project scope that command exits 0 and leaves the
+        // project uninitialised — driven, then asserted by running what doctor
+        // printed and asking doctor again.
+        projectCommandFor(diagnosis.scope),
+      ),
     )
   }
   for (const row of retired) {
@@ -755,6 +803,9 @@ async function findingsFor(
                 ? `the skills panda materialises under '${target.filePath}' differ from what projecting would produce`
                 : `the bytes in '${target.filePath}' differ from what projecting would produce`,
               at,
+              // Same override, same reason as `not-initialised`: this exit is
+              // "project again", and at project scope `panda init` is not that.
+              projectCommandFor(diagnosis.scope),
             ),
       )
     }

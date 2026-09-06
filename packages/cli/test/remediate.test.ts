@@ -38,6 +38,111 @@ async function editedEntry(): Promise<string> {
   return homeDir
 }
 
+/**
+ * THE COMMAND PANDA PRINTS IS RUN, not read.
+ *
+ * Every clause in `printed-commands.test.ts` asks whether a printed verb
+ * DISPATCHES, and `panda remediate` dispatches perfectly — it simply answers
+ * about the machine. At project scope panda was naming commands that exit 1 or
+ * do nothing:
+ *
+ *   project doctor on an edited entry  -> "`panda remediate adopt` or `panda remediate release`"
+ *                                         both exit 1, REMEDIATION_REFUSED
+ *   project doctor uninitialised       -> "`panda init`", which exits 0 and
+ *                                         leaves the project exactly as it was
+ *
+ * A string assertion would pin the spelling and prove nothing about the state.
+ * These take the command out of panda's own output and EXECUTE it.
+ */
+const PRINTED_COMMAND = /`(panda [^`]+)`/g
+
+function commandsPrintedIn(lines: readonly string[]): string[] {
+  return [...lines.join(' ').matchAll(PRINTED_COMMAND)]
+    .map((match) => match[1])
+    .filter((text): text is string => text !== undefined)
+    .map((text) => text.trim())
+}
+
+describe('a command panda prints at project scope resolves the project', () => {
+  /**
+   * THE EXIT, not any command in the paragraph.
+   *
+   * The first draft of this clause collected every `panda …` in the whole report
+   * and ran them all — and it PASSED, because the RESOLUTION half already names
+   * both spellings ("`panda init` (or `panda project init`) creates panda's
+   * state here") while the EXIT half, the sentence a user acts on, named only
+   * the machine one. Running both fixed the project and hid the defect. The
+   * clause has to isolate the sentence `FINDING_EXITS` renders.
+   */
+  const exitCommandsIn = (report: string): string[] => {
+    const sentence = report.split('To leave this state:')[1] ?? ''
+    return commandsPrintedIn([sentence.split('. ')[0] ?? ''])
+  }
+
+  it('names an init that actually initialises the project it was asked about', async () => {
+    const homeDir = await tempCwd()
+    const projectDir = await tempCwd()
+
+    const reported = capture()
+    await runPanda(['project', 'doctor', projectDir], { ...reported, homeDir })
+    const report = [...reported.out, ...reported.err].join('\n')
+    // CONTROL: the state this clause needs must be reported, or the assertion
+    // below passes by measuring an empty report.
+    expect(report, 'doctor did not report not-initialised, so this clause tested nothing').toContain(
+      'not-initialised',
+    )
+    const named = exitCommandsIn(report)
+    expect(named.length, `doctor named no exit:\n${report}`).toBeGreaterThan(0)
+
+    // Run exactly what the exit named, then ask doctor again. The finding has to
+    // be gone — which is the only thing "an exit" can honestly mean.
+    for (const text of named) {
+      const ran = capture()
+      await runPanda(text.split(' ').slice(1), { ...ran, homeDir, cwd: projectDir })
+    }
+    const after = capture()
+    await runPanda(['project', 'doctor', projectDir], { ...after, homeDir })
+    expect(
+      after.out.join('\n'),
+      `the exit doctor named left the project uninitialised: ${named.join(', ')}`,
+    ).not.toContain('not-initialised')
+  })
+
+  it('names a remediation the project scope will accept', async () => {
+    const homeDir = await tempCwd()
+    const projectDir = await tempCwd()
+    const mcpJson = join(projectDir, '.mcp.json')
+    await writeFile(join(homeDir, '.claude.json'), '{}\n', 'utf8')
+    await mkdir(join(projectDir, '.panda'), { recursive: true })
+
+    const io = capture()
+    await runPanda(['project', 'add', 'mcp-server', 'ctx', '--command', 'ctx-server', projectDir], { ...io, homeDir })
+    await runPanda(['project', 'init', projectDir], { ...io, homeDir })
+    const projected = await readFile(mcpJson, 'utf8')
+    // CONTROL: the state this clause needs must actually exist, or it passes by
+    // reporting nothing.
+    expect(projected).toContain('ctx-server')
+    await writeFile(mcpJson, projected.replace('"ctx-server"', '"edited-by-hand"'), 'utf8')
+
+    const reported = capture()
+    await runPanda(['project', 'doctor', projectDir], { ...reported, homeDir })
+    const named = commandsPrintedIn([...reported.out, ...reported.err]).filter((text) =>
+      text.includes('remediate'),
+    )
+    expect(named.length, `doctor named no remediation:\n${reported.out.join('\n')}`).toBeGreaterThan(0)
+
+    for (const text of named) {
+      const ran = capture()
+      const code = await runPanda(text.split(' ').slice(1), { ...ran, homeDir, cwd: projectDir })
+      expect(
+        [code, ran.err.join(' ')],
+        `panda printed '${text}' and running it was refused`,
+      ).not.toContain('PANDA_PROJECTION_REMEDIATION_REFUSED')
+      expect(code, `panda printed '${text}' and running it exited ${String(code)}`).not.toBe(1)
+    }
+  })
+})
+
 describe('panda remediate', () => {
   it('describes without writing by default, and performs only with --apply', async () => {
     const homeDir = await editedEntry()

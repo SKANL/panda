@@ -583,8 +583,13 @@ export interface EntryDelivery {
   readonly undetermined?: string
 }
 
-/** The command that projects one scope. One spelling, two callers. */
-function projectCommandFor(scope: 'machine' | 'project'): string {
+/**
+ * The command that projects one scope. One spelling, and `doctor.ts` is now a
+ * caller too: it named `panda init` as the exit from a PROJECT's
+ * `not-initialised` and `out-of-date`, and that command exits 0 leaving the
+ * project exactly as it was.
+ */
+export function projectCommandFor(scope: 'machine' | 'project'): string {
   return scope === 'machine' ? 'panda init' : 'panda project init'
 }
 
