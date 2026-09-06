@@ -97,6 +97,35 @@ function looksUnauthenticated(envelope: ResultEnvelope): boolean {
   )
 }
 
+/**
+ * Why this run cannot be compared, or `undefined` when it can.
+ *
+ * The header above promises "a provider outage never fails this suite", and
+ * that promise was enforced by an UP-FRONT probe plus an unauthenticated check
+ * that reads `status === 'failed'`. Neither covers the case that actually
+ * happened: `claude --version` answered, both runs started, and one of them
+ * exceeded `RUN_TIMEOUT_MS`. `adapter.run` reports that as `cancelled` — its
+ * own `AbortSignal.timeout` firing — so `looksUnauthenticated` returned false,
+ * the comparison ran, and the suite reported a 180-SECOND TIMEOUT as though the
+ * two output modes disagreed:
+ *
+ *     - "status": "cancelled",  "exitCode": 1,  "errorCount": 1
+ *     + "status": "ok",         "exitCode": 0,  "dataKeys": [result, usage, …]
+ *
+ * A run that never settled produced NO measurement of either mode, which is the
+ * definition of "nothing was measured" this file already knows how to report.
+ * The guarantee now covers the state that broke it.
+ */
+function unusableReason(label: string, envelope: ResultEnvelope): string | undefined {
+  if (envelope.status === 'cancelled') {
+    return `the ${label} run did not settle within ${RUN_TIMEOUT_MS}ms, so neither mode was measured`
+  }
+  if (looksUnauthenticated(envelope)) {
+    return `claude detected but unusable on the ${label} run: ${envelope.errors?.[0]?.message ?? 'no message'}`
+  }
+  return undefined
+}
+
 async function runLive(traits: ExecutorTraits): Promise<{ envelope: ResultEnvelope; reports: UsageReport[] }> {
   const rootPath = await mkdtemp(join(tmpdir(), 'panda-stream-live-'))
   workspaces.push(rootPath)
@@ -123,6 +152,37 @@ function shapeOf(envelope: ResultEnvelope): Record<string, unknown> {
   }
 }
 
+describe('a run that never settled is reported as unmeasured, not as a disagreement', () => {
+  // Drives `unusableReason` directly, because the clause below can only reach
+  // it when a real `claude` is installed AND happens to time out — the exact
+  // combination that shipped this defect unnoticed.
+  const envelope = (status: ResultEnvelope['status'], message?: string): ResultEnvelope =>
+    ({
+      status,
+      summary: 'x',
+      data: {},
+      ...(message === undefined ? {} : { errors: [{ code: 'X', message }] }),
+    }) as ResultEnvelope
+
+  it('names the timeout when a run comes back cancelled', () => {
+    const reason = unusableReason('single-object', envelope('cancelled'))
+    expect(reason).toContain('did not settle')
+    expect(reason).toContain('single-object')
+  })
+
+  it('still names an unauthenticated provider', () => {
+    expect(unusableReason('stream', envelope('failed', 'invalid api key'))).toContain('unusable')
+  })
+
+  it('CONTROL: says nothing about a run that produced a result', () => {
+    // Without this, the two clauses above are satisfied by a function that
+    // refuses every envelope — which would skip the suite forever and read as
+    // green.
+    expect(unusableReason('stream', envelope('ok'))).toBeUndefined()
+    expect(unusableReason('stream', envelope('failed', 'the model produced no output'))).toBeUndefined()
+  })
+})
+
 describe('live: the stream mode produces the envelope the single-object mode produced', () => {
   it(
     'runs the same prompt through both records and compares what a caller can see',
@@ -131,13 +191,11 @@ describe('live: the stream mode produces the envelope the single-object mode pro
       if (!availability.available) ctx.skip(`live stream-mode check skipped: ${availability.reason}`)
 
       const old = await runLive(PRE_M15A_CLAUDE_TRAITS)
-      if (looksUnauthenticated(old.envelope)) {
-        ctx.skip(`claude detected but unusable: ${old.envelope.errors?.[0]?.message}`)
-      }
+      const oldUnusable = unusableReason('single-object', old.envelope)
+      if (oldUnusable !== undefined) ctx.skip(`live stream-mode check skipped: ${oldUnusable}`)
       const now = await runLive(CLAUDE_CODE_TRAITS)
-      if (looksUnauthenticated(now.envelope)) {
-        ctx.skip(`claude detected but unusable: ${now.envelope.errors?.[0]?.message}`)
-      }
+      const nowUnusable = unusableReason('stream', now.envelope)
+      if (nowUnusable !== undefined) ctx.skip(`live stream-mode check skipped: ${nowUnusable}`)
 
       // The criterion. Values cannot be compared — a session id and a token
       // count differ between any two runs — so what is compared is the key set,
