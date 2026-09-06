@@ -172,7 +172,8 @@ v1 scope.
 6. ☑ Repair the publish path itself: `--provenance` as a flag, `--report-summary`,
    a registry-read assertion that the attestation exists, and a `concurrency`
    group. *See Spec Change Log 6.*
-7. ☐ Commit, push, CI green against the exact SHA.
+7. ☑ Commit, push, CI green against the exact SHA. *`0a507a7`, matched by hand
+   against `gh run list --json headSha,conclusion`.*
 8. ☐ **OWNER GATE — the tag.** Everything above is reversible. `v0.1.0` is not.
    Held deliberately: the audit that found the provenance defect found it in the
    last thing checked, and the found-defect rate in this story (six false doc
@@ -338,4 +339,74 @@ would be the exact defect this story exists to close.
 
 ## Verification
 
-*(empty until the work is verified by execution)*
+Everything below was driven. Nothing here rests on a reading.
+
+### The gate
+
+- `pnpm check` → **CHECK_EXIT=0**, captured before any pipe. The first two runs
+  did not: run 1 returned `CHECK_EXIT=1` on `stream-mode-live` (Change Log 5),
+  run 2 returned `CHECK_EXIT=1` on `workspace-git-worktree`'s `acquire-roundtrip`
+  with an empty `git worktree add … failed:` detail. That second one **passes
+  alone** — 3 files, 22 tests, exit 0 — and had passed 22/22 in run 1 with no
+  change to that package, so it is contention under the parallel gate on Windows,
+  not a defect. Recorded rather than fixed; it does not reproduce in CI.
+- `pnpm build && pnpm proof:consumer-install` → 12 passed, 1 skipped.
+- `packages/adapter-cli` whole, live suites included → 14 files, 171 passed,
+  7 skipped, exit 0.
+- **CI green against the exact SHA `0a507a7`**, read from
+  `gh run list --json headSha,conclusion` and matched by hand. Not from a
+  notification: `gh run list --commit <sha>` returns false zeros in this repo.
+
+### The gate this story added
+
+- Written FIRST and RED: `1 failed | 4 passed`, failing with
+  `README.md:28: names '@panda', but the manifests publish under @skanl`.
+- GREEN after the fix: `5 passed`.
+- Its four controls hold: the historical sentence must fail, a correct document
+  must be silent, the scan must reach more than ten real files, and the manifests
+  must declare exactly one scope.
+
+### The publish path, exercised without publishing
+
+- `pnpm publish -r --access public --no-git-checks --dry-run` → all thirteen, in
+  dependency order: kernel → contracts → adapter-cli → lock → memory-filesystem
+  → memory-sqlite → workspace-git-worktree → workspace-local → registry →
+  session → projection → environment → cli.
+- The same command with `--provenance` → exits 0, so the flag is accepted.
+- `PNPM_CONFIG_PROVENANCE=true pnpm config list` → `"provenance": true`; the
+  `NPM_CONFIG_*` form is ignored (Change Log 6), with `registry` as the control
+  on both sides.
+- All thirteen manifests carry `repository` `git+https://github.com/SKANL/panda.git`
+  with a `directory`, `license: MIT`, a `description`, `engines.node >=24` and
+  `publishConfig.access: public` — every provenance prerequisite.
+- `packages/cli/dist/bin/panda.js` begins `#!/usr/bin/env node`.
+- The token authenticates as `skanl`, which is the account npm grants the
+  `@skanl` scope to by construction. It was removed from disk afterwards:
+  `npm whoami` → ENEEDAUTH, `rg authToken ~/.npmrc` → 0.
+
+### The consumer path, from outside the repository
+
+Built, packed with `pnpm pack` (**not** `npm pack`, which leaves `workspace:*`
+in the manifest and makes `npm install` fail `EUNSUPPORTEDPROTOCOL`), and
+installed into a project outside the repo with every tarball as a `file:`
+dependency — the shape `consumer-install.proof.ts` uses:
+
+- `npm install` → *added 14 packages*, offline, no registry.
+- `./node_modules/.bin/panda --version` → `0.1.0`.
+- `@skanl/panda-contracts` alone: one package, `dependencies: {}`. A deliberately
+  half-right `WorkspaceProvider` run through `runWorkspaceContractSuite` returned
+  **9 clauses, 3 violations**, each naming the code it expected — so the
+  third-party promise is executable, not stated.
+- `runSession({ prompt, createAdapter })` with a third-party adapter the
+  catalogue does not know: `status: ok`, the caller's own output, and
+  `action.invoked` / `action.completed` on the kernel's record stream.
+
+### What is NOT verified here
+
+- **The publish itself.** No tag was pushed. Task 8 is the owner's gate.
+- **That the token may WRITE.** `npm whoami` proves read auth; only a publish
+  proves publish rights. Its failure mode is a 402/403 on package one, which is
+  non-destructive.
+- **That the provenance assertion step passes.** It cannot run until something
+  is published. Its own failure mode is a red release AFTER the packages land —
+  loud, and better than the silence it replaces.
