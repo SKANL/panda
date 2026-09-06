@@ -260,15 +260,24 @@ function consequenceOf(claim: ProjectionClaim): string {
     paths.length === 0
       ? "panda gains no authority to delete any FILE: a config claim covers one region inside the file and can never remove the file itself"
       : `panda gains authority to overwrite AND to REMOVE exactly these path(s) on a later run: ${paths.join(', ')}`
+  // BOTH SPELLINGS, because this is the one site of its class where the scope is
+  // genuinely absent. `RemediationBase` carries none, and it is FR-29 public SDK
+  // surface — threading a CLI-grammar concept into a third-party type to render
+  // one sentence is a worse trade than naming two commands, and `doctor.ts`
+  // already sanctions the shape ("`panda init` (or `panda project init`) creates
+  // panda's state here"). Driven before this: a project claim was told the next
+  // `panda init` would replace the entry, and the hand-edited byte survived that
+  // command and died to `panda project init`.
+  const projecting = '`panda init` (or `panda project init` for a project claim)'
   const next =
     claim.removedNext === true
-      ? 'the registry does not hold this entry, so the next `panda init` REMOVES what this claim covers'
+      ? `the registry does not hold this entry, so the next ${projecting} REMOVES what this claim covers`
       : // The SAME sentence on both branches, and that is the correction. The
         // first version reassured on the fresh-claim branch — where the occupant
         // is a file the USER wrote and the stakes are highest — and warned only
         // on the re-claim one, where the file was panda's to begin with. The
         // wording was inverted relative to risk.
-        'the next `panda init` REPLACES what is there with what the registry says'
+        `the next ${projecting} REPLACES what is there with what the registry says`
   return `${authority}. Then ${next}. To keep what is there and have panda stop tracking it, use 'release' instead`
 }
 

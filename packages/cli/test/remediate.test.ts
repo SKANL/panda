@@ -108,6 +108,31 @@ describe('a command panda prints at project scope resolves the project', () => {
     ).not.toContain('not-initialised')
   })
 
+  it('tells a project claim which init will act on it', async () => {
+    const homeDir = await tempCwd()
+    const projectDir = await tempCwd()
+    const mcpJson = join(projectDir, '.mcp.json')
+    await writeFile(join(homeDir, '.claude.json'), '{}\n', 'utf8')
+    await mkdir(join(projectDir, '.panda'), { recursive: true })
+
+    const io = capture()
+    await runPanda(['project', 'add', 'mcp-server', 'ctx', '--command', 'ctx-server', projectDir], { ...io, homeDir })
+    await runPanda(['project', 'init', projectDir], { ...io, homeDir })
+    const projected = await readFile(mcpJson, 'utf8')
+    expect(projected).toContain('ctx-server')
+    await writeFile(mcpJson, projected.replace('"ctx-server"', '"edited-by-hand"'), 'utf8')
+
+    const described = capture()
+    await runPanda(['project', 'remediate', 'adopt', projectDir, '--entry', 'ctx'], { ...described, homeDir })
+    const said = [...described.out, ...described.err].join('\n')
+    // CONTROL: the consequence sentence has to be there at all, or the
+    // assertion below reads an empty string and passes.
+    expect(said, `adopt described nothing:\n${said}`).toMatch(/REPLACES what is there|REMOVES what this claim covers/)
+    // The sentence used to name `panda init` alone. Driven before the fix: the
+    // hand-edited byte survived that command and died to `panda project init`.
+    expect(said, 'the consequence named only the machine init').toContain('panda project init')
+  })
+
   it('names a remediation the project scope will accept', async () => {
     const homeDir = await tempCwd()
     const projectDir = await tempCwd()
