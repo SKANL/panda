@@ -27,19 +27,30 @@ jobs:
         # floor can move with evidence; if it is red, the floor is earned and the
         # real reason gets written down instead of the CI one.
         #
-        # `22` RESOLVED GREEN on all three gates, so the floor is now known to be
-        # unpaid-for rather than merely suspected. `22.5.0` is here to find the
-        # EXACT number: it is the release `node:sqlite`'s `DatabaseSync` landed
-        # in, which is the lowest version anything in this workspace could
-        # possibly need. Whatever this leg does decides the declared floor —
-        # green means `engines` can say `>=22.5.0` and have CI run that literal
-        # version, red means the real floor is higher and gets written down with
-        # the reason instead of a guess.
+        # THE FLOOR IS SET BY THE TOOLCHAIN, NOT BY PANDA'S CODE, and that was
+        # measured rather than assumed. `22` went green on all three gates, so
+        # `engines: >=24` was unpaid-for. The next leg tried `22.5.0` — the
+        # release `node:sqlite`'s `DatabaseSync` landed in, and the lowest
+        # version anything in this workspace could possibly need — and it failed
+        # before a single test ran:
         #
-        # `22` STAYS ALONGSIDE IT. A floor of `22.5.0` with only `22.5.0` tested
-        # would claim every release from there to the LTS head on one data point;
-        # keeping the LTS line pins both ends of the range panda declares.
-        node-version: ['22.5.0', 22, 24, 26]
+        #     ERROR: This version of pnpm requires at least Node.js v22.13
+        #
+        # That is a constraint on BUILDING panda, not on consuming it. A consumer
+        # installs with whatever package manager they like and runs `dist`; they
+        # never run this repository's pnpm. So `22.13.0` is the lowest version
+        # this matrix can prove anything about, and `engines` says exactly that
+        # rather than the lower number the code would actually tolerate.
+        #
+        # To prove a floor BELOW the toolchain's, the job shape has to change:
+        # build and pack once on a high Node, then install and RUN the tarballs
+        # on the lower ones. That is the honest way to answer "what does a
+        # consumer need", and it is recorded in deferred-work rather than guessed
+        # at here.
+        #
+        # `22` stays alongside `22.13.0`: the exact floor and the LTS head pin
+        # both ends of the range panda declares.
+        node-version: ['22.13.0', 22, 24, 26]
     steps:
       - uses: actions/checkout@v4
 
