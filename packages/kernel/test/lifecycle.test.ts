@@ -112,6 +112,95 @@ describe('lifecycle: per-plugin dispose', () => {
     expect(disposals).toBe(1)
   })
 
+  /**
+   * THE CLAUSE ABOVE CALLS `dispose` TWICE IN SEQUENCE, and sequence is not the
+   * hazard.
+   *
+   * `dispose` reads `plugin.state`, then AWAITS `bus.drain()`, `drainLog()` and
+   * the disposer, and only then writes `state = 'disposed'`. Two callers that
+   * overlap both read `'active'` and both run the disposer. Driven before this
+   * clause existed: two concurrent `dispose('p')` with an ASYNC disposer ran it
+   * TWICE, against `dispose`'s own documented "repeats are no-ops".
+   *
+   * `stop()` already solved this for itself — it sets `stopped` and pins
+   * `stopPromise` BEFORE `performStop()` runs, which is why `stop || stop` calls
+   * the disposer once. `dispose` got no equivalent, and neither did the unwind
+   * loop `stop` uses.
+   *
+   * A SYNCHRONOUS disposer hides it: with nothing to await inside the disposer
+   * the second caller still reaches the same window through `bus.drain()`, but
+   * the clause above never opens it because it awaits the first call to
+   * completion before making the second. This one forces the overlap instead of
+   * betting on it.
+   */
+  it('runs the disposer once when two callers overlap, not once per caller', async () => {
+    let disposals = 0
+    const { kernel } = startWith(
+      provider('p', 'svc.p', 42, () => {
+        disposals += 1
+      }),
+    )
+    kernel.start()
+
+    await Promise.all([kernel.dispose('p'), kernel.dispose('p')])
+
+    expect(disposals).toBe(1)
+    // CONTROL: the plugin really was disposed, so a run where nothing happened
+    // at all cannot satisfy the count above.
+    expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
+  })
+
+  it('runs an ASYNC disposer once when two callers overlap', async () => {
+    // The same hazard with the shape that made it visible first: an `await`
+    // inside the disposer widens the window from microtasks to milliseconds.
+    let disposals = 0
+    const { kernel } = startWith({
+      input: manifest({ id: 'p', provides: ['svc.p'] }),
+      factory: () => ({
+        status: 'activated',
+        services: { 'svc.p': 42 },
+        dispose: async () => {
+          disposals += 1
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        },
+      }),
+    })
+    kernel.start()
+
+    await Promise.all([kernel.dispose('p'), kernel.dispose('p')])
+
+    expect(disposals).toBe(1)
+    expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
+  })
+
+  it('runs the disposer once when stop() overlaps a dispose()', async () => {
+    // The half `stopPromise` never covered. `stop()` unwinds by calling
+    // `plugin.disposer` DIRECTLY rather than through `dispose`, so its own
+    // in-flight guard protected stop's callers from each other and nobody from a
+    // concurrent `dispose`. Measured before this clause: `stop || stop` ran the
+    // disposer once and `stop || dispose` ran it twice.
+    let disposals = 0
+    const { kernel } = startWith({
+      input: manifest({ id: 'p', provides: ['svc.p'] }),
+      factory: () => ({
+        status: 'activated',
+        services: { 'svc.p': 42 },
+        dispose: async () => {
+          disposals += 1
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        },
+      }),
+    })
+    kernel.start()
+
+    await Promise.all([kernel.stop(), kernel.dispose('p')])
+
+    expect(disposals).toBe(1)
+    // CONTROL: something really was torn down, so a run where the plugin never
+    // activated cannot satisfy the count above.
+    expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
+  })
+
   it('drains pending bus continuations before running the plugin’s disposer', async () => {
     const observations: string[] = []
     const { kernel } = startWith(provider('p', 'svc.p', 1, () => {

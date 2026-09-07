@@ -222,6 +222,22 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   const serviceIndex = new Map<string, string>()
   let stopped = false
   let stopPromise: Promise<StopResult> | undefined
+  /**
+   * One in-flight disposal per plugin, so two callers share it.
+   *
+   * The same shape `stopPromise` uses one line above, and for the same reason —
+   * `dispose` reads `plugin.state`, then AWAITS `bus.drain()`, `drainLog()` and
+   * the disposer, and only writes `state = 'disposed'` afterwards. Two overlapping
+   * callers both read `'active'` and both ran the disposer, against `dispose`'s
+   * own documented "repeats are no-ops". Measured: twice, with an async disposer
+   * and with a synchronous one; `stop || stop` called it ONCE, which is the
+   * control proving `stopPromise` already closes this for its own caller.
+   *
+   * A PROMISE rather than an early `state = 'disposed'`: returning early would
+   * resolve the second caller's `dispose()` while the disposer is still running,
+   * which is a different lie in the same place.
+   */
+  const disposals = new Map<string, Promise<void>>()
 
   // A throwing diagnostic must never abort activation or teardown, so every
   // kernel-internal record goes through the containing helper. A hostile sink is
@@ -469,6 +485,21 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         for (const id of [...activationOrder].reverse()) {
           const plugin = runtime.get(id)
           if (plugin === undefined || plugin.state !== 'active') continue
+          // A `dispose(id)` this stop overlapped with is ALREADY running that
+          // plugin's disposer. Joining it rather than starting a second is the
+          // same guard `dispose` takes above, applied to the caller that does not
+          // go through it: measured, `stop || dispose` ran one disposer TWICE
+          // while `stop || stop` ran it once, because `stopPromise` only ever
+          // covered stop's own callers.
+          const concurrent = disposals.get(id)
+          if (concurrent !== undefined) {
+            await concurrent
+            // Whatever it recorded, it recorded. `dispose` sets the state and
+            // emits the record itself, so this stop must not do either again —
+            // and must not claim it in `disposed`, which is stop's own list of
+            // what stop tore down.
+            continue
+          }
           let disposerThrew = false
           try {
             // AWAITED, one at a time. `Promise.all` over this loop would pass every
@@ -560,27 +591,41 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       return {}
     },
 
-    async dispose(pluginId) {
+    dispose(pluginId) {
+      // Joined BEFORE the first `await`, which is the whole fix: everything below
+      // this line reads state that the other caller is about to change.
+      const inFlight = disposals.get(pluginId)
+      if (inFlight !== undefined) return inFlight
       const plugin = runtime.get(pluginId)
-      if (plugin === undefined || plugin.state === 'disposed') return
-      // Same invariant as stop: a disposer must never observe a half-drained bus
-      // or an in-flight record.
-      await bus.drain()
-      await drainLog()
-      // Contained exactly as stop() contains it. Letting the throw escape here
-      // left the plugin 'active', so a later stop() would run its disposer a
-      // second time, and lost the record entirely.
-      let disposerThrew = false
-      try {
-        await plugin.disposer?.()
-      } catch {
-        disposerThrew = true
+      if (plugin === undefined || plugin.state === 'disposed') return Promise.resolve()
+
+      const performDispose = async (): Promise<void> => {
+        // Same invariant as stop: a disposer must never observe a half-drained bus
+        // or an in-flight record.
+        await bus.drain()
+        await drainLog()
+        // Contained exactly as stop() contains it. Letting the throw escape here
+        // left the plugin 'active', so a later stop() would run its disposer a
+        // second time, and lost the record entirely.
+        let disposerThrew = false
+        try {
+          await plugin.disposer?.()
+        } catch {
+          disposerThrew = true
+        }
+        plugin.state = 'disposed'
+        plugin.services = {}
+        record({ event: disposerThrew ? 'plugin.disposal-failed' : 'plugin.disposed', subject: pluginId })
+        // Mirrors stop(): the record has landed by the time dispose() resolves.
+        await drainLog()
       }
-      plugin.state = 'disposed'
-      plugin.services = {}
-      record({ event: disposerThrew ? 'plugin.disposal-failed' : 'plugin.disposed', subject: pluginId })
-      // Mirrors stop(): the record has landed by the time dispose() resolves.
-      await drainLog()
+
+      // Kept in the map after it settles, unlike `stopPromise`'s reset: a settled
+      // disposal is permanent, and the early return above already covers a later
+      // caller — this only has to cover the ones that overlap.
+      const promise = performDispose()
+      disposals.set(pluginId, promise)
+      return promise
     },
 
     bus,
