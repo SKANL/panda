@@ -53,7 +53,12 @@ describe('the ownership ledger lives in panda’s own directory', () => {
       version: PROJECTION_LEDGER_VERSION,
       records: [claim],
     })
-    expect(await ledger.read()).toEqual({ state: 'readable', records: [claim], warnings: [] })
+    expect(await ledger.read()).toEqual({
+      state: 'readable',
+      records: [claim],
+      salvaged: [],
+      warnings: [],
+    })
     expect(await readdir(join(homeDir, '.panda'))).toEqual(['projection-ledger.json'])
   })
 
@@ -119,6 +124,7 @@ describe('a missing or unreadable ledger', () => {
     expect(await new ProjectionLedger({ homeDir }).read()).toEqual({
       state: 'absent',
       records: [],
+      salvaged: [],
       warnings: [],
     })
   })

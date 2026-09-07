@@ -64,7 +64,7 @@ const NOT_A_COMMAND = new Map<string, string>([
   ['panda holds no claim for \'<value>\' at \'<value>\', so there is nothing to release', 'a release refusal'],
   ['panda stops claiming \'<value>\' in \'<value>\'; whatever is there stays exactly as it is, and panda will treat it as foreign until it is adopted again. Nothing on disk is removed by this or by any later run while the claim is gone', 'what release describes'],
   ['panda cannot read any of \'<value>\' and will REPLACE it with an empty ledger: panda then claims nothing at all, every entry it has written anywhere reports as a foreign collision, and each one has to be adopted back deliberately', 'what repair describes on a wholly unreadable ledger'],
-  ['panda rewrites \'<value>\' holding exactly the <value> record(s) it can read; the records it cannot read are dropped and the entries behind them report as foreign collisions until they are adopted', 'what repair describes'],
+  ['panda rewrites \'<value>\' holding <value> record(s): <value> it can still vouch for<value>. Any record with no readable identity left is dropped, and whatever it claimed becomes yours to remove by hand', 'what repair describes'],
   ['panda removes <value> from \'<value>\'; every other byte of the file is left exactly as it is', 'what discard describes'],
   ['panda could not resolve an \'<value>\' selection through its configuration layers', 'the session\'s selection failure'],
   ['panda has no workspace provider named \'<value>\'; available providers: <value>', 'the workspace catalogue\'s error for an unknown provider id -- the twin of the executor entry at the top of this list'],

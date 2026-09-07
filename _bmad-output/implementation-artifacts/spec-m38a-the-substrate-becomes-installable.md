@@ -643,6 +643,67 @@ read-only brief, and it failed typecheck (TS4104, TS2367) and lint
 A gate failure in a package the change does not touch is a reason to look at
 `git status`, not to start debugging the change.
 
+### 15 - `repair` destroyed recoverable claims and printed a promise it could not keep
+
+`panda remediate repair` is the exit `panda doctor` itself names for a damaged
+ledger. Driven end to end, taking that exit ORPHANED the user's bytes forever:
+
+    doctor before        ledger-damaged
+    repair --apply       the codex record disappears
+    doctor after         <none>              -- nothing at all
+    remediate adopt      exit 1, refused
+    remove + init        [mcp_servers.ctx7] still in the user's config, permanently
+
+The damaged record had all four identity fields intact; only its `contentHash`
+was broken. `isLedgerRecord` returns a boolean and `read()` drops the whole
+object, so the surviving identity was discarded at read time and then destroyed
+at write time. Dropping the RECORD threw away far more than the broken FIELD.
+
+**And the sentence the user consents to was false.** It said the dropped records
+leave entries that "report as foreign collisions until they are adopted". Driven:
+config entries report NOTHING and `adopt` refuses them. A guarantee in prose that
+nothing enforces, printed to the user at the moment they authorise a rewrite.
+
+**The fix salvages instead of dropping.** A record whose identity survives is kept
+with a `contentHash` panda cannot vouch for -- deliberately NOT hex, so it can
+never compare equal to a real `sha256` by accident; the never-matching property is
+structural rather than improbable. The entry then reads as `edited`, which has an
+exit, instead of vanishing. After:
+
+    ledger after repair  claude-mcp + codex-config
+    doctor after         edited x2
+    remediate adopt      exit 0
+    remove + init        config.toml EMPTY
+
+**Config and materialise are decided apart, and that is the interesting part.** A
+config record's claim is its `nativeLocation`, so identity alone is enough. For a
+MATERIALISATION record `ownedPaths` IS the claim -- one investigation drove that a
+record kept without it claims nothing, protecting no path and authorising no
+removal while looking like ownership -- so such a record is still dropped. That
+guard SURVIVED its first mutation, meaning nothing tested it; a clause was added
+until it dies.
+
+**FOUR AGENTS CONVERGED ON THIS FIX, INCLUDING THE TWO ARGUING AGAINST IT.** The
+debate was framed as "should `doctor` report the orphan" versus "should
+`remediate` accept a named request". Both positions were driven into the ground by
+their own advocates: reporting costs 10 permanent findings in a modest healthy
+home (measured two independent ways) and routes users to `adopt`, which was
+measured DELETING a user's hand-written server on the next `remove` + `init`;
+ungating `remediate` was measured destroying an `env` key its own advocate called
+"exactly the case the gate blocks". The reporting advocate's closing words:
+*"a cheaper fix may dominate mine ... it is the option my own ladder would have
+reached first."*
+
+**MY PATCH HAD A DEFECT MY OWN CLAUSE CAUGHT.** I changed the variable the
+SENTENCE reads and left the WRITE on the old one -- `rewriteAll`'s select still
+returned `inQueue.records`, so the salvage never persisted. The select is what
+decides the write; everything else is narration.
+
+**The printed-command scanner refused two of my drafts**, both times correctly:
+the sentence wrapped across source lines, and then a comment I wrote quoted a
+`panda ...` command across two lines. A printed sentence the scanner cannot see
+is a printed sentence nothing checks.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

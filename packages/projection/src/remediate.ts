@@ -426,16 +426,41 @@ async function repair(options: RepairRemediationOptions, apply: boolean): Promis
   if (read.state === 'readable' && read.warnings.length === 0) {
     return { ...base, changes: [], applied: apply }
   }
-  const kept = read.records
+  // SALVAGED, not just readable. Dropping the RECORD throws away far more than
+  // the broken FIELD: measured on the binary, a record whose only damage was its
+  // `contentHash` still carried all four identity fields, so panda knew exactly
+  // which bytes it covered — and dropping it left `panda doctor` reporting
+  // NOTHING, `panda remediate adopt` refusing with exit 1, and `panda remove` +
+  // `panda init` leaving the entry in the user's config permanently. A salvaged
+  // record carries a hash panda cannot vouch for, so the entry reads as `edited`
+  // — a state with an exit — instead of vanishing.
+  const kept = [...read.records, ...read.salvaged]
+  const lost = read.salvaged.length
   const current = await stat(ledger.filePath).then(
     (stats) => stats.size,
     () => 0,
   )
   const next = Buffer.byteLength(serialiseLedgerDocument(kept), 'utf8')
+  // Built separately so the sentence below stays on ONE SOURCE LINE:
+  // `printed-commands.test.ts` scans line by line, and a printed sentence it
+  // cannot see is a printed sentence nothing checks.
+  const unvouched =
+    lost === 0
+      ? ''
+      : `, and ${String(lost)} it can address but no longer vouch for, which report as edited until they are adopted or released`
+  // THE OLD SENTENCE PROMISED SOMETHING PANDA DID NOT DELIVER. It said the
+  // records it drops leave entries that "report as foreign collisions until
+  // they are adopted". Driven on the binary, that was FALSE for config entries:
+  // after the drop the diagnosis reported NOTHING, the adopt remediation refused
+  // with exit 1, and removing the entry and re-initialising left it in the
+  // user's config permanently. The user consented to a rewrite on a promise
+  // panda could not keep. (Command names are spelled out rather than quoted
+  // here: the printed-command scanner reads comments too, and a quoted one
+  // wrapped across two lines is exactly what it refuses.)
   const detail =
     read.state === 'unreadable'
       ? `panda cannot read any of '${ledger.filePath}' and will REPLACE it with an empty ledger: panda then claims nothing at all, every entry it has written anywhere reports as a foreign collision, and each one has to be adopted back deliberately`
-      : `panda rewrites '${ledger.filePath}' holding exactly the ${kept.length} record(s) it can read; the records it cannot read are dropped and the entries behind them report as foreign collisions until they are adopted`
+      : `panda rewrites '${ledger.filePath}' holding ${String(kept.length)} record(s): ${String(read.records.length)} it can still vouch for${unvouched}. Any record with no readable identity left is dropped, and whatever it claimed becomes yours to remove by hand`
   const changes = [ledgerChange('rewrite', ledger.filePath, ledger.filePath, detail, Math.abs(next - current))]
   if (!apply) return { ...base, changes, applied: false }
   // The read that DECIDES the write happens inside the ledger's own queue.
@@ -452,7 +477,12 @@ async function repair(options: RepairRemediationOptions, apply: boolean): Promis
   // handle — the act reports what it really did, but only after doing it.
   // Upgrade path: a receipt on the preview that the act must match, which is the
   // same mechanism `adopt` needs for the same reason (deferred-work.md).
-  await ledger.rewriteAll(LEDGER_REPAIR_AUTHORITY, (inQueue) => inQueue.records)
+  // `salvaged` too, and from the IN-QUEUE read rather than the one above: the
+  // write must be decided by the document as it is at the moment of writing.
+  await ledger.rewriteAll(LEDGER_REPAIR_AUTHORITY, (inQueue) => [
+    ...inQueue.records,
+    ...inQueue.salvaged,
+  ])
   return { ...base, changes, applied: true }
 }
 

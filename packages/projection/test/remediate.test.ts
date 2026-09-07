@@ -695,6 +695,76 @@ describe('repair is the exit from a ledger panda carries and cannot read', () =>
     expect(await readFile(at.claudeJson, 'utf8')).toContain('"ctx-server"')
   })
 
+  it('SALVAGES a record whose identity survived, instead of orphaning its bytes', async () => {
+    const at = await fixture()
+    await writeFile(at.claudeJson, CLAUDE_NATIVE, 'utf8')
+    const target = createClaudeMcpTarget({ filePath: at.claudeJson })
+    await project(at, [mcp('ctx')], [target])
+
+    // ONE broken field. Every identity field — targetId, filePath,
+    // nativeLocation, entryId — is still there, so panda knows exactly which
+    // bytes this claim covers; it just cannot trust the hash any more.
+    const document = JSON.parse(await readFile(at.ledger.filePath, 'utf8')) as {
+      version: number
+      records: { targetId: string; contentHash: unknown }[]
+    }
+    document.records[0]!.contentHash = 12345
+    await writeFile(at.ledger.filePath, JSON.stringify(document, null, 2), 'utf8')
+    expect((await at.ledger.read()).records).toEqual([])
+
+    await runRemediation({ remediation: 'repair', ledger: at.ledger, mode: 'apply' })
+
+    // DRIVEN ON THE BINARY BEFORE THIS CLAUSE EXISTED: dropping the record left
+    // `panda doctor` reporting NOTHING at all, `panda remediate adopt` refusing
+    // with exit 1, and `panda remove` + `panda init` leaving the entry in the
+    // user's config permanently. `repair` — the command that exists to get a
+    // user OUT of a damaged ledger — destroyed a recoverable claim and orphaned
+    // the bytes behind it, while printing that those entries "report as foreign
+    // collisions until they are adopted".
+    const read = await at.ledger.read()
+    expect(read.warnings).toEqual([])
+    expect(read.records.map((record) => record.entryId)).toEqual(['ctx'])
+
+    // The salvaged hash must never match real bytes: panda no longer knows what
+    // it wrote, and claiming otherwise would let the next run overwrite an edit.
+    // Structural, not improbable — a real hash is hex, this is not.
+    expect(read.records[0]!.contentHash).not.toMatch(/^[0-9a-f]+$/)
+
+    // And the entry is REPORTABLE again, which is the whole point: a state with
+    // an exit instead of silence.
+    const run = await project(at, [mcp('ctx')], [target])
+    expect(run.results[0]?.drift).toEqual([
+      expect.objectContaining({ kind: 'edited', entryId: 'ctx' }),
+    ])
+    expect(await readFile(at.claudeJson, 'utf8')).toContain('"ctx-server"')
+  })
+
+  it('DROPS a materialisation record whose ownedPaths cannot be salvaged', async () => {
+    const at = await fixture()
+    const source = await writeSkillSource(at, 'alpha')
+    const target = skillsTarget(at.skillsRoot)
+    await project(at, [skill('alpha', source)], [target])
+
+    // For a materialise record `ownedPaths` IS the claim, so a record kept
+    // without one would claim nothing while looking like ownership: it would
+    // protect no path from another entry and authorise no removal of its own.
+    // Salvaging identity alone is right for a CONFIG record, whose claim is its
+    // `nativeLocation`, and wrong here — which is why the two are decided apart.
+    const document = JSON.parse(await readFile(at.ledger.filePath, 'utf8')) as {
+      version: number
+      records: { ownedPaths: unknown }[]
+    }
+    document.records[0]!.ownedPaths = [{ contentHash: 'no path here' }]
+    await writeFile(at.ledger.filePath, JSON.stringify(document, null, 2), 'utf8')
+
+    await runRemediation({ remediation: 'repair', ledger: at.ledger, mode: 'apply' })
+
+    expect((await at.ledger.read()).records).toEqual([])
+    // And the tree is still on disk, which is what the sentence now promises:
+    // whatever an unsalvageable record claimed becomes the user's to remove.
+    expect(await readFile(join(at.skillsRoot, 'alpha', 'SKILL.md'), 'utf8')).not.toBe('')
+  })
+
   it('replaces a wholly unreadable ledger and says what that costs before doing it', async () => {
     const at = await fixture()
     await mkdir(join(at.homeDir, '.panda'), { recursive: true })
@@ -1296,7 +1366,7 @@ describe('repair cannot destroy what it did not look at', () => {
     const at = await fixture()
     await damagedLedger(at)
     const preview = await runRemediation({ remediation: 'repair', ledger: at.ledger, mode: 'inspect' })
-    expect(preview.changes[0]?.detail).toContain('1 record(s) it can read')
+    expect(preview.changes[0]?.detail).toContain('1 it can still vouch for')
     await writeFile(at.ledger.filePath, 'not json at all', 'utf8')
     const outcome = await runRemediation({ remediation: 'repair', ledger: at.ledger, mode: 'apply' })
     expect(outcome.changes[0]?.detail).toContain('REPLACE it with an empty ledger')

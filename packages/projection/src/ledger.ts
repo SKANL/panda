@@ -3,7 +3,11 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { PANDA_ERROR_CODES, PandaError, PROJECTION_LEDGER_VERSION, isRecord } from '@skanl/panda-contracts'
-import type { ProjectionLedgerRecord, ProjectionWarning } from '@skanl/panda-contracts'
+import type {
+  ProjectionLedgerRecord,
+  ProjectionOwnedPath,
+  ProjectionWarning,
+} from '@skanl/panda-contracts'
 import { acquireLock } from '@skanl/panda-lock'
 import type { StaleLockBreak } from '@skanl/panda-lock'
 import { atomicWriteText } from './atomic-write.ts'
@@ -122,6 +126,12 @@ export interface ProjectionLedgerRead {
   /** `unreadable` means the file exists but panda must not write over it. */
   readonly state: ProjectionLedgerState
   readonly records: readonly ProjectionLedgerRecord[]
+  /**
+   * Records `records` rejected, reduced to the smallest claim panda can still
+   * ACT on. Empty unless the document holds damage, and read by `repair` alone:
+   * every other caller wants only what panda can vouch for.
+   */
+  readonly salvaged: readonly ProjectionLedgerRecord[]
   readonly warnings: readonly ProjectionWarning[]
 }
 
@@ -176,6 +186,89 @@ function isLedgerRecord(value: unknown): value is ProjectionLedgerRecord {
     return false
   }
   return value['ownedPaths'] === undefined || isOwnedPathList(value['ownedPaths'])
+}
+
+/**
+ * The hash panda writes for a claim it can still ADDRESS but can no longer
+ * VOUCH for.
+ *
+ * Deliberately not hex. A real `contentHash` is `sha256` output, so this can
+ * never compare equal to one by accident — the never-matching property is
+ * structural rather than improbable. `isLedgerRecord` asks only for a non-empty
+ * string, and nothing anywhere validates the shape, so this survives a round
+ * trip and reads as `edited` forever: panda knows which bytes the claim covers
+ * and admits it does not know what it wrote there.
+ */
+export const UNVOUCHED_CONTENT_HASH = 'unreadable-after-repair'
+
+function salvageOwnedPaths(value: unknown): ProjectionOwnedPath[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const salvaged: ProjectionOwnedPath[] = []
+  for (const item of value) {
+    // The PATH is the claim; the hashes are only the vouching. An item whose
+    // path is gone names nothing and cannot be salvaged.
+    if (!isRecord(item) || typeof item['path'] !== 'string' || item['path'] === '') continue
+    const contentHash = item['contentHash']
+    const canonicalHash = item['canonicalHash']
+    salvaged.push({
+      path: item['path'],
+      contentHash:
+        typeof contentHash === 'string' && contentHash !== '' ? contentHash : UNVOUCHED_CONTENT_HASH,
+      ...(typeof canonicalHash === 'string' && canonicalHash !== ''
+        ? { canonicalHash }
+        : contentHash === undefined
+          ? {}
+          : { canonicalHash: UNVOUCHED_CONTENT_HASH }),
+    })
+  }
+  return salvaged.length === 0 ? undefined : salvaged
+}
+
+/**
+ * A record `isLedgerRecord` rejects, reduced to the smallest claim panda can
+ * still act on — or `undefined` when nothing addressable survives.
+ *
+ * WHY THIS EXISTS. `repair` used to drop every record it could not read, and
+ * dropping the RECORD throws away far more than the broken FIELD: measured, a
+ * record whose only damage was its `contentHash` still carried all four identity
+ * fields, so panda knew exactly which bytes it covered. Dropping it left `panda
+ * doctor` reporting NOTHING, `panda remediate adopt` refusing with exit 1, and
+ * `panda remove` + `panda init` leaving the entry in the user's config
+ * permanently — while `repair` printed that those entries "report as foreign
+ * collisions until they are adopted".
+ *
+ * Only `repair` uses this. An ordinary `read()` still drops a malformed record
+ * and warns, because salvaging on every read would silently promote damage into
+ * a claim nobody asked panda to make.
+ */
+function salvageRecord(value: unknown): ProjectionLedgerRecord | undefined {
+  if (!isRecord(value)) return undefined
+  // `entryId` is part of `recordKey`, and the other three say WHERE. Without all
+  // four the claim cannot be addressed, updated or removed, so there is nothing
+  // to keep.
+  const identity = ['targetId', 'filePath', 'nativeLocation', 'entryId'] as const
+  if (!identity.every((field) => typeof value[field] === 'string' && value[field] !== '')) {
+    return undefined
+  }
+  const owned = value['ownedPaths']
+  let ownedPaths: ProjectionOwnedPath[] | undefined
+  if (owned !== undefined) {
+    ownedPaths = salvageOwnedPaths(owned)
+    // For a MATERIALISATION record `ownedPaths` IS the claim: a record without
+    // it claims nothing, so keeping one would be a claim that authorises and
+    // protects nothing while looking like ownership.
+    if (ownedPaths === undefined) return undefined
+  }
+  const contentHash = value['contentHash']
+  return {
+    targetId: value['targetId'] as string,
+    filePath: value['filePath'] as string,
+    nativeLocation: value['nativeLocation'] as string,
+    entryId: value['entryId'] as string,
+    contentHash:
+      typeof contentHash === 'string' && contentHash !== '' ? contentHash : UNVOUCHED_CONTENT_HASH,
+    ...(ownedPaths === undefined ? {} : { ownedPaths }),
+  }
 }
 
 function recordKey(record: ProjectionLedgerRecord): string {
@@ -278,7 +371,7 @@ export class ProjectionLedger {
       raw = await readFile(this.filePath, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        return { state: 'absent', records: [], warnings: [] }
+        return { state: 'absent', records: [], salvaged: [], warnings: [] }
       }
       return this.#unreadable(`cannot be read: ${detailOf(error)}`)
     }
@@ -303,9 +396,16 @@ export class ProjectionLedger {
     // keeps panda able to update and remove everything it still recognises.
     const valid = records.filter(isLedgerRecord)
     const dropped = records.length - valid.length
+    // Computed here because this is the only place that holds the RAW records;
+    // `repair` is the sole consumer and every other caller sees `records` alone.
+    const salvaged = records
+      .filter((record) => !isLedgerRecord(record))
+      .map(salvageRecord)
+      .filter((record): record is ProjectionLedgerRecord => record !== undefined)
     return {
       state: 'readable',
       records: valid,
+      salvaged,
       warnings:
         dropped === 0
           ? []
@@ -551,6 +651,8 @@ export class ProjectionLedger {
     return {
       state: 'unreadable',
       records: [],
+      // Nothing parsed, so nothing can be addressed, let alone salvaged.
+      salvaged: [],
       warnings: [
         {
           code: PANDA_ERROR_CODES.projectionLedgerUnavailable,
