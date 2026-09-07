@@ -27,9 +27,19 @@ jobs:
         # floor can move with evidence; if it is red, the floor is earned and the
         # real reason gets written down instead of the CI one.
         #
-        # 22 is the current LTS line, so `22` resolves above `node:sqlite`'s
-        # 22.5 floor.
-        node-version: [22, 24, 26]
+        # `22` RESOLVED GREEN on all three gates, so the floor is now known to be
+        # unpaid-for rather than merely suspected. `22.5.0` is here to find the
+        # EXACT number: it is the release `node:sqlite`'s `DatabaseSync` landed
+        # in, which is the lowest version anything in this workspace could
+        # possibly need. Whatever this leg does decides the declared floor —
+        # green means `engines` can say `>=22.5.0` and have CI run that literal
+        # version, red means the real floor is higher and gets written down with
+        # the reason instead of a guess.
+        #
+        # `22` STAYS ALONGSIDE IT. A floor of `22.5.0` with only `22.5.0` tested
+        # would claim every release from there to the LTS head on one data point;
+        # keeping the LTS line pins both ends of the range panda declares.
+        node-version: ['22.5.0', 22, 24, 26]
     steps:
       - uses: actions/checkout@v4
 
