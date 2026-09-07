@@ -2,6 +2,17 @@
   "name": "@skanl/panda-registry",
   "version": "0.1.0",
   "description": "The canonical environment Registry: scoped storage, portable bundles, and ingest from what is already installed.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "registry",
+    "mcp-server",
+    "skills"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

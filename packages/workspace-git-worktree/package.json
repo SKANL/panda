@@ -2,6 +2,17 @@
   "name": "@skanl/panda-workspace-git-worktree",
   "version": "0.1.0",
   "description": "A WorkspaceProvider over real git worktrees: every workspace is a detached checkout panda can prove it made.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "workspace",
+    "git",
+    "worktree"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

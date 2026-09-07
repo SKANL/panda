@@ -2,6 +2,17 @@
   "name": "@skanl/panda-workspace-local",
   "version": "0.1.0",
   "description": "The local-directory WorkspaceProvider: a workspace is a subdirectory of rootDir.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "workspace",
+    "sandbox",
+    "isolation"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

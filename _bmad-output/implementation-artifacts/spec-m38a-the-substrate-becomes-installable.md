@@ -970,6 +970,69 @@ It runs inside `pnpm check` where a fourteenth package would meet it on the day
 it is added; the behavioural proof above is expensive and was driven once rather
 than gated. Falsified by deleting `prepack` from one manifest, which reddens it.
 
+### 22 - the packaging, audited against npm's own docs and against published peers
+
+Three investigations and two position papers, against `docs.npmjs.com`, cordis,
+runcell, and thirteen more published packages chosen by SHAPE rather than
+popularity. What came back split cleanly into "panda is ahead", "panda is
+normal", and one thing that is genuinely unpaid for.
+
+**A PREMISE THE WORK STARTED FROM WAS FALSE.** "runcell has no dependencies of
+its own" — driven, runcell declares **six** runtime dependencies. Its docs say
+the default sandbox is bundled so a basic run needs no ADDITIONAL sandbox
+package; that is a claim about optional peers, not about `dependencies`. The two
+were collapsed by whoever reported it. Runcell's actual strategy is the opposite
+of panda's: take a real closure, and push only the swappable parts to optional
+peers.
+
+**WHERE PANDA IS AHEAD OF ITS CLOSEST ANALOGUE, and cordis is the proof.** Cordis
+sets provenance with `yarn config set npmPublishProvenance true` and never
+verifies it afterwards — and **two of its eight packages silently shipped with no
+attestation at all**. That is precisely the failure `assert-provenance.mjs`
+exists to catch. Cordis also puts a release candidate on `latest`
+(`cordis@4.0.0-rc.9`), which `scripts/dist-tag.mjs` is written to prevent.
+Provenance across the fifteen-peer sample is 8 of 15; panda's release path is
+above the majority on every axis measured.
+
+**WHERE PANDA IS NORMAL, against a premise that it was not.** Exact internal pins
+are the MAJORITY behaviour, not the exception — 4 of the 5 peers whose manifests
+could be read directly pin exactly (`@openai/agents`, `ai`/`@ai-sdk/*`,
+`@mastra/core`, `@agentic/*`), one uses a caret. Thirteen packages is
+unremarkable: `@agentic/*` publishes ~52, lockstep, all exact-pinned. And the
+`panda-source` condition pointing at an unshipped `./src/index.ts` is
+precedented TWICE — `@langchain/core` ships `"input": "./src/index.ts"` as its
+first condition with zero `src/` files in the tarball, and cordis does the same
+thing WORSE, as a subpath rather than a condition, which publint flags. Panda's
+tarballs pass `publint --strict` clean.
+
+**WHAT IS GENUINELY UNPAID FOR: `engines: node >=24`.** It is above EVERY peer
+measured — the floors are 16, 18, 18, 20, 20, 22, 22, 22, 22.13, 22, and five
+declare none at all. Nobody declares 24. Driven against panda's own source,
+nothing requires it: `tsconfig.base.json` targets `es2023`, the only
+version-gated APIs are `structuredClone` (Node 17+) and `node:sqlite`'s
+`DatabaseSync` (>= 22.5) in `memory-sqlite`, which is not in the CLI's runtime
+closure and is lazily imported even there. The stated justification is *"CI runs
+Node 24 and a Node 26 canary"* — a CI fact, not a runtime requirement. A Node 22
+LTS consumer gets an `EBADENGINE` warning from npm and a hard failure under a
+strict setup.
+
+**AND IT CANNOT BE LOWERED BY EDITING THE NUMBER.** Declaring `>=22` while CI
+tests only 24 and 26 would be a guarantee in prose with nothing that fails when
+violated — this repository's first rule, committed deliberately. The order is
+the other way round: Node 22 joins the CI matrix FIRST, and the floor moves only
+if that goes green.
+
+**WHAT SHIPPED HERE is the cheap half of the audit.** `keywords` is the one
+absent field npm's docs tie to a FUNCTION rather than to a page rendering —
+*"This helps people discover your package as it's listed in `npm search`"* — and
+zero of thirteen had any, so they were findable only by exact name. `bugs` is
+also npm-recommended; `homepage` renders the page's link back. All three are now
+gated, and a second clause refuses a single keyword list pasted thirteen times:
+if every package ranks for the same terms, they rank for nothing.
+
+**NOT GATED, DELIBERATELY:** `author` and `funding`, which npm's docs describe
+and never recommend, and for which no consumer effect is documented.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

@@ -2,6 +2,18 @@
   "name": "@skanl/panda-projection",
   "version": "0.1.0",
   "description": "Projects Registry entries into executors' native configuration, and owns the ledger that can take them back.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "projection",
+    "configuration",
+    "jsonc",
+    "toml"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

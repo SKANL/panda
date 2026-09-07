@@ -39,6 +39,9 @@ interface Manifest {
   readonly private?: unknown
   readonly publishConfig?: { readonly access?: unknown }
   readonly scripts?: Readonly<Record<string, unknown>>
+  readonly keywords?: unknown
+  readonly bugs?: unknown
+  readonly homepage?: unknown
 }
 
 /** Every directory under `packages/` that actually holds sources. */
@@ -186,5 +189,52 @@ describe('every published package builds before it is packed', () => {
     // CONTROL: a scan over an empty list would pass this trivially.
     expect(packagesWithSource().length).toBeGreaterThan(10)
     expect(missing, 'these ship `files: ["dist"]` and would pack an empty tarball').toEqual([])
+  })
+})
+
+describe('every published package carries the metadata npm asks for', () => {
+  // npm's own reason for each, quoted from docs.npmjs.com:
+  //   keywords -- "Put keywords in it. It's an array of strings. This helps
+  //                people discover your package as it's listed in `npm search`."
+  //   bugs     -- "The URL to your project's issue tracker and / or the email
+  //                address to which issues should be reported."
+  //   repository, description -- both already present on all 13.
+  //
+  // `keywords` is the ONE absent field npm ties to a functional outcome rather
+  // than to a page rendering: without it these packages are findable only by
+  // typing their exact name. `bugs` and `homepage` are what the npm page renders
+  // as its sidebar links, so a reader who lands there has somewhere to go.
+  //
+  // NOT gated here, deliberately: `author` and `funding`, which npm's docs
+  // describe and never recommend, and for which no consumer effect is
+  // documented. A gate over a field nobody needs is a gate that only ever costs.
+  it.each(['keywords', 'bugs', 'homepage'] as const)('declares a non-empty %s', (field) => {
+    // CONTROL: a scan over an empty list would pass this trivially.
+    expect(packagesWithSource().length).toBeGreaterThan(10)
+    const missing = packagesWithSource().filter((name) => {
+      const value = manifestOf(name)[field]
+      if (Array.isArray(value)) return value.length === 0
+      return typeof value !== 'string' && typeof value !== 'object'
+    })
+    expect(missing, `npm's docs ask for \`${field}\` on a package meant to be found and reported against`).toEqual([])
+  })
+
+  it('gives each package keywords of its OWN, not one copied list', () => {
+    // A shared block pasted thirteen times is worse than none: every panda
+    // package would rank identically for every query, which is the same as
+    // ranking for nothing. Each must carry at least one term the others do not.
+    const byPackage = new Map(
+      packagesWithSource().map((name) => [name, new Set((manifestOf(name).keywords as string[]) ?? [])]),
+    )
+    const shared = new Set<string>()
+    for (const [name, own] of byPackage) {
+      for (const term of own) {
+        if ([...byPackage].every(([other, terms]) => other === name || terms.has(term))) shared.add(term)
+      }
+    }
+    const indistinct = [...byPackage]
+      .filter(([, own]) => [...own].every((term) => shared.has(term)))
+      .map(([name]) => name)
+    expect(indistinct, 'these carry only terms every other package also carries').toEqual([])
   })
 })

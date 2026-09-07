@@ -2,6 +2,18 @@
   "name": "@skanl/panda-contracts",
   "version": "0.1.0",
   "description": "The ports a third party implements to extend panda, and the published suites that prove an implementation conforms.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "contracts",
+    "ports",
+    "standard-schema",
+    "conformance"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

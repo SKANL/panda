@@ -2,6 +2,17 @@
   "name": "@skanl/panda-environment",
   "version": "0.1.0",
   "description": "Executor detection, projection orchestration, and the diagnosis `panda doctor` prints.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "doctor",
+    "diagnostics",
+    "environment"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

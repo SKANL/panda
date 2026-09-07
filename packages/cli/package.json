@@ -2,6 +2,18 @@
   "name": "@skanl/panda-cli",
   "version": "0.1.0",
   "description": "The `panda` command-line surface: argv, JSON output and exit codes, and nothing more.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "cli",
+    "mcp",
+    "skills",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",

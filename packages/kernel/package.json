@@ -2,6 +2,17 @@
   "name": "@skanl/panda-kernel",
   "version": "0.1.0",
   "description": "The plugin kernel: manifests, service graph, typed events and ordered teardown, with zero runtime dependencies.",
+  "keywords": [
+    "ai-agent",
+    "panda",
+    "microkernel",
+    "plugin-system",
+    "lifecycle"
+  ],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": {
+    "url": "https://github.com/SKANL/panda/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SKANL/panda.git",
