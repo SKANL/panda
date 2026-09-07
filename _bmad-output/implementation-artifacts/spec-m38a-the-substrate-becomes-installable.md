@@ -194,6 +194,11 @@ v1 scope.
 
 ## Spec Change Log
 
+There is no entry 7, and there never was -- a numbering slip, not a deletion.
+Left as a gap rather than renumbered, because the entries are referred to by
+number elsewhere and renumbering would break every reference to close a hole
+that costs one sentence to explain.
+
 ### 1 — the publish surface was NOT an open question, and parking it was my error
 
 Ask First listed "thirteen names claimed forever versus a smaller set" as
@@ -1052,6 +1057,25 @@ Everything below was driven. Nothing here rests on a reading.
 - **CI green against the exact SHA `0a507a7`**, read from
   `gh run list --json headSha,conclusion` and matched by hand. Not from a
   notification: `gh run list --commit <sha>` returns false zeros in this repo.
+
+### The gate, re-verified at c1367ce
+
+The block above is true AS OF `0a507a7`, and that SHA is now 34 commits
+behind. It is kept rather than rewritten -- a verification record edited to stay
+true stops being a record -- and this section says where things stand now.
+
+- **CI green against the exact SHA `c1367ce`**, every matrix leg, read from
+  `gh run view --json jobs` and matched by hand. `gh run list --commit` still
+  returns false zeros in this repository.
+- The matrix is now FOUR legs, not two: 22.18.0, 22, 24, 26. The first is the
+  literal floor every manifest declares, and `versions.test.ts` reddens if the two
+  ever disagree (Change Log 22).
+- `packages/adapter-cli` whole, live suites included -> **185 tests, 175 passed,
+  10 skipped, ZERO failures** -- the first fully green run of that package this
+  milestone, after its skip guard stopped reporting a third party's outage as
+  panda's own failure (Change Log 16).
+- `pnpm check` is runnable to green by a developer with a real codex installed,
+  which it was not for most of this milestone.
 
 ### The gate this story added
 
