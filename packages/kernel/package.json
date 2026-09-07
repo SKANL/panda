@@ -26,6 +26,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
+    "prepack": "pnpm build",
     "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json"
   },
   "devDependencies": {

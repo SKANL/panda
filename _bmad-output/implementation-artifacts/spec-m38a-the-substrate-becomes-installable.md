@@ -928,6 +928,48 @@ The `{}` in the original report came from a FAILURE path, where the vendor never
 produced a result at all. What remains true is narrower: there is no exported key
 or accessor for it, while the key panda itself consumes IS exported.
 
+### 21 - `pnpm pack` shipped an EMPTY package, and the README told a human to do it
+
+Driven, with a control:
+
+    dist/ present  ->  21 archive entries, 47259 bytes
+    dist/ absent   ->   3 archive entries,  2056 bytes, EXIT 0
+
+The diff is exactly the 18 `dist/` entries. No warning, no non-zero exit. Every
+one of the 13 manifests carries `files: ["dist"]` and NONE carried a `prepack`,
+`prepublishOnly` or `prepare` (control: `"build"` returns 1 for each of the 13).
+
+**CI, the release workflow and the consumer-install proof all build first. The
+only documented HUMAN path does not** — `README.md`: *"Building from source still
+works and needs no registry: `pnpm pack` produces the same tarballs the release
+publishes."* That sentence had no gate anywhere.
+
+**What it costs a consumer, also driven, and it is quiet twice over.**
+`npm install <the empty tarball>` exits 0 and reports "added 1 package"; the
+failure lands later as `ERR_MODULE_NOT_FOUND` naming a path inside
+`node_modules`, which reads as "this published package is broken" rather than
+"you forgot to build". For the CLI it is quieter still: **npm silently skips the
+bin shim** when its target is missing, so `node_modules/.bin/` does not exist at
+all and the user gets `panda: command not found` from an install that reported
+success.
+
+**The fix is one line per manifest and it is honoured by both tools.** With
+`"prepack": "pnpm build"`, driven on the real packages:
+
+    kernel, dist/ deleted        ->  pack yields 21 entries, 18 under dist/
+    cli, its own AND environment's dist deleted  ->  pack yields 10 dist entries
+
+The second is the one that mattered: a per-package build resolves its siblings
+through the `panda-source` condition to their SOURCE, so packing a dependent does
+not need its dependencies built first. The release workflow now builds twice —
+once as its own step, once through `prepack` — which is idempotent and cheap
+against publishing thirteen empty packages.
+
+**The gate is a manifest scan in `versions.test.ts`, deliberately, not a pack.**
+It runs inside `pnpm check` where a fourteenth package would meet it on the day
+it is added; the behavioural proof above is expensive and was driven once rather
+than gated. Falsified by deleting `prepack` from one manifest, which reddens it.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

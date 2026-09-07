@@ -38,6 +38,7 @@ interface Manifest {
   readonly version?: unknown
   readonly private?: unknown
   readonly publishConfig?: { readonly access?: unknown }
+  readonly scripts?: Readonly<Record<string, unknown>>
 }
 
 /** Every directory under `packages/` that actually holds sources. */
@@ -155,5 +156,35 @@ describe('the Contracts version together (NFR-8)', () => {
         ['b', '1.4.2-rc.1'],
       ]),
     ).toEqual([])
+  })
+})
+
+describe('every published package builds before it is packed', () => {
+  it('declares a prepack, because `files: ["dist"]` ships nothing without one', () => {
+    // DRIVEN, with a control: `pnpm pack` on a package whose `dist/` is absent
+    // produced a 3-entry, 2056-byte tarball and EXIT 0, against 21 entries and
+    // 47259 bytes with `dist/` present — the diff is exactly the 18 `dist/`
+    // entries, and there is no warning anywhere.
+    //
+    // WHAT THAT COSTS A CONSUMER, also driven: `npm install <that tarball>`
+    // exits 0 and says "added 1 package", and the failure lands later as
+    // `ERR_MODULE_NOT_FOUND` naming a path inside `node_modules` — which reads
+    // as "this published package is broken", not "you forgot to build". For the
+    // CLI it is quieter still: npm SILENTLY SKIPS the bin shim when its target
+    // is missing, so `node_modules/.bin/` does not exist and the user gets
+    // `panda: command not found` from an install that reported success.
+    //
+    // CI and the release workflow both build first, and so does the
+    // consumer-install proof. The one documented HUMAN path does not:
+    // `README.md` says "Building from source still works and needs no registry:
+    // `pnpm pack` produces the same tarballs the release publishes." A `prepack`
+    // makes that sentence true, and both `pnpm pack` and `npm pack` honour it.
+    const missing = packagesWithSource().filter(
+      (name) => typeof manifestOf(name).scripts?.['prepack'] !== 'string',
+    )
+
+    // CONTROL: a scan over an empty list would pass this trivially.
+    expect(packagesWithSource().length).toBeGreaterThan(10)
+    expect(missing, 'these ship `files: ["dist"]` and would pack an empty tarball').toEqual([])
   })
 })
