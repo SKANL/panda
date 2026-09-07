@@ -1,7 +1,7 @@
 {
   "name": "@skanl/panda-lock",
   "version": "0.1.0",
-  "description": "The portable lockfile protocol: machine-scoped write serialization for any package, with neutral codes and no sibling dependency.",
+  "description": "The portable lockfile protocol: machine-scoped write serialization for any package, with neutral codes owned by no domain.",
   "keywords": [
     "ai-agent",
     "panda",

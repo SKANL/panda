@@ -36,11 +36,16 @@ jobs:
         #
         #     ERROR: This version of pnpm requires at least Node.js v22.13
         #
-        # That is a constraint on BUILDING panda, not on consuming it. A consumer
-        # installs with whatever package manager they like and runs `dist`; they
-        # never run this repository's pnpm. So `22.13.0` is the lowest version
-        # this matrix can prove anything about, and `engines` says exactly that
-        # rather than the lower number the code would actually tolerate.
+        # That is a constraint on BUILDING panda, not on consuming it. `22.13.0`
+        # then failed too, and for a second reason that is also not the code:
+        #
+        #     ERR_UNKNOWN_FILE_EXTENSION: Unknown file extension ".ts"
+        #
+        # Two `memory-sqlite` clauses spawn a child Node that imports `.ts`
+        # directly, and native TypeScript stripping is only unflagged from Node
+        # 22.18. So this matrix measures the floor for RUNNING PANDA FROM SOURCE,
+        # which is a developer's floor, not a consumer's. `22.18.0` is the lowest
+        # number it can speak to.
         #
         # To prove a floor BELOW the toolchain's, the job shape has to change:
         # build and pack once on a high Node, then install and RUN the tarballs
@@ -50,7 +55,7 @@ jobs:
         #
         # `22` stays alongside `22.13.0`: the exact floor and the LTS head pin
         # both ends of the range panda declares.
-        node-version: ['22.13.0', 22, 24, 26]
+        node-version: ['22.18.0', 22, 24, 26]
     steps:
       - uses: actions/checkout@v4
 
