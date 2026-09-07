@@ -11,7 +11,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [24, 26]
+        # 22 IS HERE TO MAKE A CLAIM TESTABLE, not because anything runs on it
+        # yet. Every manifest declares `engines: node >=24`, and that floor is
+        # above EVERY comparable published package measured (the peer floors are
+        # 16, 18, 18, 20, 20, 22, 22, 22, 22.13, 22; five declare none). Driven
+        # against panda's own source, nothing requires 24: `tsconfig.base.json`
+        # targets `es2023`, the only version-gated APIs are `structuredClone`
+        # (Node 17+) and `node:sqlite`'s `DatabaseSync` (>= 22.5) in
+        # `memory-sqlite`, which is outside the CLI's runtime closure and lazily
+        # imported even there. The floor's stated reason is "CI runs Node 24",
+        # which is a fact about CI and not about the code.
+        #
+        # Lowering the number first would be a guarantee in prose with nothing
+        # that fails when violated. So the test comes first: if 22 is green, the
+        # floor can move with evidence; if it is red, the floor is earned and the
+        # real reason gets written down instead of the CI one.
+        #
+        # 22 is the current LTS line, so `22` resolves above `node:sqlite`'s
+        # 22.5 floor.
+        node-version: [22, 24, 26]
     steps:
       - uses: actions/checkout@v4
 
