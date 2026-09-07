@@ -35,10 +35,22 @@ import { materialiseTarget } from './materialise.ts'
 // ledger still holds the old hash — and a warning there would leave panda
 // permanently locked out of an entry it owns.
 //
-// An UNREADABLE ledger stops every ledger write for the run. Under-claiming for
-// one run is recoverable (panda reports its own entries as foreign and touches
-// nothing); persisting that under-claim would orphan every entry panda has
-// written anywhere, permanently.
+// An UNREADABLE ledger turns every target into an INSPECTION, and REFUSES the
+// ones that would have written. This paragraph used to say the opposite -- that
+// panda wrote anyway
+// because "under-claiming for one run is recoverable (panda reports its own
+// entries as foreign and touches nothing)" -- and that recovery does not exist
+// on the config path. DRIVEN: `panda init` over an unreadable ledger exits 0 and
+// lands the bytes; repairing the ledger by hand afterwards leaves `panda doctor`
+// at exit 0 with ZERO findings, and `panda remove` + `panda init` leaves the
+// server in the user's `.claude.json` permanently. `formats.ts`'s
+// ALREADY-SATISFIED branch swallows it precisely because panda wrote it
+// CORRECTLY, so the orphan is invisible exactly when it is panda's own doing.
+//
+// `ingest` already refuses this state before it lists a single vendor document,
+// for the reason written at `ingest.ts:106-119`: without the ledger panda cannot
+// tell its own projections from the user's servers. `init` is the command that
+// WRITES into that config, so it cannot be the lenient one.
 
 /**
  * The registry as the projection engine reads it: one bucket per DECLARED entry
@@ -257,10 +269,30 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
           record.targetId === scope.targetId &&
           sameOwnedPath(resolveOwnedPath(record.filePath), scope.filePath),
       )
+      // An unreadable ledger runs the target as an INSPECTION even in apply
+      // mode. The merge, the drift classification and the verdict are all still
+      // computed — a caller learns exactly what it would have learned — but no
+      // byte lands, because a byte panda cannot claim is a byte panda can never
+      // take back.
+      const claimable = !apply || ledger.state !== 'unreadable'
       projected =
         target.kind === 'materialise'
-          ? await materialiseTarget(target, entries, claimed, apply)
-          : await projectTarget(target, entries, claimed, apply)
+          ? await materialiseTarget(target, entries, claimed, apply && claimable)
+          : await projectTarget(target, entries, claimed, apply && claimable)
+      // `written` under an inspection reads as "these bytes WOULD have changed",
+      // so this fires ONLY when the run had something to write. A target whose
+      // location already holds exactly what panda would write has nothing to
+      // orphan and is reported as the no-op it is, which is what the damaged
+      // ledger left behind by a successful earlier run looks like.
+      if (!claimable && projected.result.written) {
+        // Deliberately not opened with the word `panda`: `test/printed-commands.ts`
+        // treats a backtick-quoted string that starts that way as a COMMAND, and
+        // this is a sentence.
+        throw new PandaError(
+          PANDA_ERROR_CODES.projectionLedgerUnavailable,
+          `refusing to write '${scope.filePath}' without the ownership ledger, because panda could not then tell those bytes from yours: ${ledger.warnings.map((warning) => warning.detail).join('; ')}`,
+        )
+      }
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
       continue
@@ -277,6 +309,11 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
     // The SECOND of the two writes, and inspection skips it here rather than
     // inside the ledger: a diagnosis that recorded claims for entries it did not
     // write would tell the next real run that panda owns bytes it never placed.
+    // NOT dead code, and driving it is what proved that. The guard above throws
+    // only when the target WOULD have written; a target with nothing to write
+    // falls through to here, and without the unreadable clause it reached
+    // `store.update` and failed the target on a ledger it was never going to
+    // touch — turning a harmless no-op into `panda project init` exit 1.
     if (!apply || ledger.state === 'unreadable') continue
     try {
       await store.update(

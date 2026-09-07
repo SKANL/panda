@@ -556,6 +556,48 @@ exactly this state -- a record whose paths are not on disk yet -- on every faile
 write. On the config path that is recoverable; on the materialise path it is a
 delete authority over paths nobody wrote.
 
+### 13 - the engine's reason for writing bytes it cannot claim was false
+
+`engine.ts:38-41` justified continuing through an unreadable ledger with "under-
+claiming for one run is recoverable (panda reports its own entries as foreign and
+touches nothing)". Driven, that recovery does not exist on the config path:
+
+    init with an unreadable ledger   exit 0   vendor bytes landed: YES
+    doctor, ledger repaired by hand  exit 0   findings: NONE, nothing "foreign"
+    remove + init                    the server is STILL in the user's .claude.json
+
+`formats.ts`'s ALREADY-SATISFIED branch swallows the orphan precisely because
+panda wrote it CORRECTLY -- the bytes match what the registry says, so there is
+nothing to report. The orphan is invisible exactly when it is panda's own doing.
+That comment was the only argument for writing anyway, and it was prose asserting
+a recovery nothing enforces.
+
+**The precedent is panda's own, and it is already written.** `ingest.ts:106-119`
+refuses this exact state "BEFORE the roots or the vendor documents are even
+listed, let alone written... so this is a refusal rather than a run that proceeds
+with a weaker guarantee." `ingest` refuses on a ledger it cannot read; `init`,
+the command that actually WRITES into the user's config, refused on nothing.
+
+**The shape is narrower than a refusal of the run.** An unreadable ledger now
+turns every target into an INSPECTION -- the merge, the drift classification and
+the verdict are all still computed -- and refuses only the targets that WOULD
+have written. A location that already holds exactly what panda would write has
+nothing to orphan and stays the no-op it is. After:
+
+    init with an unreadable ledger   exit 1   vendor bytes landed: NO
+    doctor, ledger repaired          exit 1   out-of-date x2, resolution `panda init`
+    remove + init                    the server is GONE
+
+**I BROKE SOMETHING AND ONLY A TEST THREE PACKAGES AWAY CAUGHT IT.** Reading
+`if (!apply || ledger.state === 'unreadable') continue` as dead code once the
+refusal existed was wrong: the refusal throws only when the target WOULD have
+written, so a target with nothing to write fell through to `store.update` and was
+failed on a ledger it was never going to touch -- `panda project init` went from
+exit 0 to exit 1 on a harmless no-op. I then edited that CLI clause to match the
+new exit BEFORE establishing the new exit was correct; driving the binary showed
+the exit 1 came from a completely different refusal. The CLI edit was reverted in
+full and a clause now pins the no-op path next to the code that nearly lost it.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

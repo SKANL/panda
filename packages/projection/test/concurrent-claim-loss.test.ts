@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -123,5 +123,92 @@ describe('a projection run cannot drop a claim it never examined', () => {
       ledger.records.map((record) => record.entryId),
       'panda wrote context7 into the vendor file and then stopped claiming it: the next run sees its own bytes as a foreign collision, permanently',
     ).toContain('context7')
+  })
+})
+
+describe('an unreadable ledger refuses the write instead of orphaning it', () => {
+  it('lands no vendor bytes it has already decided it cannot claim', async () => {
+    const homeDir = await makeHome()
+    const filePath = join(homeDir, '.claude.json')
+
+    // The exact state `engine.ts` continues through today. It is known BEFORE
+    // the loop — `runProjection` reads the ledger at `engine.ts:227` — so this
+    // is not a race and not a probe: it is a fact already in hand when the
+    // first byte is written.
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(join(homeDir, '.panda', 'projection-ledger.json'), '{ not json at all')
+
+    const run = await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [createClaudeMcpTarget({ filePath })],
+      ledger: new ProjectionLedger({ homeDir }),
+      mode: 'apply',
+    })
+
+    // DRIVEN, and this is what the engine's own justification claimed could not
+    // happen. `engine.ts:38-41` says under-claiming for one run is recoverable
+    // "panda reports its own entries as foreign and touches nothing". On the
+    // config path it does neither: measured on the binary, `init` exits 0, the
+    // bytes land, and after repairing the ledger by hand `doctor` exits 0 with
+    // ZERO findings and `remove` + `init` leaves the server in the user's
+    // `.claude.json` permanently. The recovery the comment promises does not
+    // exist, and it was the only argument for writing anyway.
+    await expect(readFile(filePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(run.failures.map((failure) => failure.error.code)).toEqual([
+      'PANDA_PROJECTION_LEDGER_UNAVAILABLE',
+    ])
+    // `ingest` already refuses this exact state before listing a single vendor
+    // document (`ingest.ts:106-119`), for the reason written there: panda cannot
+    // tell its own projections from your servers without the ledger. `init` is
+    // the command that WRITES into that config, so it cannot be the lenient one.
+    expect(run.failures[0]?.error.message).toContain('ownership ledger')
+  })
+
+  it('does not fail a target that had nothing to write anyway', async () => {
+    const homeDir = await makeHome()
+    const filePath = join(homeDir, '.claude.json')
+    const target = createClaudeMcpTarget({ filePath })
+
+    // A healthy run first, so the location already holds exactly what panda
+    // would write; THEN tear the ledger.
+    await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [target],
+      ledger: new ProjectionLedger({ homeDir }),
+      mode: 'apply',
+    })
+    const projected = await readFile(filePath, 'utf8')
+    await writeFile(join(homeDir, '.panda', 'projection-ledger.json'), '{ torn')
+
+    const run = await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [target],
+      ledger: new ProjectionLedger({ homeDir }),
+      mode: 'apply',
+    })
+
+    // THE TRAP THIS CLAUSE EXISTS FOR. The refusal above throws only when the
+    // target WOULD have written. Reading the skip below as dead code once the
+    // refusal existed let a target with nothing to write fall through to
+    // `store.update`, which failed it on a ledger it was never going to touch —
+    // turning a harmless no-op into `panda project init` exit 1. Only a CLI test
+    // three packages away caught it.
+    expect(run.failures).toEqual([])
+    expect(run.results[0]).toMatchObject({ written: false })
+    expect(await readFile(filePath, 'utf8')).toBe(projected)
+    expect(await readFile(join(homeDir, '.panda', 'projection-ledger.json'), 'utf8')).toBe('{ torn')
+  })
+
+  it('CONTROL: a readable ledger writes the same target', async () => {
+    const homeDir = await makeHome()
+    const filePath = join(homeDir, '.claude.json')
+    const run = await runProjection({
+      entries: groupByKind(ENTRIES),
+      targets: [createClaudeMcpTarget({ filePath })],
+      ledger: new ProjectionLedger({ homeDir }),
+      mode: 'apply',
+    })
+    expect(run.failures).toEqual([])
+    expect(await readFile(filePath, 'utf8')).toContain('context7')
   })
 })
