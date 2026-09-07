@@ -433,11 +433,27 @@ export class ProjectionLedger {
   }
 
   /**
-   * The OUTER boundary: the whole read-modify-write happens while this process
-   * holds `<ledger>.lock`, so a sibling PROCESS cannot read the document, be
-   * overtaken, and persist a set that never saw the other's claim. Merging alone
-   * never closed that window — the read is what interleaves, and only mutual
-   * exclusion over the read AND the write can close it.
+   * The OUTER boundary: THIS METHOD's read-modify-write happens while this
+   * process holds `<ledger>.lock`, so two calls into `update`, `updateEntry` or
+   * `replace` cannot interleave their own read and write. Merging alone never
+   * closed that window — the read is what interleaves, and only mutual exclusion
+   * over the read AND the write can close it.
+   *
+   * WHERE THE BOUNDARY ENDS, and it is not where this comment used to imply. A
+   * caller that reads the document ITSELF, decides, and then hands `update` a
+   * whole replacement set is outside this lock for the part that matters, and
+   * `updateEntry`'s own comment names the consequence: it "would resurrect every
+   * claim another writer legitimately dropped in between — panda would then
+   * claim a path it does not own, which on the materialisation path is a delete
+   * authority."
+   *
+   * `runProjection` is that caller. `engine.ts` takes `await store.read()` before
+   * the target loop and calls `store.update(scope, projected.records)` inside it.
+   * Measured, ten rounds of two concurrent `panda init` against one home: 10 of
+   * 40 expected claims lost, and 14 of the 20 processes exited 0. CONTROL, the
+   * same rounds with one process: 0 of 40 lost. The loss is in the caller's
+   * window, not in this method — which is exactly why the sentence above needed
+   * to say which read it covers.
    *
    * `finally { release }` mirrors `RegistryStore.#persist` exactly: the lock is
    * given back whether the write succeeded or threw, and a release failure is
