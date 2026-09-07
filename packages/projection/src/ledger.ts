@@ -319,11 +319,50 @@ export class ProjectionLedger {
   }
 
   /**
-   * Replaces this scope's records inside the on-disk document, keeping every
-   * other claim. Serialised against concurrent calls on this instance so the
-   * read-modify-write window cannot interleave.
+   * Replaces the records this caller TOOK A POSITION ON inside one scope,
+   * keeping every other claim — including claims inside the same scope that
+   * landed after the caller's snapshot was taken.
+   *
+   * `examined` is the third parameter and it is required, because omission used
+   * to mean deletion and nobody could see it. The caller passes the entry ids it
+   * read out of its own ledger snapshot for this scope; `update` adds the ids it
+   * is being handed now. An id in neither set belongs to a writer this caller
+   * never saw, and survives untouched.
+   *
+   * WITHOUT IT, A CONCURRENT RUN ERASES CLAIMS IT DELIBERATELY LEFT ALONE.
+   * Measured on the binary: ten rounds of two concurrent `panda init` over one
+   * home lost 20 of 40 claims, 20 of 20 processes exited 0, and no stderr line
+   * named foreign, skip, collision or ledger; the one-process control lost 0 of
+   * 40. A wider run lost 72 of 144 and left 16 vendor entries owned by nobody,
+   * after which `panda doctor` exited 0 reporting `"drift": []` and a later
+   * `remove` + `init` could no longer take those entries back out — panda had
+   * permanently lost the ability to undo bytes it wrote.
+   *
+   * The mechanism is a granularity mismatch, not a lock. Process B reads the
+   * ledger before A persists, so B's snapshot holds none of A's claims. B then
+   * reads the vendor file, which by now holds A's entries, and classifies them
+   * as foreign — CORRECTLY, since nothing B can see claims them — so they never
+   * reach `projected.records`. The merge decided per entry; the write then
+   * replaced the whole scope. B left A's bytes alone and erased A's claim in the
+   * same breath. Keying the drop to what the caller examined is what makes the
+   * two agree.
+   *
+   * Deliberately NOT one write per entry: that shape preserves the same claims,
+   * but measured 99 writes per init instead of 6 (p50 61.5 ms each, 69x the
+   * ledger phase) and opened a contention cliff — 17 of 48 scopes failing at
+   * eight concurrent inits against 0 of 48 today. This keeps one write per scope.
+   *
+   * Still serialised against concurrent calls on this instance, and still NOT a
+   * fix for the orphan window above it: `engine.ts` writes the vendor file
+   * before it reaches this method, so a persist that throws — or a crash in
+   * between — leaves bytes no record claims. That is a different defect with a
+   * different fix, and it is open.
    */
-  async update(scope: ProjectionLedgerScope, records: readonly ProjectionLedgerRecord[]): Promise<void> {
+  async update(
+    scope: ProjectionLedgerScope,
+    records: readonly ProjectionLedgerRecord[],
+    examined: readonly string[],
+  ): Promise<void> {
     await this.#queued(async () => {
       const current = await this.read()
       if (current.state === 'unreadable') {
@@ -332,9 +371,12 @@ export class ProjectionLedger {
           `projection ledger '${this.filePath}' became unreadable; refusing to overwrite it and orphan every claim it holds`,
         )
       }
+      const surrendered = new Set([...examined, ...records.map((record) => record.entryId)])
       const kept = current.records.filter(
         (record) =>
-          record.targetId !== scope.targetId || !sameOwnedPath(record.filePath, scope.filePath),
+          record.targetId !== scope.targetId ||
+          !sameOwnedPath(record.filePath, scope.filePath) ||
+          !surrendered.has(record.entryId),
       )
       await this.#persist([...kept, ...records])
     })
@@ -447,13 +489,19 @@ export class ProjectionLedger {
    * claim a path it does not own, which on the materialisation path is a delete
    * authority."
    *
-   * `runProjection` is that caller. `engine.ts` takes `await store.read()` before
-   * the target loop and calls `store.update(scope, projected.records)` inside it.
-   * Measured, ten rounds of two concurrent `panda init` against one home: 10 of
-   * 40 expected claims lost, and 14 of the 20 processes exited 0. CONTROL, the
-   * same rounds with one process: 0 of 40 lost. The loss is in the caller's
-   * window, not in this method — which is exactly why the sentence above needed
-   * to say which read it covers.
+   * `runProjection` is that caller and its window is still open: `engine.ts`
+   * takes `await store.read()` before the target loop and decides every target
+   * against that one snapshot. Measured while the window was also AUTHORITY,
+   * ten rounds of two concurrent `panda init` against one home lost 76 of 120
+   * claims with zero bytes on stderr, against a one-process control that lost 0
+   * of 120.
+   *
+   * What closed that is NOT this lock — it never could be, because the decision
+   * happens outside it. `update` now takes the entry ids the caller EXAMINED and
+   * drops only those, so a stale snapshot can no longer speak for entries it
+   * never saw; the same harness reports 0 of 120 after. The window remains, and
+   * is now merely stale rather than destructive: two runs can still reach
+   * different conclusions about the same entry and resolve last-writer-wins.
    *
    * `finally { release }` mirrors `RegistryStore.#persist` exactly: the lock is
    * given back whether the write succeeded or threw, and a release failure is

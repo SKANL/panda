@@ -47,7 +47,7 @@ describe('the ownership ledger lives in panda’s own directory', () => {
     const homeDir = await makeHome()
     const ledger = new ProjectionLedger({ homeDir })
     const claim = record()
-    await ledger.update({ targetId: claim.targetId, filePath: claim.filePath }, [claim])
+    await ledger.update({ targetId: claim.targetId, filePath: claim.filePath }, [claim], [])
 
     expect(JSON.parse(await readFile(ledger.filePath, 'utf8'))).toEqual({
       version: PROJECTION_LEDGER_VERSION,
@@ -57,20 +57,32 @@ describe('the ownership ledger lives in panda’s own directory', () => {
     expect(await readdir(join(homeDir, '.panda'))).toEqual(['projection-ledger.json'])
   })
 
-  it('MERGES: an update replaces only its own scope', async () => {
+  it('MERGES: an update replaces only what it examined, inside its own scope', async () => {
     const homeDir = await makeHome()
     const ledger = new ProjectionLedger({ homeDir })
+    const scopeA = { targetId: 'a', filePath: '/files/a.json' }
     const mine = record({ targetId: 'a', filePath: '/files/a.json', entryId: 'one' })
     const theirs = record({ targetId: 'b', filePath: '/files/b.json', entryId: 'two' })
-    await ledger.update({ targetId: 'a', filePath: '/files/a.json' }, [mine])
-    await ledger.update({ targetId: 'b', filePath: '/files/b.json' }, [theirs])
+    await ledger.update(scopeA, [mine], [])
+    await ledger.update({ targetId: 'b', filePath: '/files/b.json' }, [theirs], [])
 
-    // Replacing scope a must not touch scope b.
+    // This clause used to assert that `one` DISAPPEARED here, and that was the
+    // defect written down as a guarantee: a caller that examined nothing got to
+    // erase a claim it had never seen. Two concurrent `panda init` runs are
+    // exactly that caller, and they lost 20 of 40 claims on the binary.
     const replaced = record({ targetId: 'a', filePath: '/files/a.json', entryId: 'three' })
-    await ledger.update({ targetId: 'a', filePath: '/files/a.json' }, [replaced])
+    await ledger.update(scopeA, [replaced], [])
+    expect((await ledger.read()).records.map((entry) => entry.entryId).sort()).toEqual([
+      'one',
+      'three',
+      'two',
+    ])
 
-    const { records } = await ledger.read()
-    expect(records.map((entry) => entry.entryId).sort()).toEqual(['three', 'two'])
+    // The drop half still works when the entry is NAMED, which is the whole of
+    // what `panda remove` followed by `panda init` depends on — and scope b is
+    // still nobody else's business.
+    await ledger.update(scopeA, [], ['one', 'three'])
+    expect((await ledger.read()).records.map((entry) => entry.entryId)).toEqual(['two'])
   })
 
   it('serialises concurrent updates instead of losing one', async () => {
@@ -80,7 +92,7 @@ describe('the ownership ledger lives in panda’s own directory', () => {
       ['a', 'b', 'c', 'd'].map((id) =>
         ledger.update({ targetId: id, filePath: `/files/${id}.json` }, [
           record({ targetId: id, filePath: `/files/${id}.json`, entryId: id }),
-        ]),
+        ], []),
       ),
     )
     expect((await ledger.read()).records.map((entry) => entry.entryId)).toEqual(['a', 'b', 'c', 'd'])
@@ -93,10 +105,10 @@ describe('the ownership ledger lives in panda’s own directory', () => {
     const one = record({ ...scope, entryId: 'one' })
     const two = record({ ...scope, entryId: 'two' })
 
-    await ledger.update(scope, [one, two])
+    await ledger.update(scope, [one, two], [])
     const first = await readFile(ledger.filePath, 'utf8')
     // Reversed order AND a duplicate: normalisation must absorb both.
-    await ledger.update(scope, [two, one, two])
+    await ledger.update(scope, [two, one, two], [])
     expect(await readFile(ledger.filePath, 'utf8')).toBe(first)
   })
 })
@@ -152,7 +164,7 @@ describe('a missing or unreadable ledger', () => {
     await mkdir(join(homeDir, '.panda'), { recursive: true })
     await writeFile(ledger.filePath, '{ torn', 'utf8')
 
-    await expect(ledger.update({ targetId: 'a', filePath: '/a.json' }, [])).rejects.toBeInstanceOf(
+    await expect(ledger.update({ targetId: 'a', filePath: '/a.json' }, [], [])).rejects.toBeInstanceOf(
       PandaError,
     )
     // The damaged bytes are still there to be recovered by hand.
@@ -230,7 +242,7 @@ describe('the ledger records what panda wrote', () => {
     const homeDir = await makeHome()
     const ledger = new ProjectionLedger({ homeDir })
     const foreign = record()
-    await ledger.update({ targetId: foreign.targetId, filePath: foreign.filePath }, [foreign])
+    await ledger.update({ targetId: foreign.targetId, filePath: foreign.filePath }, [foreign], [])
 
     await runProjection({
       entries: ENTRIES,

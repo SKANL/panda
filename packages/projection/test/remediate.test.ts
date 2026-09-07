@@ -625,6 +625,7 @@ describe('containment on a materialised tree', () => {
     await at.ledger.update(
       { targetId: target.targetId, filePath: at.skillsRoot },
       [forged, { ...forged, entryId: 'beta' }],
+      [],
     )
     const outcome = await runRemediation({
       remediation: 'adopt',

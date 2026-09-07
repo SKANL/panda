@@ -237,6 +237,13 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
     // sibling target with it.
     let projected: { result: ProjectionResult; records: readonly ProjectionLedgerRecord[] }
     let scope: ProjectionLedgerScope
+    // Reaches the write below, which is the whole reason it is declared out
+    // here: `store.update` drops exactly the entries this run TOOK A POSITION
+    // ON, and this snapshot is the record of which ones those were. Left inside
+    // the try, the write had no way to say "these are mine to retire" and said
+    // "the scope is mine to replace" instead — which erased whatever a
+    // concurrent run had claimed in between.
+    let claimed: readonly ProjectionLedgerRecord[]
     try {
       // One ownership scope for both kinds: a config target's file, or a
       // materialisation target's root. The ledger keys on it either way, so a
@@ -245,7 +252,7 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
         targetId: target.targetId,
         filePath: resolveOwnedPath(projectionTargetLocation(target)),
       }
-      const claimed = ledger.records.filter(
+      claimed = ledger.records.filter(
         (record) =>
           record.targetId === scope.targetId &&
           sameOwnedPath(resolveOwnedPath(record.filePath), scope.filePath),
@@ -272,7 +279,11 @@ export async function runProjection(options: RunProjectionOptions): Promise<Proj
     // write would tell the next real run that panda owns bytes it never placed.
     if (!apply || ledger.state === 'unreadable') continue
     try {
-      await store.update(scope, projected.records)
+      await store.update(
+        scope,
+        projected.records,
+        claimed.map((record) => record.entryId),
+      )
     } catch (error) {
       failures.push(toTargetFailure(target.targetId, error))
     }

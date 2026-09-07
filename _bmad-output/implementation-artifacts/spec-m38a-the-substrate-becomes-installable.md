@@ -414,6 +414,61 @@ one example, the block carries a sentence naming that limit and points at the
 page whose examples CI does run. A block that claims to be verified and is not
 would be the exact defect this story exists to close.
 
+### 10 — the concurrent-init claim loss, and why neither debated shape won
+
+Two `panda init` runs over one home silently lost claims. Driven on the binary,
+ten rounds of two concurrent inits: **76 of 120 claims lost, zero bytes on
+stderr**, against a one-process control that lost **0 of 120**. A wider run by an
+investigating agent lost 72 of 144 and left 16 vendor entries owned by nobody,
+after which `panda doctor` exited 0 reporting `"drift": []` and a later `remove`
+plus `init` could no longer take those entries back out. Panda had permanently
+lost the ability to undo bytes it wrote, which is the one thing it exists to do.
+
+**The mechanism is a granularity mismatch, not a lock.** Process B reads the
+ledger before A persists, so B's snapshot holds none of A's claims. B then reads
+the vendor file, which by now holds A's entries, and classifies them as foreign
+-- CORRECTLY, since nothing B can see claims them -- so they never reach
+`projected.records`. The merge decided PER ENTRY; the write then replaced the
+WHOLE SCOPE. B left A's bytes alone and erased A's claim in the same breath.
+
+**Two shapes were argued and neither was taken.** Per-entry `updateEntry` writes
+preserve the claims but measured **99 ledger writes per init instead of 6** (p50
+61.5 ms each, 69x the ledger phase) and opened a contention cliff -- 17 of 48
+scopes failing at eight concurrent inits against 0 of 48 today; its own advocate
+also measured its removal half still broken, because the drop set still comes
+from the stale read. Holding the lock across the whole read-decide-write closes
+more -- including the contended-init orphan -- but `rewriteAll`'s `select` is
+**synchronous** (driven: an async select threw
+`PANDA_PROJECTION_LEDGER_UNAVAILABLE`), so it needs a NEW method on the one class
+this repository deliberately made hard to extend, plus a second entry on
+`guard.test.ts`'s pinned caller list; and its own advocate conceded its premise
+that "the lock is cheap" is the quietest of three disagreeing measurements
+(30 ms p50 against spans up to 385 ms).
+
+**Taken instead: align the write's granularity with the decision's, at today's
+write count.** `update` gained a required third parameter, `examined` -- the
+entry ids the caller read out of its own snapshot -- and drops only ids in that
+set or in the records being written. One write per scope, no new method, no new
+capability symbol, no lock widening. `engine.ts` binds it to `claimed`, which
+moved out of the `try` for exactly that reason.
+
+**Measured after, same harness:** 0 of 120 lost at two concurrent, control 0 of
+120. Mutation-falsified: removing the `surrendered` clause reddens exactly the
+two clauses that assert the guarantee and nothing else, and returns the binary to
+76 of 120 lost. THE HARNESS ITSELF WAS WRONG FIRST and is worth recording -- its
+denominator was derived from the targets that survived, so a target that lost
+every claim vanished and was counted as "nothing was expected here", reporting
+`lost: 0` out of a silently shrunken 56. A zero without a working control means
+"I did not look".
+
+**NOT fixed, and open:** the orphan window above this method -- `engine.ts`
+writes the vendor file before it reaches the ledger, so a persist that throws, or
+a crash in between, still leaves bytes no record claims. Under concurrency the
+binary exits non-zero for 1-2 of 20 processes with
+`PANDA_PROJECTION_TARGET_FAILED`, which is the `hasFileChangedSince` guard
+refusing to land stale bytes -- coded and loud, the opposite of the silent loss
+fixed here, and present identically before the change.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

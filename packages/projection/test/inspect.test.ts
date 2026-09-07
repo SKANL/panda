@@ -59,9 +59,13 @@ async function snapshot(root: string): Promise<Map<string, string>> {
 /** Counts ledger writes; a write that lands identical bytes still counts. */
 class CountingLedger extends ProjectionLedger {
   updates = 0
-  override async update(scope: ProjectionLedgerScope, records: readonly ProjectionLedgerRecord[]): Promise<void> {
+  override async update(
+    scope: ProjectionLedgerScope,
+    records: readonly ProjectionLedgerRecord[],
+    examined: readonly string[],
+  ): Promise<void> {
     this.updates += 1
-    await super.update(scope, records)
+    await super.update(scope, records, examined)
   }
 }
 

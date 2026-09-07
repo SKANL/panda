@@ -572,6 +572,7 @@ describe('the delete path is contained, and its guards are falsifiable', () => {
           { path: 'package.json', contentHash: 'whatever' },
         ],
       })),
+      [],
     )
 
     const run = await project(at, [])
@@ -618,7 +619,11 @@ describe('the delete path is contained, and its guards are falsifiable', () => {
     // `Alpha` are on Windows, and what any two ids that collide are anywhere.
     const state = await at.ledger.read()
     const twin = state.records.map((record) => ({ ...record, entryId: 'twin', nativeLocation: 'twin' }))
-    await at.ledger.update({ targetId: 'stub-skills', filePath: at.root }, [...state.records, ...twin])
+    await at.ledger.update(
+      { targetId: 'stub-skills', filePath: at.root },
+      [...state.records, ...twin],
+      [],
+    )
 
     // `twin` leaves the registry; `alpha` stays.
     const run = await project(at, [skill('alpha', source)])
@@ -640,6 +645,7 @@ describe('the delete path is contained, and its guards are falsifiable', () => {
     await at.ledger.update(
       { targetId: 'stub-skills', filePath: at.root },
       state.records.map((record) => ({ ...record, ownedPaths: undefined })),
+      [],
     )
 
     const run = await project(at, [skill('alpha', source)])
