@@ -598,6 +598,51 @@ new exit BEFORE establishing the new exit was correct; driving the binary showed
 the exit 1 came from a completely different refusal. The CLI edit was reverted in
 full and a clause now pins the no-op path next to the code that nearly lost it.
 
+### 14 - a disposed plugin's action kept running
+
+Recorded last round as "not driven, so not claimed": whether `dispose` retires a
+plugin's action ids. Driven, and it is worse than the id question:
+
+    serviceAfterDispose         throws PANDA_KERNEL_PLUGIN_INACTIVE
+    disposedPluginActionInvoke  RAN -> 'from p'
+    anotherPluginCanClaimTheId  REFUSED: 'act' is already registered on this pipeline
+
+The kernel is rigorous about one half of a torn-down plugin -- `getService`
+refuses with "service 'svc.p' was disposed with its plugin" -- and was completely
+open about the other. A handle closes over its own `run`, so the disposed
+plugin's closure executed after its disposer had already torn that state down.
+And the id stayed burned for the life of the process by a plugin that no longer
+exists.
+
+**No new vocabulary.** `PANDA_KERNEL_PLUGIN_INACTIVE` already exists and its
+service sentence has an exact parallel: `action '<id>' was retired with its
+plugin`. `retire` gained the owning plugin id for precisely that -- the pipeline
+knows action ids and never plugin ids, so without it the refusal could only say
+something unnamed had gone away.
+
+**MY FIRST IMPLEMENTATION WAS WRONG AND MY OWN NEW CLAUSE CAUGHT IT.** `retire`
+plus a separate `reserve(ids)` looked symmetric and is not: a swap retires the
+predecessor's ids, the candidate then declares them and gets a FRESH token in the
+map, so re-marking the id afterwards revived the CANDIDATE's token. Driven, the
+predecessor's handle threw `PANDA_KERNEL_PLUGIN_INACTIVE` while its plugin was
+still serving. `retire` now RETURNS ITS OWN UNDO, which restores the exact
+declaration objects it retired -- a handle holds its declaration directly, so
+reviving anything else revives nothing.
+
+**Five moving parts, each falsified separately**, each killing a named clause and
+leaving 271-272 of 273 passing: the `invoke` guard, `dispose`'s retire, the fresh
+token on re-registration, the restore after a rejected swap, and the pre-run
+reclaim. The published surface is unchanged -- `intercept.test.ts:817` still pins
+`Object.keys(pipeline)` to `['register', 'usage']`.
+
+**An agent broke the gate from outside this change**, and it is worth recording
+because it nearly cost a wrong diagnosis: a running investigation agent wrote
+`packages/environment/test/__scratch/named-adopt.ts` INTO the repository despite a
+read-only brief, and it failed typecheck (TS4104, TS2367) and lint
+(`no-restricted-imports`, AD-2). It appeared and vanished between two gate runs.
+A gate failure in a package the change does not touch is a reason to look at
+`git status`, not to start debugging the change.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

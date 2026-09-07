@@ -49,9 +49,13 @@ describe('swap against the live action pipeline', () => {
     expect(kernel.getService('svc.p')).toEqual({ kind: 'provided', pluginId: 'p', value: 'second' })
   })
 
-  it('after a REJECTED swap the predecessor still holds its action id', () => {
+  it('after a REJECTED swap the predecessor still holds its action id', async () => {
     const kernel = createKernel()
-    kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), actionPlugin('act', 'old'))
+    let pHandle: { invoke: () => Promise<unknown> } | undefined
+    kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), (context) => {
+      pHandle = context.actions.register({ id: 'act', cost: 0, run: () => 'old' })
+      return { status: 'activated', services: { 'svc.p': 'old' }, dispose: () => {} }
+    })
     kernel.register(manifest({ id: 'q', provides: ['svc.q'] }), () => ({
       status: 'activated',
       services: { 'svc.q': 'q' },
@@ -78,6 +82,11 @@ describe('swap against the live action pipeline', () => {
         return { status: 'activated', services: { 'svc.q': 'q2' }, dispose: () => {} }
       }),
     ).toThrow(SwapRejectedError)
+
+    // And p is still SERVING, so the handle it handed out must still run. The
+    // reclaim frees the id before the candidate declares it; undoing that has to
+    // bring the same declaration back to life, not merely re-mark the id.
+    await expect(pHandle!.invoke()).resolves.toBe('old')
   })
 
   it('swap on a stopped kernel is refused', async () => {
@@ -92,5 +101,66 @@ describe('swap against the live action pipeline', () => {
     expect(() =>
       kernel.swap('p', () => ({ status: 'activated', services: { 'svc.p': 'new' }, dispose: () => {} })),
     ).toThrow(PluginInactiveError)
+  })
+})
+
+describe('disposing a plugin retires the actions it declared', () => {
+  it('refuses to run an action whose plugin is gone', async () => {
+    const kernel = createKernel()
+    let handle: { invoke: () => Promise<unknown> } | undefined
+    kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), (context) => {
+      handle = context.actions.register({ id: 'act', cost: 0, run: () => 'from p' })
+      return { status: 'activated', services: { 'svc.p': 'p' }, dispose: () => {} }
+    })
+    kernel.start()
+
+    // CONTROL: it runs while its plugin is alive, or the refusal below proves
+    // nothing about disposal.
+    await expect(handle!.invoke()).resolves.toBe('from p')
+
+    await kernel.dispose('p')
+
+    // The kernel is already rigorous about the OTHER half of a disposed plugin:
+    // `getService` throws PANDA_KERNEL_PLUGIN_INACTIVE with "service 'svc.p' was
+    // disposed with its plugin". Actions were completely open — driven, a
+    // disposed plugin's action still RAN and returned 'from p', executing a
+    // closure whose disposer had already torn its state down.
+    expect(() => kernel.getService('svc.p')).toThrow(PluginInactiveError)
+    await expect(handle!.invoke()).rejects.toMatchObject({
+      code: 'PANDA_KERNEL_PLUGIN_INACTIVE',
+      pluginId: 'p',
+    })
+  })
+
+  it('frees the id so another plugin can declare it', async () => {
+    const kernel = createKernel()
+    let pHandle: { invoke: () => Promise<unknown> } | undefined
+    kernel.register(manifest({ id: 'p', provides: ['svc.p'] }), (context) => {
+      pHandle = context.actions.register({ id: 'act', cost: 0, run: () => 'from p' })
+      return { status: 'activated', services: { 'svc.p': 'p' }, dispose: () => {} }
+    })
+    kernel.register(manifest({ id: 'q', provides: ['svc.q'] }), () => ({
+      status: 'activated',
+      services: { 'svc.q': 'q' },
+      dispose: () => {},
+    }))
+    kernel.start()
+    await kernel.dispose('p')
+
+    // Without this the id is burned for the life of the process by a plugin
+    // that no longer exists.
+    kernel.swap('q', (context) => {
+      context.actions.register({ id: 'act', cost: 0, run: () => 'from q' })
+      return { status: 'activated', services: { 'svc.q': 'q2' }, dispose: () => {} }
+    })
+    expect(kernel.getService('svc.q')).toEqual({ kind: 'provided', pluginId: 'q', value: 'q2' })
+
+    // AND the dead handle stays dead. Reviving the declaration instead of
+    // replacing it would hand p's disposed closure back to whoever still holds
+    // its handle, under an id that now belongs to q.
+    await expect(pHandle!.invoke()).rejects.toMatchObject({
+      code: 'PANDA_KERNEL_PLUGIN_INACTIVE',
+      pluginId: 'p',
+    })
   })
 })

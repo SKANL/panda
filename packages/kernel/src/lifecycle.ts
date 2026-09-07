@@ -232,11 +232,10 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   // Built with the sink above, not with one of its own: every invocation and
   // every violation lands in the same stream as the lifecycle transitions, so one
   // reader reconstructs both.
-  const {
-    pipeline: actions,
-    retire: retireActions,
-    reserve: reserveActions,
-  } = createRetirableActionPipeline(log, options.actionPolicy)
+  const { pipeline: actions, retire: retireActions } = createRetirableActionPipeline(
+    log,
+    options.actionPolicy,
+  )
   const registrations: { manifest: PluginManifest; factory: PluginFactory }[] = []
   const runtime = new Map<string, RuntimePlugin>()
   const activationOrder: string[] = []
@@ -332,7 +331,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
     // replacement re-declaring the id its predecessor holds is the normal case,
     // not a collision, and the pipeline cannot tell the two apart. Put back
     // below if the candidate is rejected — the predecessor is still serving.
-    retireActions(reclaimable)
+    const restore = retireActions(reclaimable, manifest.id)
     const claimed: string[] = []
     const scoped: ActionPipeline = {
       register(definition) {
@@ -349,8 +348,8 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       // Retired HERE rather than at each caller: there are two, and a caller
       // that forgot would leak silently — the id only becomes unusable later,
       // for someone else.
-      retireActions(claimed)
-      reserveActions(reclaimable)
+      retireActions(claimed, manifest.id)
+      restore()
       return { ...outcome, actionIds: [] }
     }
     return { ...outcome, actionIds: claimed }
@@ -692,6 +691,13 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         }
         plugin.state = 'disposed'
         plugin.services = {}
+        // The other half of teardown. Without it a disposed plugin's action kept
+        // RUNNING through any handle it had handed out — driven, `handle.invoke()`
+        // returned the disposed plugin's value while `getService` on the same
+        // plugin already threw `PANDA_KERNEL_PLUGIN_INACTIVE` — and its ids stayed
+        // burned for the life of the process by a plugin that no longer exists.
+        retireActions(plugin.actionIds, pluginId)
+        plugin.actionIds = []
         record({ event: disposerThrew ? 'plugin.disposal-failed' : 'plugin.disposed', subject: pluginId })
         // Mirrors stop(): the record has landed by the time dispose() resolves.
         await drainLog()

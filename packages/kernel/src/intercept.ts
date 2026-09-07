@@ -1,6 +1,7 @@
 import {
   ActionDeniedError,
   ActionInvalidError,
+  PluginInactiveError,
   BudgetExceededError,
   KERNEL_ERROR_CODES,
   PandaKernelError,
@@ -216,16 +217,24 @@ function positiveCap(field: string, value: number | undefined): number | undefin
  */
 export interface RetirableActionPipeline {
   readonly pipeline: ActionPipeline
-  /** Frees ids so a superseded or rejected implementation stops holding them. */
-  retire(ids: readonly string[]): void
   /**
-   * Marks ids as taken again WITHOUT a definition, which is only ever undoing a
-   * `retire`. A retired id's existing handle still runs — `register` closed over
-   * its locals and `registeredIds` is purely the duplicate guard — so this puts
-   * the guard back for an implementation that is still serving after its
-   * replacement was rejected.
+   * Frees ids so a superseded or rejected implementation stops holding them,
+   * AND stops the handles it handed out from running.
+   *
+   * `owner` is the plugin the ids belonged to, and it is required because it is
+   * the only thing that makes the refusal readable: the pipeline knows action
+   * ids, never plugin ids, so without it a retired handle could only say that
+   * something unnamed had gone away.
+   *
+   * RETURNS ITS OWN UNDO, and that pairing is the point. A swap retires the
+   * predecessor's ids so the candidate can declare them; if the candidate is
+   * then rejected the predecessor is STILL SERVING, so the exact declarations
+   * that were retired have to come back — not the ids, the declarations, or the
+   * handles the predecessor already handed out stay dead. Driven: re-marking the
+   * id alone left the candidate's own token in the map, and the predecessor's
+   * handle threw `PANDA_KERNEL_PLUGIN_INACTIVE` while its plugin was serving.
    */
-  reserve(ids: readonly string[]): void
+  retire(ids: readonly string[], owner: string): () => void
 }
 
 /** The published factory: exactly the pipeline, exactly its two members. */
@@ -266,7 +275,23 @@ export function createRetirableActionPipeline(
   // Depth of settlements currently executing DECLARER code. Non-zero means a
   // figure is known-but-unapplied and the running total is stale.
   let settling = 0
-  const registeredIds = new Set<string>()
+  /**
+   * Every id ever declared, and whether its declaration is still live.
+   *
+   * A Set of ids was only ever a duplicate guard, and that left `retire` unable
+   * to do the half that matters: a handle closes over its own `run`, so a
+   * DISPOSED plugin's action still executed — driven, `handle.invoke()` returned
+   * the disposed plugin's value while `getService` on the same plugin threw
+   * `PANDA_KERNEL_PLUGIN_INACTIVE`. The kernel was rigorous about one half of a
+   * torn-down plugin and completely open about the other.
+   *
+   * Retired entries are KEPT rather than deleted, because `reserve` has to bring
+   * back the very same token when a rejected swap leaves the predecessor still
+   * serving — a fresh token would leave its live handles dead. The map therefore
+   * grows with the number of DISTINCT ids a process ever declares, which is
+   * bounded by the plugins it loads.
+   */
+  const declarations = new Map<string, { live: boolean; owner: string }>()
 
   function usageNow(): BudgetUsage {
     return Object.freeze({ invocations, totalCost, concurrent })
@@ -307,7 +332,7 @@ export function createRetirableActionPipeline(
       // registrations collapse into one indistinguishable subject in the stream.
       throw new ActionInvalidError('id', 'must be an already-trimmed identifier a log record accepts')
     }
-    if (registeredIds.has(id)) {
+    if (declarations.get(id)?.live === true) {
       throw new ActionInvalidError('id', `is already registered on this pipeline ('${id}')`)
     }
     if (!Number.isFinite(cost) || cost < 0) {
@@ -324,7 +349,11 @@ export function createRetirableActionPipeline(
       // of them silently stands at its estimate.
       throw new ActionInvalidError('settle', 'must be a function when present')
     }
-    registeredIds.add(id)
+    // A FRESH token, replacing any retired one: the previous declaration's
+    // handles keep pointing at the old token and stay dead, which is the whole
+    // point of retiring them.
+    const declaration = { live: true, owner: '' }
+    declarations.set(id, declaration)
     const descriptor: ActionDescriptor = Object.freeze({ id, cost })
 
     function contextNow(): StageContext {
@@ -332,6 +361,17 @@ export function createRetirableActionPipeline(
     }
 
     async function invoke(): Promise<T> {
+      // FIRST, before the budget, the stages or the operation. A retired
+      // declaration belongs to a plugin that has been disposed or superseded,
+      // and its `run` closes over state that plugin's disposer has already torn
+      // down. `getService` on the same plugin already refuses with this exact
+      // code and this exact sentence shape; an action was the half that did not.
+      if (!declaration.live) {
+        throw new PluginInactiveError(
+          declaration.owner,
+          `action '${id}' was retired with its plugin`,
+        )
+      }
       // Set at every site where the PIPELINE refuses, so `post` can be told
       // "refused" apart from "the operation itself threw" without inspecting types.
       let refusal: PandaKernelError | undefined
@@ -647,11 +687,23 @@ export function createRetirableActionPipeline(
         return usageNow()
       },
     }),
-    retire(ids: readonly string[]) {
-      for (const id of ids) registeredIds.delete(id)
-    },
-    reserve(ids: readonly string[]) {
-      for (const id of ids) registeredIds.add(id)
+    retire(ids: readonly string[], owner: string) {
+      const retired: [string, { live: boolean; owner: string }][] = []
+      for (const id of ids) {
+        const declaration = declarations.get(id)
+        if (declaration === undefined) continue
+        declaration.live = false
+        declaration.owner = owner
+        retired.push([id, declaration])
+      }
+      return () => {
+        // The SAME objects, put back under their own ids: a handle holds its
+        // declaration directly, so reviving anything else revives nothing.
+        for (const [id, declaration] of retired) {
+          declaration.live = true
+          declarations.set(id, declaration)
+        }
+      }
     },
   })
 }
