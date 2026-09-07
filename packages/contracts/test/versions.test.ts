@@ -42,6 +42,7 @@ interface Manifest {
   readonly keywords?: unknown
   readonly bugs?: unknown
   readonly homepage?: unknown
+  readonly engines?: Readonly<Record<string, unknown>>
 }
 
 /** Every directory under `packages/` that actually holds sources. */
@@ -236,5 +237,45 @@ describe('every published package carries the metadata npm asks for', () => {
       .filter(([, own]) => [...own].every((term) => shared.has(term)))
       .map(([name]) => name)
     expect(indistinct, 'these carry only terms every other package also carries').toEqual([])
+  })
+})
+
+describe('the declared Node floor is the one CI actually runs', () => {
+  // `engines` is a promise to a CONSUMER about what their runtime must be, and
+  // the only thing that can keep it honest is a CI leg pinned to that exact
+  // version. Declaring a floor nobody runs is a guarantee in prose; declaring
+  // one CI runs is a guarantee something fails on.
+  //
+  // HOW THE NUMBER WAS FOUND, because it is not the obvious one. The floor was
+  // `>=24`, above every comparable published package measured (peer floors run
+  // 16 to 22.13; nobody declares 24). Driven, nothing in panda's source needs
+  // it. Lowering it took three measurements, and the first two failed for
+  // reasons that are not panda's code:
+  //
+  //     22.5.0   ERROR: This version of pnpm requires at least Node.js v22.13
+  //     22.13.0  ERR_UNKNOWN_FILE_EXTENSION: Unknown file extension ".ts"
+  //     22.18.0  green on every gate
+  //
+  // The first is the build toolchain, the second is two `memory-sqlite` clauses
+  // spawning a child Node that imports `.ts` before native stripping was
+  // unflagged. Both are DEVELOPER floors. A consumer runs `dist` and needs
+  // neither, so the true consumer floor is lower still and remains unproven —
+  // proving it needs a build-once-then-run-the-tarball matrix, which is
+  // recorded in deferred-work rather than guessed at here.
+  const workflow = readFileSync(join(packagesDir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')
+
+  it('pins a CI leg at exactly the version every manifest declares', () => {
+    const declared = new Set(packagesWithSource().map((name) => manifestOf(name).engines?.['node']))
+    // CONTROL: one floor across the workspace, or the question below is
+    // ambiguous and the clause would be comparing against an arbitrary member.
+    expect([...declared], 'the 13 manifests disagree about the Node floor').toHaveLength(1)
+
+    const floor = [...declared][0]
+    expect(typeof floor).toBe('string')
+    const exact = String(floor).replace(/^>=/, '')
+    expect(
+      workflow,
+      `every manifest declares node ${String(floor)}; CI must run that literal version, or the floor is a number nobody has tried`,
+    ).toContain(`'${exact}'`)
   })
 })

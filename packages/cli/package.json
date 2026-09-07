@@ -25,7 +25,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "bin": {
     "panda": "./dist/bin/panda.js"

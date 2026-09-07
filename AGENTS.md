@@ -9,7 +9,13 @@ projected into each executor's NATIVE configuration, with ownership tracked so
 panda can undo exactly what it wrote and nothing else.
 
 Stack: pnpm 11 monorepo, TypeScript ~7.0.2 native, Vitest 4, Standard Schema v1,
-Node >= 24. CI runs Node 24 and a Node 26 canary on Linux.
+Node >= 22.18.0. CI runs that exact floor plus the 22 LTS head, 24, and a 26 canary on Linux.
+The floor was `>= 24` and nothing in the source needed it; it came down only after a
+CI leg pinned to `22.18.0` went green. Two lower attempts failed for reasons that are
+not panda's code -- pnpm needs >= 22.13, and two `memory-sqlite` clauses spawn a child
+Node that imports `.ts` before native stripping was unflagged at 22.18 -- so this is a
+DEVELOPER floor. A consumer runs `dist` and needs neither, so their real floor is lower
+and is not yet proven.
 
 ## The rule behind every other rule
 
