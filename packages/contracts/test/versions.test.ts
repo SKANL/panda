@@ -273,9 +273,21 @@ describe('the declared Node floor is the one CI actually runs', () => {
     const floor = [...declared][0]
     expect(typeof floor).toBe('string')
     const exact = String(floor).replace(/^>=/, '')
+
+    // THE MATRIX LINE, NOT THE WHOLE FILE. The first draft of this clause was a
+    // `toContain` over `ci.yml`'s entire text, which a version number appearing
+    // in a COMMENT satisfies — and this workflow's comments are full of version
+    // numbers, because they record what was tried and why. A gate a comment can
+    // green is a gate that checks nothing.
+    const legs = workflow
+      .split(String.fromCharCode(10))
+      .filter((line) => line.trimStart().startsWith('node-version:'))
+    // CONTROL: the parse has to have found the list at all. A regex that matches
+    // nothing and an assertion over nothing look identical from the outside.
+    expect(legs, 'no `node-version:` list was found in ci.yml').not.toEqual([])
     expect(
-      workflow,
-      `every manifest declares node ${String(floor)}; CI must run that literal version, or the floor is a number nobody has tried`,
+      legs.join(String.fromCharCode(10)),
+      `every manifest declares node ${String(floor)}; a CI matrix must RUN that literal version, and a comment mentioning it does not count`,
     ).toContain(`'${exact}'`)
   })
 })

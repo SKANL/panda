@@ -17,7 +17,10 @@ jobs:
         # 16, 18, 18, 20, 20, 22, 22, 22, 22.13, 22; five declare none). Driven
         # against panda's own source, nothing requires 24: `tsconfig.base.json`
         # targets `es2023`, the only version-gated APIs are `structuredClone`
-        # (Node 17+) and `node:sqlite`'s `DatabaseSync` (>= 22.5) in
+        # (Node 17+) and `node:sqlite`'s `DatabaseSync` (>= 22.13 UNFLAGGED — it
+        # landed at 22.5 behind `--experimental-sqlite`, and the control that
+        # separates "not present" from "not exposed" is the flag: 22.5.0 and
+        # 22.12.0 throw ERR_UNKNOWN_BUILTIN_MODULE plain and succeed with it) in
         # `memory-sqlite`, which is outside the CLI's runtime closure and lazily
         # imported even there. The floor's stated reason is "CI runs Node 24",
         # which is a fact about CI and not about the code.
