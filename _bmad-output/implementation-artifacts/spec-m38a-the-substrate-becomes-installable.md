@@ -757,6 +757,44 @@ skipped. It did not reproduce on a quiet machine (185 green). Distinguishing "th
 model did not do the task" from "panda broke it" is a real question and it is not
 one to answer while committing something else.
 
+### 17 - the release workflow accepted a prerelease tag and published it as `latest`
+
+`release.yml` published with `--tag latest`, hardcoded, and its own comment
+argues that correctly FOR A STABLE VERSION: driven through npm's
+`npm-pick-manifest`, a packument whose only dist-tag is `next` still resolves for
+a bare `npm i`, because a tagless install becomes the range `*`. Only a
+PRERELEASE VERSION hides a release. The comment then concludes that a version
+change "is out of scope".
+
+**But the gate above it ACCEPTS one.** The version check is a plain string
+comparison — `TAG="${GITHUB_REF_NAME#v}"` against the contracts manifest — so
+`v0.1.0-rc.1` passes it and is then published as `latest`, which is the single
+outcome a prerelease exists to avoid. The workflow accepted an input it
+mislabelled, and nothing anywhere failed when it did.
+
+This is not the version decision, which stays frozen at `0.1.0` stable. It is
+the workflow being wrong about an input it already lets through.
+
+**`scripts/dist-tag.mjs` derives the tag and FAILS CLOSED.** A version it cannot
+classify exits non-zero rather than falling back to `latest`: shrugging would put
+whatever it could not read on the tag every consumer gets by default, which is
+the exact harm. Build metadata is correctly not a prerelease — `1.0.0+build.5` is
+a stable release that records how it was built.
+
+**It is a file for the same reason `assert-provenance.mjs` is.** That script's
+own header says it: *"a step that only ever runs at the one irreversible moment
+is a step nobody has driven."* `packages/contracts/test/dist-tag.test.ts` drives
+it as a CHILD PROCESS, exactly as the workflow invokes it, over the full corpus:
+`0.1.0`, `10.20.30`, `0.1.0+build.5` to `latest`; `0.1.0-rc.1`, `1.0.0-beta.0`,
+`2.0.0-next.3`, `1.0.0-rc.1+build.9` to `rc`; and `''`, `v1.0.0`, `1.0`,
+`not-a-version` refused. A control asserts the no-argument form agrees with the
+workspace version, which is what the tag gate compares against.
+
+**Three mutations, each killing the right clauses and nothing else:** classifying
+a prerelease as `latest` kills all four `rc` rows; treating build metadata as a
+prerelease kills exactly `0.1.0+build.5`; falling back instead of throwing kills
+exactly the refusal clause.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

@@ -103,8 +103,21 @@ jobs:
       # false on the pages it ships inside every tarball, and burn the same
       # thirteen names at the same version anyway. It buys nothing on the one
       # axis ROADMAP-03 calls irreversible.
+      #
+      # THE TAG IS NOW DERIVED, because the reasoning above is correct for a
+      # STABLE version and the gate above ACCEPTS a prerelease one. `TAG=
+      # "${GITHUB_REF_NAME#v}"` is a plain string comparison, so `v0.1.0-rc.1`
+      # passes it and `--tag latest` would then put a release candidate on the
+      # tag every bare `npm i` resolves -- the single outcome a prerelease exists
+      # to avoid. `scripts/dist-tag.mjs` reads the version and FAILS CLOSED on
+      # anything it cannot classify; `packages/contracts/test/dist-tag.test.ts`
+      # drives it as a child process over the whole corpus, so the classifier is
+      # not first executed at the one irreversible moment.
       - name: Publish
-        run: pnpm publish -r --access public --no-git-checks --provenance --report-summary --tag latest
+        run: |
+          DIST_TAG="$(node scripts/dist-tag.mjs)"
+          echo "publishing under dist-tag ${DIST_TAG}"
+          pnpm publish -r --access public --no-git-checks --provenance --report-summary --tag "${DIST_TAG}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
