@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { isAuthFailure, isProviderUnavailable } from './provider-refusal.ts'
 import type { WorkspaceHandle } from '@skanl/panda-contracts'
 import { createClaudeCodeAdapter, createNodeChildSpawner } from '../src/index.ts'
 
@@ -55,7 +56,10 @@ async function probeClaudeAvailability(): Promise<ClaudeAvailability> {
 function looksLikeAuthFailure(envelope: { status: string; errors?: readonly { message: string }[] }): boolean {
   if (envelope.status !== 'failed') return false
   const message = envelope.errors?.map((error) => error.message).join('; ') ?? ''
-  return /invalid api key|api key (is )?(invalid|required|missing)|not authenticated|unauthenticated|(please )?run `?claude login`?|oauth token|insufficient credit/i.test(message)
+  // Was another copy of the same vendor phrasings. `provider-refusal.ts` carries
+  // them now, behind a corpus of REAL observed messages that fails when a
+  // wording panda has already seen stops being recognised.
+  return isAuthFailure(message) || isProviderUnavailable(message)
 }
 
 describe('live claude smoke', () => {

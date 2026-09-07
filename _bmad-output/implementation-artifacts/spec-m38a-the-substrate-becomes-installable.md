@@ -704,6 +704,59 @@ the sentence wrapped across source lines, and then a comment I wrote quoted a
 `panda ...` command across two lines. A printed sentence the scanner cannot see
 is a printed sentence nothing checks.
 
+### 16 - a third party's outage failed panda's gate, for the third time
+
+`packages/adapter-cli/test/confinement-live.test.ts` has failed `pnpm check` on
+this machine for days, and it was written down every time as "known
+environmental". It is not environmental: the suite's own skip guard does not
+recognise the message it is being handed. Measured against the patterns as they
+stood, with a working control:
+
+    codex  quota    auth=false unavailable=false   "You've hit your usage limit..."
+    claude logout   auth=false unavailable=false   "Not logged in - Please run /login"
+    claude authkey  auth=TRUE  unavailable=false   (control: the guard does fire)
+    generic 429     auth=false unavailable=TRUE    (control)
+    CONTROL panda   auth=false unavailable=false   a panda-attributable failure
+
+TWO real messages fall through, from two different vendors, both observed in this
+session by two different runs. The suite's own header says what that costs:
+*"Reporting that as a FAILURE blames panda for an outage at a third party -- and
+it did, twice, on two different days, once making a developer grant a data
+consent they did not want in order to get a green gate."* This is the third.
+
+**The root cause is not the regex, it is that there were THREE of them.** The
+patterns lived in three separate copies across `confinement-live.test.ts`,
+`stream-mode-live.test.ts` and `live-smoke.test.ts`, each slightly different,
+each patched alone after a vendor changed its wording. A fourth copy could not
+have been noticed.
+
+**The fix is one module and a corpus that fails.** `test/provider-refusal.ts`
+holds both patterns and `OBSERVED_REFUSALS` -- real messages, copied from real
+runs, never invented, each tagged with the verdict it must reach. Its companion
+`provider-refusal.test.ts` is an ORDINARY suite, so it runs in CI where every
+live case skips. Adding a newly-observed message is one entry, and the pattern
+has to grow until the file is green.
+
+**The control is the load-bearing part.** One corpus row is a genuine panda
+defect that must match NEITHER guard: a pattern loose enough to swallow it turns
+every real failure into a skip, which is worse than the failure it prevents. The
+corpus asserts all three verdicts are present, or six `unavailable` rows would
+pass against a pattern matching everything.
+
+**Falsified by reverting to the exact pre-fix patterns**, which maps 1:1: the
+provider pattern alone kills the codex row, the auth pattern alone kills the
+claude row, both together kill both, and nothing else moves. `adapter-cli` is now
+**185 green, 175 passed and 10 skipped, zero failures** -- the first fully green
+run of that package this milestone.
+
+**A FOURTH INSTANCE OF THE SAME CLASS, found and deliberately NOT fixed.** Under
+load, `claude-code: a workspace-relative write lands in the workspace and nowhere
+else` failed with its own message reading *"produced no usable '<name>' inside the
+workspace, so this run measured nothing"* -- and then asserted rather than
+skipped. It did not reproduce on a quiet machine (185 green). Distinguishing "the
+model did not do the task" from "panda broke it" is a real question and it is not
+one to answer while committing something else.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

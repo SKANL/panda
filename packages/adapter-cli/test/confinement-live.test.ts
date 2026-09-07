@@ -10,6 +10,7 @@ import { CODEX_TRAITS } from '../src/executors/codex.ts'
 import { OPENCODE_TRAITS } from '../src/executors/opencode.ts'
 import { createNodeChildSpawner } from '../src/node-child-spawner.ts'
 import type { SpawnedChild, SpawnOutcome } from '../src/spawn-seam.ts'
+import { isAuthFailure, isProviderUnavailable } from './provider-refusal.ts'
 import type { ExecutorTraits } from '../src/traits.ts'
 
 // Per-executor LIVE measurement of CONFINEMENT (Story M4.A).
@@ -75,22 +76,10 @@ const MARKER = 'panda-ok'
 const PACKAGE_DIR = resolve(import.meta.dirname, '..')
 const REPO_ROOT = resolve(PACKAGE_DIR, '..', '..')
 
-// Same verdict as `live-smoke.test.ts`: an installed but logged-out binary must
-// SKIP with that reason. Duplicated rather than shared because a test file that
-// imports another test file registers its suites twice.
-const AUTH_FAILURE =
-  /invalid api key|api key (is )?(invalid|required|missing)|not authenticated|unauthenticated|(please )?run `?(claude|codex|opencode) (login|auth)|oauth token|insufficient credit|no credentials|log ?in to continue/i
-
-// The provider REFUSED, which is not the same as the executor misbehaving. A
-// rate limit, a quota, or a data-policy consent the account has not granted all
-// mean one thing to this suite: nothing about confinement was measured.
-// Reporting that as a FAILURE blames panda for an outage at a third party — and
-// it did, twice, on two different days, once making a developer grant a data
-// consent they did not want in order to get a green gate. AD-5's rule is
-// panda's own: unavailable is not failed, and the honest answer is a skip that
-// says why.
-const PROVIDER_UNAVAILABLE =
-  /rate limit|quota (exceeded|exhausted)|too many requests|freeusagelimit|datapolicy|requires explicit opt in|service unavailable|overloaded|(^|[^0-9])(429|503)([^0-9]|$)/i
+// The two verdicts live in `provider-refusal.ts` with a corpus of REAL observed
+// messages behind them, because these patterns rotted three times in three
+// separate copies. `provider-refusal.test.ts` is an ordinary suite, so the
+// corpus is checked in CI where every live case here skips.
 
 let sandbox: string
 let decoyPwd: string
@@ -390,11 +379,11 @@ function evidenceOf(outcome: SpawnOutcome | undefined): string {
 }
 
 function looksUnauthenticated(outcome: SpawnOutcome | undefined): boolean {
-  return AUTH_FAILURE.test(`${outcome?.stdout ?? ''}\n${outcome?.stderr ?? ''}`)
+  return isAuthFailure(`${outcome?.stdout ?? ''}\n${outcome?.stderr ?? ''}`)
 }
 
 function providerRefused(outcome: SpawnOutcome | undefined): boolean {
-  return PROVIDER_UNAVAILABLE.test([outcome?.stdout ?? '', outcome?.stderr ?? ''].join(' '))
+  return isProviderUnavailable([outcome?.stdout ?? '', outcome?.stderr ?? ''].join(' '))
 }
 
 describe('executor confinement, measured against the real binaries', () => {

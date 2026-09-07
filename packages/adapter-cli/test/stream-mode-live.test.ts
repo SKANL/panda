@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { isAuthFailure, isProviderUnavailable } from './provider-refusal.ts'
 import type { ResultEnvelope, UsageReport, WorkspaceHandle } from '@skanl/panda-contracts'
 import { createCliExecutorAdapter } from '../src/traits.ts'
 import type { ExecutorTraits } from '../src/traits.ts'
@@ -92,9 +93,10 @@ async function probe(): Promise<Availability> {
 function looksUnauthenticated(envelope: ResultEnvelope): boolean {
   if (envelope.status !== 'failed') return false
   const message = envelope.errors?.map((error) => error.message).join('; ') ?? ''
-  return /invalid api key|api key (is )?(invalid|required|missing)|not authenticated|unauthenticated|(please )?run `?claude login`?|oauth token|insufficient credit|rate limit/i.test(
-    message,
-  )
+  // Was another copy of the same vendor phrasings. `provider-refusal.ts` carries
+  // them now, behind a corpus of REAL observed messages that fails when a
+  // wording panda has already seen stops being recognised.
+  return isAuthFailure(message) || isProviderUnavailable(message)
 }
 
 /**
