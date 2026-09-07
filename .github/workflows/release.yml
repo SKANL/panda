@@ -72,16 +72,36 @@ jobs:
           echo "releasing ${VERSION}"
 
       # `--provenance` is a FLAG here, and that is the whole point of this line.
-      # It used to be `NPM_CONFIG_PROVENANCE: 'true'` in the env below, which
-      # pnpm 11 does not read: measured against the pinned 11.23.0, an
+      # It used to be `NPM_CONFIG_PROVENANCE: 'true'` in the env below. A FLAG is
+      # unambiguous where an env var is a bet on which config table a tool reads,
+      # and this release is the one place a silent no-op cannot be taken back.
+      #
+      # THE MEASUREMENT THAT USED TO JUSTIFY THIS WAS INVERTED, and it is
+      # corrected here rather than quietly dropped. It read: "an
       # `NPM_CONFIG_REGISTRY` pointing at a dead port is IGNORED while
-      # `PNPM_CONFIG_REGISTRY` is honoured, and `provenance` travels the same
-      # config path as `registry`. So the publish would have exited 0 with
-      # thirteen packages on the registry carrying no attestation, and nothing
-      # would have failed -- a guarantee stated in configuration that the tool
-      # never read. `--report-summary` writes `pnpm-publish-summary.json`, which
-      # is the only durable record of WHICH packages landed when a run aborts
-      # partway; without it a partial publish leaves evidence only in the log.
+      # `PNPM_CONFIG_REGISTRY` is honoured". Re-driven on the publish path
+      # against the pinned pnpm 11.23.0, it is the exact opposite:
+      #
+      #     baseline                                   -> registry.npmjs.org
+      #     NPM_CONFIG_REGISTRY=http://127.0.0.1:3/    -> 127.0.0.1:3   HONOURED
+      #     PNPM_CONFIG_REGISTRY=http://127.0.0.1:2/   -> registry.npmjs.org  IGNORED
+      #
+      # So the env form was probably read all along and the flag is belt over
+      # braces. It stays, because a flag needs no measurement to be right; the
+      # sentence that claimed otherwise does not get to stand.
+      #
+      # `--report-summary` DOES NOT record a partial publish, which is what it
+      # was put here for. Driven, with a control:
+      #
+      #     dry run that SUCCEEDS -> pnpm-publish-summary.json written, 156 bytes
+      #     publish that FAILS    -> the file does not exist
+      #
+      # pnpm's `recursivePublish` returns early on a non-zero child exit and the
+      # summary write sits after the loop. The flag stays for the successful
+      # case, and the durable record of WHICH packages landed now comes from the
+      # registry instead: the provenance step below runs `if: always()`, and its
+      # script already reports "NOT ON THE REGISTRY" per package. Ground truth,
+      # not a file the failing path never writes.
       # `--tag latest` is written out on purpose, and it is not decoration.
       # It was the UNEXAMINED DEFAULT of `pnpm publish -r` -- `--tag` appeared
       # nowhere in this repository (control: `--access`, `--provenance`,
@@ -126,5 +146,9 @@ jobs:
       # provenance without one is the same defect wearing the fix's clothes.
       # Reads the registry rather than the publish log, because the log is what
       # was already trusted.
+      # `if: always()` is the fix for the partial-publish record described above:
+      # on a publish that aborted partway this step still runs and names, package
+      # by package, which ones reached the registry and which did not.
       - name: The published packages actually carry provenance
+        if: always()
         run: node scripts/assert-provenance.mjs

@@ -795,6 +795,49 @@ a prerelease as `latest` kills all four `rc` rows; treating build metadata as a
 prerelease kills exactly `0.1.0+build.5`; falling back instead of throwing kills
 exactly the refusal clause.
 
+### 18 - the release path carried two false measurements, one of them about itself
+
+**`--report-summary` does not record a partial publish, which is the only reason
+it is on that line.** `release.yml` said it "is the only durable record of WHICH
+packages landed when a run aborts partway; without it a partial publish leaves
+evidence only in the log". Driven, with a control:
+
+    dry run that SUCCEEDS  ->  pnpm-publish-summary.json written, 156 bytes
+    publish that FAILS     ->  the file does not exist
+
+pnpm's `recursivePublish` returns early on a non-zero child exit while the
+summary write sits after the loop, so the flag delivers exactly nothing in the
+case it was added for. The flag stays for the successful case; the RECORD now
+comes from the registry instead — the provenance step runs `if: always()`, and
+`assert-provenance.mjs` already names, package by package, which ones are "not on
+the registry". Ground truth beats a file the failing path never writes.
+
+**The measurement under `--provenance` was inverted, in two files.** Both said an
+`NPM_CONFIG_REGISTRY` pointing at a dead port is IGNORED while
+`PNPM_CONFIG_REGISTRY` is honoured. Re-driven on the publish path against the
+pinned pnpm 11.23.0:
+
+    baseline                                   ->  registry.npmjs.org
+    NPM_CONFIG_REGISTRY=http://127.0.0.1:3/    ->  127.0.0.1:3          HONOURED
+    PNPM_CONFIG_REGISTRY=http://127.0.0.1:2/   ->  registry.npmjs.org   IGNORED
+
+The exact opposite. The flag is still the right choice — a flag is unambiguous
+where an env var is a bet on which config table a tool reads — but the sentence
+justifying it was a wrong measurement presented as a driven one, in the file
+whose whole subject is a guarantee that was stated and not enforced. Corrected in
+both places rather than quietly dropped, because the wrong number was the
+argument.
+
+**`assert-provenance.mjs` skipped `private: false`.** `manifest.private !==
+undefined` excludes a manifest npm publishes happily, which would have dropped a
+package from the very check that claims every published package is covered. Now
+`manifest.private === true`. Stated plainly: this is a correctness alignment, not
+a gated fix. `versions.test.ts:118` already reddens on `private` being present at
+all, so the case cannot reach production, and the script's own package selection
+has no test because `packagesDir` is fixed relative to the script — adding a seam
+to redirect it, for a case the repository already forbids upstream, would buy a
+test and cost a hole.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

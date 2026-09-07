@@ -9,11 +9,22 @@
 // the release depended on them.
 //
 // WHAT IT IS FOR. `release.yml` used to ask for provenance with
-// `NPM_CONFIG_PROVENANCE: 'true'`, which pnpm 11 does not read (measured: an
-// `NPM_CONFIG_REGISTRY` pointing at a dead port is ignored while
-// `PNPM_CONFIG_REGISTRY` is honoured). The publish would have exited 0 with
-// thirteen unsigned packages and nothing would have failed. The flag is fixed;
-// this is the part that FAILS when the fix stops working.
+// `NPM_CONFIG_PROVENANCE: 'true'` and now passes `--provenance`. THE MEASUREMENT
+// THAT JUSTIFIED THE SWITCH WAS INVERTED, and saying so here matters because
+// this file repeated it: it claimed an `NPM_CONFIG_REGISTRY` pointing at a dead
+// port is ignored while `PNPM_CONFIG_REGISTRY` is honoured. Re-driven on the
+// publish path against the pinned pnpm 11.23.0, it is the exact opposite --
+// `NPM_CONFIG_REGISTRY` is HONOURED and `PNPM_CONFIG_REGISTRY` is IGNORED. The
+// flag is still right, because a flag is unambiguous where an env var is a bet
+// on which config table a tool reads; the reason written under it was not.
+//
+// THIS SCRIPT IS ALSO THE PARTIAL-PUBLISH RECORD. `--report-summary` does not
+// write its file when a publish FAILS -- driven, with a control: a successful
+// dry run writes 156 bytes, a failing publish writes nothing, because pnpm's
+// `recursivePublish` returns early on a non-zero child exit while the summary
+// write sits after the loop. `release.yml` runs this step `if: always()`, so the
+// "not on the registry" branch below is what names the packages a half-finished
+// run did not land.
 //
 // THE DISTINCTION THAT MATTERS, and the reason the first draft was wrong:
 // "not on the registry" and "on the registry without provenance" are different
@@ -42,8 +53,11 @@ function published() {
       continue
     }
     // A package that is not published has nothing to attest. `private` is the
-    // field npm itself refuses to publish on, so it is the right question.
-    if (manifest.private !== undefined) continue
+    // field npm itself refuses to publish on, so it is the right question -- but
+    // the question is its VALUE, not its presence. `private: false` is published
+    // happily by npm, and skipping it here would quietly exclude a package from
+    // the very check that claims every published package is covered.
+    if (manifest.private === true) continue
     if (typeof manifest.name !== 'string' || typeof manifest.version !== 'string') continue
     names.push({ name: manifest.name, version: manifest.version })
   }
