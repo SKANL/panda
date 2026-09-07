@@ -469,6 +469,44 @@ binary exits non-zero for 1-2 of 20 processes with
 refusing to land stale bytes -- coded and loud, the opposite of the silent loss
 fixed here, and present identically before the change.
 
+### 11 - a plugin that registered an action was unswappable, in a PUBLISHED API
+
+Driven, three claims, and one of my own was WRONG. `swap` on a stopped kernel is
+already refused (`plugin.state !== 'active'` catches it once `stop` marks
+plugins disposed) -- that clause passed on the first run and is dropped rather
+than reported. The other two are real:
+
+    a plugin that registered an action can be replaced   -> SwapRejectedError:
+      invalid action declaration: 'id' is already registered on this pipeline ('act')
+    a REJECTED swap leaves nothing of the candidate behind -> failed
+
+`runCandidate` handed the candidate factory the LIVE action pipeline, whose
+`register` refuses an id it already holds (`intercept.ts:277`) and never gives
+one back (`registeredIds.add` at :294, no delete anywhere). So an implementation
+that declared an action made its own plugin permanently unswappable -- its
+replacement collides with the copy it is replacing -- and a candidate that failed
+AFTER declaring one burned that id for every later candidate.
+
+**Why it was worth fixing NOW rather than recording.** `swap` is a PUBLISHED
+signature with no production caller yet. This is the last window in which the
+defect costs nothing to remove; after 0.1.0 every consumer inherits it.
+
+**The guard test shaped the fix, correctly.** `intercept.test.ts:817` pins
+`Object.keys(pipeline)` to `['register', 'usage']`, so retirement could not be
+added to the object plugins hold -- and it should not be: a plugin holding
+`retire` could free ANOTHER plugin's id and then claim it, and the id is the
+audit subject, so that is an identity swap inside the log. Retirement went to
+`createRetirableActionPipeline`, deliberately absent from `src/index.ts`; the
+published `createActionPipeline` now returns exactly that factory's `.pipeline`,
+so the pinned surface is byte-identical.
+
+**Three moving parts, each falsified separately, each killing exactly one
+clause and nothing else:** freeing the predecessor's ids BEFORE the candidate
+runs (a replacement re-declaring its predecessor's id is the normal case, not a
+collision); retiring a rejected candidate's ids; and RESERVING the predecessor's
+ids again after a rejection, because the predecessor is still serving and its
+live handle still answers to that id.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

@@ -8,7 +8,7 @@ import {
   SwapRejectedError,
 } from './errors.ts'
 import { createEventBus, type ScopedEventBus } from './events.ts'
-import { createActionPipeline, type ActionPipeline, type ActionPolicy } from './intercept.ts'
+import { createRetirableActionPipeline, type ActionPipeline, type ActionPolicy } from './intercept.ts'
 import { loadPlugins, manifestSubject, type LoadedPlugin, type PluginFailure, type ServiceResolution } from './loader.ts'
 import {
   createMemoryLogSink,
@@ -162,17 +162,34 @@ interface RuntimePlugin {
   state: PluginState
   services: Readonly<Record<string, unknown>>
   disposer?: () => unknown
+  /**
+   * The action ids THIS implementation claimed. Held so a swap can free them:
+   * `register` refuses an id already on the pipeline, so an implementation that
+   * declared one and never gave it back made its own plugin unswappable — its
+   * replacement declares the same id and is rejected for colliding with the
+   * copy it is replacing.
+   */
+  actionIds: readonly string[]
 }
 
 interface ActivationAssessment {
   readonly services: Readonly<Record<string, unknown>>
   readonly disposer?: () => unknown
+  /** Ids the candidate claimed while it ran; retired if it is not committed. */
+  readonly actionIds: readonly string[]
 }
 
 type ActivationRejection = {
   readonly reason: 'rejected' | 'coverage' | 'pairing' | 'config'
   readonly issues: readonly string[]
   readonly cause?: unknown
+  /**
+   * Always present, and always already retired by `runCandidate`. A rejected
+   * candidate RAN: it may have declared actions on the live pipeline before it
+   * failed, and leaving those behind burns the ids for every later candidate —
+   * a rejected swap would permanently poison the plugin it failed to replace.
+   */
+  readonly actionIds: readonly string[]
 }
 
 /**
@@ -215,7 +232,11 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
   // Built with the sink above, not with one of its own: every invocation and
   // every violation lands in the same stream as the lifecycle transitions, so one
   // reader reconstructs both.
-  const actions = createActionPipeline(log, options.actionPolicy)
+  const {
+    pipeline: actions,
+    retire: retireActions,
+    reserve: reserveActions,
+  } = createRetirableActionPipeline(log, options.actionPolicy)
   const registrations: { manifest: PluginManifest; factory: PluginFactory }[] = []
   const runtime = new Map<string, RuntimePlugin>()
   const activationOrder: string[] = []
@@ -292,10 +313,54 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
    * services must cover exactly `manifest.provides` (no missing, extra, or
    * undefined-valued entries), and a plugin providing any service must pair a disposer.
    */
+  /**
+   * Runs a candidate against a SCOPED view of the action pipeline, so the ids it
+   * claims are known whether it is committed or thrown away.
+   *
+   * `swap`'s own doc says the candidate "activates fully against the live
+   * registry before commit", and the live registry is exactly the problem: the
+   * pipeline refuses an id it already holds, so before this the previous
+   * implementation's own ids rejected its replacement, and a candidate that
+   * failed AFTER declaring one kept that id forever.
+   */
   function runCandidate(
     manifest: PluginManifest,
     factory: PluginFactory,
+    reclaimable: readonly string[] = [],
   ): ActivationAssessment | ActivationRejection {
+    // Freed BEFORE the candidate runs, because it will declare them: a
+    // replacement re-declaring the id its predecessor holds is the normal case,
+    // not a collision, and the pipeline cannot tell the two apart. Put back
+    // below if the candidate is rejected — the predecessor is still serving.
+    retireActions(reclaimable)
+    const claimed: string[] = []
+    const scoped: ActionPipeline = {
+      register(definition) {
+        const handle = actions.register(definition)
+        claimed.push(handle.id)
+        return handle
+      },
+      get usage() {
+        return actions.usage
+      },
+    }
+    const outcome = assessCandidate(manifest, factory, scoped)
+    if ('reason' in outcome) {
+      // Retired HERE rather than at each caller: there are two, and a caller
+      // that forgot would leak silently — the id only becomes unusable later,
+      // for someone else.
+      retireActions(claimed)
+      reserveActions(reclaimable)
+      return { ...outcome, actionIds: [] }
+    }
+    return { ...outcome, actionIds: claimed }
+  }
+
+  function assessCandidate(
+    manifest: PluginManifest,
+    factory: PluginFactory,
+    candidateActions: ActionPipeline,
+  ): Omit<ActivationAssessment, 'actionIds'> | Omit<ActivationRejection, 'actionIds'> {
     // The plugin's OWN configuration, validated by the plugin's OWN schema,
     // BEFORE its body runs. `configSchema` was a required manifest field the
     // kernel only probed for shape, so three shipped plugins hand-rolled this
@@ -328,7 +393,14 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
 
     let result: PluginFactoryResult
     try {
-      result = factory({ manifest, consume: (service) => lookup(service), bus, config, actions, settings })
+      result = factory({
+        manifest,
+        consume: (service) => lookup(service),
+        bus,
+        config,
+        actions: candidateActions,
+        settings,
+      })
     } catch (error) {
       return {
         reason: 'rejected',
@@ -437,7 +509,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         if (!plugin.ready) {
           const known = loaded.failures.find((candidate) => candidate.pluginId === id)
           failures.push(known ?? { pluginId: id, error: new ServiceNotProvidedError(id, plugin.missingHardServices) })
-          runtime.set(id, { manifest: plugin.manifest, state: 'unready', services: {} })
+          runtime.set(id, { manifest: plugin.manifest, state: 'unready', services: {}, actionIds: [] })
           // The unready record is the loader's: it decided readiness, and recording
           // it twice would make the stream claim the plugin failed twice.
           continue
@@ -446,7 +518,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         const outcome = runCandidate(plugin.manifest, factory)
         if ('reason' in outcome) {
           failures.push({ pluginId: id, error: startFailed(id, outcome) })
-          runtime.set(id, { manifest: plugin.manifest, state: 'failed', services: {} })
+          runtime.set(id, { manifest: plugin.manifest, state: 'failed', services: {}, actionIds: [] })
           record({ event: 'plugin.start-failed', subject: id, code: KERNEL_ERROR_CODES.pluginStartFailed })
           continue
         }
@@ -456,6 +528,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
           state: 'active',
           services: outcome.services,
           disposer: outcome.disposer,
+          actionIds: outcome.actionIds,
         })
         activationOrder.push(id)
         record({ event: 'plugin.activated', subject: id })
@@ -554,7 +627,7 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
         record({ event: 'plugin.swap-rejected', subject: pluginId, code: KERNEL_ERROR_CODES.pluginInactive })
         throw new PluginInactiveError(pluginId, 'swap requires an active plugin')
       }
-      const outcome = runCandidate(plugin.manifest, factory)
+      const outcome = runCandidate(plugin.manifest, factory, plugin.actionIds)
       if ('reason' in outcome) {
         const rejection = outcome.reason === 'pairing' ? startFailed(pluginId, outcome) : new SwapRejectedError(pluginId, outcome.issues, { cause: outcome.cause })
         // A rejected swap is the transition most worth auditing: the previous
@@ -564,6 +637,10 @@ export function createKernel(options: KernelOptions = {}): PandaKernel {
       }
 
       const previousDisposer = plugin.disposer
+      // Already retired by `runCandidate` before the candidate ran; any of them
+      // the candidate did NOT re-declare stay retired, which is right — that
+      // implementation is gone.
+      plugin.actionIds = outcome.actionIds
       dropFromIndex(pluginId)
       for (const service of Object.keys(outcome.services)) serviceIndex.set(service, pluginId)
       plugin.services = outcome.services

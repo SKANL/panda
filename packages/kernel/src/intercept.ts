@@ -203,7 +203,40 @@ function positiveCap(field: string, value: number | undefined): number | undefin
  * uncapped pipeline: all three ceilings and their upgrade paths are named in
  * `_bmad-output/implementation-artifacts/deferred-work.md`.
  */
+/**
+ * A pipeline plus the one capability its users must NOT have: retirement.
+ *
+ * Split rather than added to `ActionPipeline` because a plugin holding `retire`
+ * could free ANOTHER plugin's action id and then claim it — the id is the audit
+ * subject, so that is an identity swap inside the log. `intercept.test.ts` pins
+ * `Object.keys(pipeline)` to `['register', 'usage']` for exactly this reason and
+ * that pin is unchanged; this factory is deliberately ABSENT from
+ * `src/index.ts`, so only the kernel — which imports `./intercept.ts` directly —
+ * can reach it.
+ */
+export interface RetirableActionPipeline {
+  readonly pipeline: ActionPipeline
+  /** Frees ids so a superseded or rejected implementation stops holding them. */
+  retire(ids: readonly string[]): void
+  /**
+   * Marks ids as taken again WITHOUT a definition, which is only ever undoing a
+   * `retire`. A retired id's existing handle still runs — `register` closed over
+   * its locals and `registeredIds` is purely the duplicate guard — so this puts
+   * the guard back for an implementation that is still serving after its
+   * replacement was rejected.
+   */
+  reserve(ids: readonly string[]): void
+}
+
+/** The published factory: exactly the pipeline, exactly its two members. */
 export function createActionPipeline(log: LogSink, policy: ActionPolicy = {}): ActionPipeline {
+  return createRetirableActionPipeline(log, policy).pipeline
+}
+
+export function createRetirableActionPipeline(
+  log: LogSink,
+  policy: ActionPolicy = {},
+): RetirableActionPipeline {
   // Copied, not read through: `policy` belongs to the caller, and a budget a
   // caller can raise after construction by mutating the object it handed in is
   // not a budget. Every caller-supplied object below gets the same treatment —
@@ -608,9 +641,17 @@ export function createActionPipeline(log: LogSink, policy: ActionPolicy = {}): A
   }
 
   return Object.freeze({
-    register,
-    get usage() {
-      return usageNow()
+    pipeline: Object.freeze({
+      register,
+      get usage() {
+        return usageNow()
+      },
+    }),
+    retire(ids: readonly string[]) {
+      for (const id of ids) registeredIds.delete(id)
+    },
+    reserve(ids: readonly string[]) {
+      for (const id of ids) registeredIds.add(id)
     },
   })
 }
