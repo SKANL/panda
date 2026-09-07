@@ -838,6 +838,52 @@ has no test because `packagesDir` is fixed relative to the script — adding a s
 to redirect it, for a case the repository already forbids upstream, would buy a
 test and cost a hole.
 
+### 19 - doctor asserted a byte comparison it never performed, and named two commands
+
+Two defects in one sentence, both driven with controls.
+
+**ABSENT AND DIFFERENT WERE THE SAME REPORT.**
+
+    ABSENT   .mcp.json does NOT exist    -> "the bytes in '<path>' differ from what projecting would produce"
+    STALE    .mcp.json exists and really differs -> byte-identical sentence
+
+Panda claimed a byte comparison about a file with no bytes. AD-5 is panda's own
+rule and it enforces it everywhere else — `getService` refuses a disposed
+plugin by name, `panda remove` answers "no mcp-server entry 'nope' is
+registered" — and not here, on the commonest finding a new project produces.
+
+MY FIRST CONTROL WAS THE WRONG ONE: a hand-written entry in an existing file
+reports `foreign-collision`, not `out-of-date`, so it proved nothing about this
+sentence. The control that works had to be a file panda's own ledger claims, with
+the registry moved underneath it.
+
+`ProjectionResult` carries `written` and `byteDelta` and no presence, so a `stat`
+at the reporting site rather than a new field on a published contract — that
+branch already probes the filesystem for writability, so the answer costs one
+syscall on a path it is holding anyway. Falsified in BOTH directions: pinning
+`present` to `true` or to `false` each reddens the clause, so no constant
+satisfies it.
+
+**AND THE RESOLUTION NAMED TWO DIFFERENT COMMANDS.** Driven at project scope:
+
+    "To leave this state: `panda project init`. projecting is what makes this
+     location match the registry; that is `panda init`"
+
+The caller's scope override rewrites the first half and the detail is
+concatenated raw, so a user reading the tail runs the machine command for a
+project finding. The rule this one missed is already written in its sibling:
+`not-initialised`'s detail carries the comment *"ONLY WHAT THE OTHER HALF DID NOT
+SAY ... this said the same sentence again, and the user read both in one line."*
+The detail now names no command — the half in front of it prints the right one —
+and says instead what `RESOLUTION` does not: that the verdict cost the user
+nothing.
+
+**A CLAUSE OF MINE PASSED FOR THE WRONG REASON FIRST.** I wrote the negative
+assertion as a lookbehind to dodge a collision between `` `panda init` `` and
+`` `panda project init` `` that cannot happen — the backticks make them disjoint
+substrings — and it went green against the unfixed code. Replaced with a plain
+`toContain`, which reddened immediately.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

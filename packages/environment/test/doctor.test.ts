@@ -195,6 +195,61 @@ describe('panda doctor reports what projecting would do', () => {
     ])
   })
 
+  it('says the location is ABSENT rather than claiming bytes it never compared', async () => {
+    const { homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
+
+    // Nothing has been projected, so `.mcp.json` does not exist. Driven on the
+    // binary before this clause, the report read "the bytes in '<path>' differ
+    // from what projecting would produce" — a byte comparison panda did not
+    // perform, about a file with no bytes. AD-5 is panda's own rule and it
+    // enforces it everywhere else: `getService` refuses a disposed plugin by
+    // name, `panda remove` answers "no mcp-server entry 'nope' is registered".
+    const absent = only(await diagnose({ homeDir, scope: 'project', projectDir }), 'out-of-date')
+    expect(absent.filePath).toBe(join(projectDir, '.mcp.json'))
+    expect(absent.detail).not.toContain('the bytes in')
+    expect(absent.detail).toContain('does not exist')
+
+    // CONTROL, and it is the whole point: a file that IS there and genuinely
+    // differs must still say so, or the fix has traded one wrong sentence for
+    // another. Project first so panda's ledger claims the file, then move the
+    // registry underneath it.
+    await initProject({ homeDir, projectDir })
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'SOMETHING-ELSE', args: [] })
+    const stale = only(await diagnose({ homeDir, scope: 'project', projectDir }), 'out-of-date')
+    expect(stale.filePath).toBe(join(projectDir, '.mcp.json'))
+    expect(stale.detail).toContain('the bytes in')
+    expect(stale.detail).not.toContain('does not exist')
+  })
+
+  it('names ONE command at project scope, not the machine one as well', async () => {
+    const { homeDir, projectDir } = await fixture()
+    await withClaude(homeDir)
+    await register(homeDir, { type: 'mcp-server', id: 'ctx', command: 'ctx-server', args: [] })
+
+    const pending = only(await diagnose({ homeDir, scope: 'project', projectDir }), 'out-of-date')
+
+    // Driven on the binary before this clause, one resolution said BOTH:
+    //   "To leave this state: `panda project init`. projecting is what makes
+    //    this location match the registry; that is `panda init`"
+    // The override fixes the first half and the detail was concatenated raw, so
+    // a user reading the tail runs the machine-scope command for a project-scope
+    // finding. `not-initialised`'s detail already carries the rule this one
+    // missed: say ONLY what the other half did not.
+    expect(pending.resolution).toContain('`panda project init`')
+    // A plain substring, because `panda project init` does not CONTAIN
+    // `panda init` — the backticks make them disjoint. My first draft used a
+    // lookbehind to avoid a collision that cannot happen, and it passed against
+    // the unfixed code.
+    expect(pending.resolution).not.toContain('`panda init`')
+
+    // CONTROL: at machine scope the machine command is the right one to name,
+    // so the clause above must not have been satisfied by deleting the command.
+    const machine = only(await diagnose({ homeDir, scope: 'machine' }), 'out-of-date')
+    expect(machine.resolution).toContain('`panda init`')
+  })
+
   it('converges: doctor finds work, project init does it, and doctor is then clean', async () => {
     const { homeDir, projectDir } = await fixture()
     await withClaude(homeDir)

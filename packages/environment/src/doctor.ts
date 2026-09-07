@@ -262,7 +262,19 @@ export const FINDING_EXITS: Record<DiagnosisFindingKind, FindingExit> = {
   'out-of-date': {
     by: 'command',
     command: 'panda init',
-    detail: 'projecting is what makes this location match the registry; that is `panda init`',
+    // THE SAME RULE `not-initialised` CARRIES ABOVE, applied to the sibling that
+    // missed it: only what the other half did not say. This used to end "that is
+    // `panda init`", which the caller's scope override cannot reach — the
+    // override rewrites the "To leave this state" half and the detail is
+    // concatenated raw. Driven at project scope, one resolution said BOTH
+    // `panda project init` and `panda init`, and a user reading the tail runs
+    // the machine command for a project finding.
+    //
+    // It names no command now, because the half in front of it already prints
+    // the right one. What it adds instead is the thing `RESOLUTION` does not
+    // say: that this verdict cost the user nothing.
+    detail:
+      'doctor reached it by running the same merge projecting would and writing none of it, so the location is exactly as you left it',
   },
   'no-executor': {
     by: 'outside-panda',
@@ -794,14 +806,35 @@ async function findingsFor(
       // config file is probed through its DIRECTORY, because that is where the
       // temp-file-then-rename actually lands.
       const writable = tree ? await permitsWrite(target.filePath) : await writableLocation(target.filePath)
+      // ABSENT IS NOT DIFFERENT, and saying so is AD-5 applied to this command's
+      // own sentence. Driven before this: a project that had never been
+      // projected reported "the bytes in '<path>' differ from what projecting
+      // would produce" — a byte comparison panda did not perform, about a file
+      // with no bytes — and the CONTROL, a file that really was there and really
+      // differed, produced a byte-identical sentence. Two states, one report,
+      // and the one panda invented is the commoner of the two.
+      //
+      // `ProjectionResult` carries `written`/`byteDelta` and no presence, and
+      // threading one through would change a published contract for a sentence.
+      // A `stat` here instead: this branch already probes the filesystem for
+      // writability, so the answer costs one more syscall on a path it is
+      // holding anyway.
+      const present = await stat(target.filePath).then(
+        () => true,
+        () => false,
+      )
       findings.push(
         writable === false
           ? finding('not-writable', `panda would rewrite '${target.filePath}' and the location is not writable`, at)
           : finding(
               'out-of-date',
-              tree
-                ? `the skills panda materialises under '${target.filePath}' differ from what projecting would produce`
-                : `the bytes in '${target.filePath}' differ from what projecting would produce`,
+              present
+                ? tree
+                  ? `the skills panda materialises under '${target.filePath}' differ from what projecting would produce`
+                  : `the bytes in '${target.filePath}' differ from what projecting would produce`
+                : tree
+                  ? `'${target.filePath}' does not exist yet, so nothing of what projecting would materialise is there`
+                  : `'${target.filePath}' does not exist yet, so nothing of what projecting would write is there`,
               at,
               // Same override, same reason as `not-initialised`: this exit is
               // "project again", and at project scope `panda init` is not that.
