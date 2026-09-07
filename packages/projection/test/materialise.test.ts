@@ -1,4 +1,5 @@
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -618,7 +619,12 @@ describe('the delete path is contained, and its guards are falsifiable', () => {
     // A second record claiming the SAME path — which is what `alpha` and
     // `Alpha` are on Windows, and what any two ids that collide are anywhere.
     const state = await at.ledger.read()
-    const twin = state.records.map((record) => ({ ...record, entryId: 'twin', nativeLocation: 'twin' }))
+    // The SAME `nativeLocation`, because that is what the collision is: two
+    // entry ids landing on one directory. Giving the twin a location of its own
+    // while it claimed alpha's paths made it an internally inconsistent record,
+    // which the entry-directory containment above now refuses FIRST — and this
+    // clause would have stopped reaching Clause 6 at all.
+    const twin = state.records.map((record) => ({ ...record, entryId: 'twin' }))
     await at.ledger.update(
       { targetId: 'stub-skills', filePath: at.root },
       [...state.records, ...twin],
@@ -631,6 +637,46 @@ describe('the delete path is contained, and its guards are falsifiable', () => {
     expect(await readFile(join(at.root, 'alpha', 'SKILL.md'), 'utf8')).toBe(SKILL_BODY)
     expect(run.results[0]?.drift).toEqual([
       expect.objectContaining({ kind: 'foreign-collision', detail: expect.stringContaining('more than one registry entry') }),
+    ])
+  })
+
+  it("never removes a path inside the root that is outside the entry's OWN directory", async () => {
+    const at = await fixture()
+    const source = await writeSource(at, 'alpha.md')
+    await project(at, [skill('alpha', source)])
+
+    // A file panda never wrote, in a SIBLING directory under the same root.
+    // Driven on the real binary before this clause existed: panda deleted it and
+    // pruned its directory, exit 0, EMPTY STDERR, zero drift. Containment was
+    // the root, so one entry's record was authority over another's directory —
+    // and over anything else a user keeps beside them.
+    const victimDirectory = join(at.root, 'usersk')
+    await mkdir(victimDirectory, { recursive: true })
+    const victim = join(victimDirectory, 'NOTES.md')
+    await writeFile(victim, 'mine\n')
+
+    const state = await at.ledger.read()
+    const bytes = await readFile(victim)
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    await at.ledger.update(
+      { targetId: 'stub-skills', filePath: at.root },
+      state.records.map((record) => ({
+        ...record,
+        // Present AND hash-matching, so every verdict votes `intact` and the
+        // path reaches `candidateRemovals` unopposed. This is the shape a
+        // hand-repaired ledger produces, and the shape any "record the claim
+        // before the bytes land" fix would manufacture on every failed write.
+        ownedPaths: [...(record.ownedPaths ?? []), { path: victim, contentHash: hash, canonicalHash: hash }],
+      })),
+      [],
+    )
+
+    // `alpha` leaves the registry, so its whole claim is scheduled for removal.
+    const run = await project(at, [])
+
+    expect(await readFile(victim, 'utf8')).toBe('mine\n')
+    expect(run.results[0]?.drift).toEqual([
+      expect.objectContaining({ kind: 'foreign-collision', entryId: 'alpha' }),
     ])
   })
 

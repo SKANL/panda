@@ -507,6 +507,55 @@ collision); retiring a rejected candidate's ids; and RESERVING the predecessor's
 ids again after a rejection, because the predecessor is still serving and its
 live handle still answers to that id.
 
+### 12 - panda deleted a user's file it never wrote, exit 0, empty stderr
+
+The most serious thing this milestone found, and it was not the defect anyone
+was looking for. A ledger record's `ownedPaths` is a DELETE authority, and
+containment was the skills ROOT rather than the entry's OWN directory. So one
+entry's record was authority over every sibling directory in that root.
+
+Driven A/B on the binary, one flag between the two runs:
+
+    OVER-CLAIM   init exit=0  stderr: ""  victim: *** DELETED ***  skillsRoot: []
+    CONTROL      init exit=0  stderr: ""  victim: INTACT           skillsRoot: [usersk]
+
+A record for entry `mysk` claiming `<root>/usersk/NOTES.md` -- a file panda never
+wrote, in a directory panda never created -- deleted it AND pruned its directory,
+with exit 0, empty stderr and zero drift. Reproduced independently inside the
+unit suite: the clause failed with `ENOENT` on the victim.
+
+**Why nothing caught it.** `materialise.ts:562-565` computes `intact` as a
+predicate over the record's OWN `ownedPaths`, so an over-claim that is present
+and hash-matching votes itself intact; `:596` then pushes every owned path into
+`candidateRemovals` and `:806` removes it. The outside-the-root guard fires, the
+never-written guard fires, and Clause 6 (a path another surviving record still
+claims) fires -- but none of them covers a path inside the root, present, and
+hashing correctly, that simply is not this entry's.
+
+**The fix is the boundary that was always meant.** Driven on a real run, every
+path an entry owns lives under `<root>/<nativeLocation>/`: `mysk` owns
+`skills/mysk/SKILL.md` and `skills/mysk/nested/more.md`, never anything beside
+them. The check now resolves the entry's own directory against the root FIRST,
+so a `nativeLocation` of `..` or an absolute path is caught by the same
+comparison instead of widening the boundary it narrows. After: the victim
+survives and panda says why -- `foreign-collision ... which is outside
+'<root>\mysk'`.
+
+**A FIXTURE WAS CORRECTED, AND THE CORRECTION IS THE INTERESTING PART.** The new
+check shadowed `never removes a path another registry entry still claims`, whose
+twin record declared `nativeLocation: 'twin'` while claiming alpha's paths --
+internally inconsistent, so the containment refused it first and Clause 6 stopped
+being reached at all. That fixture contradicted its own comment, which says it
+models "what `alpha` and `Alpha` are on Windows": two ids landing on ONE
+directory, which is the SAME `nativeLocation`. Corrected to that, and verified
+that Clause 6 fires again rather than accepting a green.
+
+**This is also the decisive argument against one of the two shapes debated for
+the orphan window.** Recording the claim before the bytes land manufactures
+exactly this state -- a record whose paths are not on disk yet -- on every failed
+write. On the config path that is recoverable; on the materialise path it is a
+delete authority over paths nobody wrote.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.

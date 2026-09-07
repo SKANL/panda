@@ -519,14 +519,30 @@ export async function materialiseTarget(
       keep(record)
       continue
     }
-    const escaping = owned.find((item) => !isUnderRoot(resolveOwnedPath(item.path), root))
+    // THE ENTRY'S OWN DIRECTORY, not the root. Every path panda materialises for
+    // an entry lives under `<root>/<nativeLocation>/` — driven on a real run:
+    // `mysk` owns `skills\mysk\SKILL.md` and `skills\mysk\nested\more.md`,
+    // never anything beside them. Containing to the ROOT made one entry's record
+    // authority over every sibling directory in it, and `ownedPaths` is a DELETE
+    // authority: a record for `mysk` claiming `usersk/NOTES.md` deleted a file
+    // panda never wrote and pruned its directory, exit 0, EMPTY STDERR, zero
+    // drift. Present and hash-matching, so every verdict voted `intact` and the
+    // path reached `candidateRemovals` unopposed.
+    //
+    // `home` is resolved against the root FIRST, so a `nativeLocation` of `..`
+    // or an absolute path is caught by the same comparison rather than widening
+    // the boundary it is supposed to narrow.
+    const home = resolveOwnedPath(join(root, record.nativeLocation))
+    const escaping = isUnderRoot(home, root)
+      ? owned.find((item) => !isUnderRoot(resolveOwnedPath(item.path), home))
+      : owned[0]
     if (escaping !== undefined) {
       drift.push(
         driftEntry(
           'foreign-collision',
           record.entryId,
           record.nativeLocation,
-          `panda's ledger claims '${escaping.path}' for '${record.entryId}', which is outside '${root}'; panda will not touch a path it cannot prove it owns`,
+          `panda's ledger claims '${escaping.path}' for '${record.entryId}', which is outside '${join(root, record.nativeLocation)}'; panda will not touch a path it cannot prove it owns`,
         ),
       )
       keep(record)
