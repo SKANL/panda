@@ -23,9 +23,17 @@ it from importing `node:fs`. Every capability behind it is a package, so a host
 composes the same session directly and brings its own executor:
 
 ```ts
-import { runSession } from '@skanl/panda-session'
+import { readExecutorConfigLayers, runSession } from '@skanl/panda-session'
 
-const envelope = await runSession({ prompt: 'list files in this workspace' })
+// TWO CALLS, and the first one is what makes this the same session `panda run`
+// composes. `runSession` reads no files — a session primitive that reached into
+// the running user's home would be unusable from a host that already knows what
+// it wants — so the documents are read separately and handed in. Omit them and
+// only panda's own defaults apply, which runs a different executor than the one
+// `panda swap executor` selected, and bills a different account.
+const configLayers = await readExecutorConfigLayers({ projectDir: process.cwd() })
+const envelope = await runSession({ prompt: 'list files in this workspace', configLayers })
+
 // or hand panda an executor of your own, which wins over any configured selection:
 // await runSession({ prompt: '…', createAdapter: () => myAdapter })
 ```

@@ -884,6 +884,50 @@ assertion as a lookbehind to dodge a collision between `` `panda init` `` and
 substrings — and it went green against the unfixed code. Replaced with a plain
 `toContain`, which reddened immediately.
 
+### 20 - the README told a host to compose "the same session", and it was not the same
+
+The root README's SDK block sits under the sentence *"a host composes the SAME
+session directly and brings its own executor"*. Driven, with
+`~/.panda/config.json` holding `{"executor":"codex"}` written by
+`panda swap executor codex`:
+
+    CLI  `panda run "..."`       ->  executor: codex        (selected by the 'global' layer)
+    SDK  the README's own block  ->  executor: claude-code  (selected by 'defaults')
+
+A different vendor runs and a different account is billed. THE RESOLVER IS NOT AT
+FAULT: `resolveExecutor()` with zero options returns codex/global on that same
+machine. The block simply never reads the user's documents, because `runSession`
+reads no files BY DESIGN — *"a session primitive that read files under the
+running user's home would be unusable from a host that already knows what it
+wants"* — and that design is right and already gated by `executors.test.ts`
+*'reads no configuration of its own'*. What was wrong was a README telling a host
+the one-call shape is the same thing.
+
+**Four more losses the same block takes, each measured.** No selection line at
+all (`onSelection`), warnings swallowed (`onWarning` — a bogus config key that
+the CLI reports is silent in the SDK), **Ctrl-C never cancels the run**
+(`onInterrupt`: with an adapter listening on its `signal`, without the seam the
+run finished `status=ok`, with it the adapter saw the abort), and `panda status`
+learns nothing because no usage observation is recorded.
+
+**The README block now makes the two calls the CLI makes**, and
+`packages/session/test/readme-session.test.ts` extracts it and fails if it stops
+handing the session the user's documents. Its second clause is a CONTROL on the
+claim itself: if the README ever stops promising equivalence, the clause is
+defending a sentence nobody wrote and has to be re-decided rather than kept
+green. It is a TEXT scan and says so — `packages/contracts`'s blocks are
+extracted and EXECUTED by `consumer-install.proof.ts`, which is the better shape,
+but this block calls `runSession` and would spawn a real vendor binary in a proof
+that runs offline.
+
+**One report I was handed was WRONG and the investigation corrected it.**
+`ResultEnvelope.data` was said to force per-vendor branching to read the model's
+answer. Driven against all three adapters on a SUCCESS path, `data.result` is
+universal — they share one construction function driven by declarative traits.
+The `{}` in the original report came from a FAILURE path, where the vendor never
+produced a result at all. What remains true is narrower: there is no exported key
+or accessor for it, while the key panda itself consumes IS exported.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.
