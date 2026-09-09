@@ -1029,3 +1029,96 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
 it.runIf(OPT_OUT)('is deliberately skipped by PANDA_CONSUMER_INSTALL=0', () => {
   expect(process.env['PANDA_CONSUMER_INSTALL']).toBe('0')
 })
+
+/**
+ * NFR: a published package that BUNDLES CLEAN and DIES AT RUNTIME.
+ *
+ * Four packages do exactly that today. `rolldown` and `esbuild` agree, so it is
+ * a packaging fact and not one bundler's quirk: `jsonc-parser@3.3.1` ships no
+ * `exports` map, its `main` is a UMD build whose `require` is a FUNCTION
+ * PARAMETER, and no bundler can bind that statically. The build exits 0 with no
+ * warning; the artifact throws on first import.
+ *
+ * NOTHING IN THIS REPOSITORY FAILED WHEN THAT HAPPENED. Two investigations, two
+ * position papers and `deferred-work.md` reached that independently, and it is
+ * why this clause exists rather than a dependency change: both candidate fixes
+ * were built and driven, both worked, and neither supplied a gate. Whichever one
+ * eventually lands, it lands unverified until this table moves.
+ *
+ * IT PINS THE WHOLE TABLE, and that is the difference between a gate and an
+ * exemption list. `toStrictEqual` over every package reddens on `throws -> runs`
+ * (a fix landing, which must be adopted deliberately) exactly as it reddens on
+ * `runs -> throws` (a fifth package reaching `jsonc-parser`, directly or through
+ * a dependency). A filter-then-compare over "expected failures" only ever
+ * notices one direction, and would go green the day someone fixes it.
+ *
+ * The cell carries the EXPORT COUNT, not a boolean: a bundle that executes and
+ * re-exports nothing is its own failure mode, and `@skanl/panda-cli` legitimately
+ * exports one symbol, so the count has to be per-package rather than `> 0`.
+ */
+describe('what a consumer gets when they bundle the published packages', () => {
+  const BUNDLED: Record<string, string> = {
+    'adapter-cli': 'runs:19',
+    cli: 'throws:Cannot find module',
+    contracts: 'runs:66',
+    environment: 'throws:Cannot find module',
+    kernel: 'runs:33',
+    lock: 'runs:1',
+    'memory-filesystem': 'runs:1',
+    'memory-sqlite': 'runs:1',
+    projection: 'throws:Cannot find module',
+    registry: 'throws:Cannot find module',
+    session: 'runs:20',
+    'workspace-git-worktree': 'runs:9',
+    'workspace-local': 'runs:9',
+  }
+
+  it('bundles and RUNS every package, and the table is what it was', async () => {
+    const { rolldown } = await import('rolldown')
+    const outDir = join(projectDir, 'bundles')
+    await mkdir(outDir, { recursive: true })
+    const observed: Record<string, string> = {}
+
+    for (const packageDir of PACKAGE_DIRS) {
+      // BUNDLED FROM `dist`, NOT FROM AN INSTALL, and deliberately: the
+      // consumer project above installs only session's closure, and the bytes
+      // a tarball ships ARE this `dist` -- `files: ["dist"]`, rebuilt by this
+      // suite's own `beforeAll`, so the trap the ledger names (a bundle proof
+      // that measures the previous commit) cannot fire here.
+      const distEntry = pathToFileURL(join(repoRoot, 'packages', packageDir, 'dist', 'index.js')).href
+      const entry = join(outDir, packageDir + '.entry.mjs')
+      const bundlePath = join(outDir, packageDir + '.bundle.mjs')
+      await writeFile(
+        entry,
+        [
+          "import * as loaded from '" + distEntry + "'",
+          'process.stdout.write(String(Object.keys(loaded).length))',
+          '',
+        ].join(String.fromCharCode(10)),
+        'utf8',
+      )
+      const built = await rolldown({ input: entry, platform: 'node', cwd: repoRoot })
+      const { output } = await built.generate({ format: 'esm' })
+      await writeFile(bundlePath, output[0]?.code ?? '', 'utf8')
+      const ran = await run(process.execPath, [bundlePath], projectDir, 60_000)
+      const needle = /Dynamic require/.test(ran.output)
+        ? 'Dynamic require'
+        : /Cannot find module/.test(ran.output)
+          ? 'Cannot find module'
+          : 'unknown'
+      observed[packageDir] = ran.code === 0 ? 'runs:' + ran.output.trim() : 'throws:' + needle
+    }
+
+    // CONTROLS, both required. A table of all-`runs` and a probe that never
+    // bundled anything look identical from the outside; so do a table of
+    // all-`throws` and a harness whose entry file is broken.
+    const values = Object.values(observed)
+    expect(values.some((cell) => cell.startsWith('runs:')), 'nothing bundled and ran').toBe(true)
+    expect(values.some((cell) => cell.startsWith('throws:')), 'nothing failed — the harness may not be executing').toBe(true)
+
+    expect(
+      observed,
+      'a package changed how it bundles. `throws -> runs` means a fix landed and this table must be updated deliberately; `runs -> throws` means a package now reaches a dependency no bundler can resolve.',
+    ).toStrictEqual(BUNDLED)
+  })
+})

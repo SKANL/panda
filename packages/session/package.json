@@ -49,6 +49,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "rolldown": "1.2.5",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

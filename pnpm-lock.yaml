@@ -248,6 +248,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      rolldown:
+        specifier: 1.2.5
+        version: 1.2.5
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
