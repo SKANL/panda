@@ -1038,6 +1038,63 @@ if every package ranks for the same terms, they rank for nothing.
 **NOT GATED, DELIBERATELY:** `author` and `funding`, which npm's docs describe
 and never recommend, and for which no consumer effect is documented.
 
+### 23 - the jsonc-parser fork, decided: NEITHER dependency change ships
+
+Four packages bundle at exit 0 with no warning and then throw. Two fixes were
+built and driven end to end. Both work. Neither ships, and the reasons are
+measurements their own advocates produced against themselves.
+
+**PRE-BUNDLING IS OUT, on a defect its advocate built and then found.** Inlining
+`jsonc-parser` into `dist` does fix all 26 arms and does remove panda's last
+third-party runtime dependency from the published artifacts. It also creates a
+class panda has no defence against. Driven: an added
+`import * as ns from 'jsonc-parser'` plus
+`export const scannerExists = typeof ns.createScanner === 'function'` reads
+
+    from src (--conditions=panda-source):  true
+    from dist (what a consumer runs):      false
+
+with exit 0 and `pnpm proof:consumer-install` at **12 passed** over the
+divergence. Prebundling makes `dist` a DIFFERENT PROGRAM from the one all 1,201
+tests execute, because every test resolves through `panda-source` to `src`. And
+the gate that should catch it cannot: `runtime-deps.test.ts`'s `packageNameOf`
+returns `undefined` for anything not `@skanl/panda-*`, so a runtime import of a
+`devDependency` stays green BY CONSTRUCTION. The fix would create exactly the
+defect class this repository names first.
+
+**THE v4 BUMP IS OUT, for reasons that are about the train, not the code.**
+Behaviourally it is spotless — two independent corpora (54 shapes x 5 option
+sets, and 37 shapes x 2 copies) found ZERO differences in CST, values, error
+codes and offsets, each with planted-defect controls that fired. But: `latest` is
+still 3.3.1 and has not moved in 2 1/4 years, there is no milestone, no tracker,
+discussions are disabled, and the last human commit to the library was
+2026-03-04. Every downstream user found pins `4.0.0-next.**1**`, not the
+`next.2` on offer. The changelog says "ESM-only, remove UMD" while the diff
+carries a `ParseError` TYPE break; two undocumented changes in a release
+described in two bullets is the prerelease risk itself. `require()` breaks
+outright. `^4.0.0-next.2` floats onto `next.3` and `rc.1`, which nobody has
+driven. Adopting a prerelease with no stable target, inside thirteen packages
+about to publish for the first time, buys a bundling fix and sells a dependency
+whose upgrade path back does not exist.
+
+**AND THE DEFECT DOES NOT JUSTIFY EITHER PRICE.** No README, no manifest and no
+planning artifact tells anyone to bundle panda; every documented consumption path
+is a bare Node install on `engines >= 22.18.0`. The runtime path is green on
+every axis driven — 14 entry points under both `import` and `require`, the
+installed binary end to end, and `jsonc-parser` demonstrably executing through
+it. And `esbuild --main-fields=module,main` bundles v3 correctly in both formats,
+which is the upstream maintainer's own documented answer on issue #57 — open
+since 2021-09-24, five years, never fixed. v3 will never gain an `exports` map:
+3.3.0 added one and 3.3.1 reverted it six hours later because it pointed at faux
+ESM.
+
+**WHAT IS ACTUALLY MISSING IS THE GATE, and every position said so.** Both
+debates, both investigations and `deferred-work.md` independently reached it:
+nothing in this repository fails when a package bundles clean and dies at
+runtime. Whichever fix eventually lands — a stable 4.0.0, a consumer-side flag, a
+prebundle with a src/dist gate to match — it lands unverified until the table is
+pinned. The gate is the work; the dependency is not.
+
 ## Verification
 
 Everything below was driven. Nothing here rests on a reading.
