@@ -11,53 +11,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 22 IS HERE TO MAKE A CLAIM TESTABLE, not because anything runs on it
-        # yet. Every manifest declares `engines: node >=24`, and that floor is
-        # above EVERY comparable published package measured (the peer floors are
-        # 16, 18, 18, 20, 20, 22, 22, 22, 22.13, 22; five declare none). Driven
-        # against panda's own source, nothing requires 24: `tsconfig.base.json`
-        # targets `es2023`, the only version-gated APIs are `structuredClone`
-        # (Node 17+) and `node:sqlite`'s `DatabaseSync` (>= 22.13 UNFLAGGED — it
-        # landed at 22.5 behind `--experimental-sqlite`, and the control that
-        # separates "not present" from "not exposed" is the flag: 22.5.0 and
-        # 22.12.0 throw ERR_UNKNOWN_BUILTIN_MODULE plain and succeed with it) in
-        # `memory-sqlite`, which is outside the CLI's runtime closure and lazily
-        # imported even there. The floor's stated reason is "CI runs Node 24",
-        # which is a fact about CI and not about the code.
-        #
-        # Lowering the number first would be a guarantee in prose with nothing
-        # that fails when violated. So the test comes first: if 22 is green, the
-        # floor can move with evidence; if it is red, the floor is earned and the
-        # real reason gets written down instead of the CI one.
-        #
-        # THE FLOOR IS SET BY THE TOOLCHAIN, NOT BY PANDA'S CODE, and that was
-        # measured rather than assumed. `22` went green on all three gates, so
-        # `engines: >=24` was unpaid-for. The next leg tried `22.5.0` — the
-        # release `node:sqlite`'s `DatabaseSync` landed in, and the lowest
-        # version anything in this workspace could possibly need — and it failed
-        # before a single test ran:
-        #
-        #     ERROR: This version of pnpm requires at least Node.js v22.13
-        #
-        # That is a constraint on BUILDING panda, not on consuming it. `22.13.0`
-        # then failed too, and for a second reason that is also not the code:
-        #
-        #     ERR_UNKNOWN_FILE_EXTENSION: Unknown file extension ".ts"
-        #
-        # Two `memory-sqlite` clauses spawn a child Node that imports `.ts`
-        # directly, and native TypeScript stripping is only unflagged from Node
-        # 22.18. So this matrix measures the floor for RUNNING PANDA FROM SOURCE,
-        # which is a developer's floor, not a consumer's. `22.18.0` is the lowest
-        # number it can speak to.
-        #
-        # To prove a floor BELOW the toolchain's, the job shape has to change:
-        # build and pack once on a high Node, then install and RUN the tarballs
-        # on the lower ones. That is the honest way to answer "what does a
-        # consumer need", and it is recorded in deferred-work rather than guessed
-        # at here.
-        #
-        # `22` stays alongside `22.13.0`: the exact floor and the LTS head pin
-        # both ends of the range panda declares.
+        # These are source/developer validation runtimes. The root toolchain
+        # floor is >=24, while publishable package compatibility is measured
+        # separately by the packed-artifact consumer-floor job below.
+        # Keep the exact 22.18.0 leg because source tests spawn child Node
+        # processes that import TypeScript and require that developer floor.
         node-version: ['22.18.0', 22, 24, 26]
     steps:
       - uses: actions/checkout@v4
@@ -89,3 +47,60 @@ jobs:
 
       - name: FR-29 consumer-install proof
         run: pnpm proof:consumer-install
+
+  # Build once on the supported toolchain, then test only the packed artifacts
+  # on candidate consumer runtimes. This deliberately does not install pnpm,
+  # run Vitest, invoke TypeScript, or load repository source files.
+  build-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Pack publishable tarballs
+        run: node scripts/pack-publishable.mjs "$RUNNER_TEMP/panda-tarballs"
+
+      - name: Upload packed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: panda-publishable-tarballs
+          path: ${{ runner.temp }}/panda-tarballs
+          if-no-files-found: error
+
+  consumer-floor:
+    needs: build-pack
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22.13.0', '22.18.0', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Download packed artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: panda-publishable-tarballs
+          path: ${{ runner.temp }}/panda-tarballs
+
+      - name: Run plain Node consumer smoke
+        env:
+          npm_config_engine_strict: 'false'
+          NPM_CONFIG_ENGINE_STRICT: 'false'
+        run: node scripts/consumer-smoke.mjs "$RUNNER_TEMP/panda-tarballs"

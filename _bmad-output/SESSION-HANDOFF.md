@@ -8,18 +8,21 @@ what to never touch, and what was learned the hard way.
 
 ## 0. The situation, first, because everything else depends on it
 
-**Your session's working directory is NOT the project.**
+**As of 2026-09-11 panda is self-contained and is opened directly at
+`C:\code\panda`.** It borrows nothing from any `camtom-*` checkout: the 49 BMAD
+skills were copied into `C:\code\panda\.claude\skills\bmad-*` (kept out of git
+via `.git/info/exclude`) and `_bmad/*/config.yaml` now names `panda`.
+`_bmad-output/CODEX-KICKOFF.md` is the current session-start prompt; this
+paragraph replaces the older "your cwd is camtom-dev-3, ignore it" framing.
 
-- Session cwd: `C:\code\camtom-dev-3` — an unrelated repository (Camtom). Ignore it.
-- **The project is `C:\code\panda`.** Every read, every write, every command.
-
-**Never write a single byte outside `C:\code\panda`.** The one read-only
-exception is loading BMAD skills from `C:\code\camtom-dev-4\.claude\skills\bmad-*`.
+**Never write a single byte outside `C:\code\panda`.** The read-only inputs
+outside it are the `C:\code\cordis` and `C:\code\deepseek-harness` mirrors.
 
 How to hold that discipline in practice:
 
-- Start every shell command with `cd /c/code/panda` (bash) — the shell resets to
-  the session cwd between calls, so a `cd` in one call does not persist.
+- If the session cwd is ever NOT the project, start every shell command with
+  `cd /c/code/panda` (bash) — the shell resets between calls, so a `cd` in one
+  call does not persist.
 - Use absolute paths under `C:\code\panda` for Write/Edit.
 - Temporary files go to the session scratchpad directory named in your system
   prompt, or to `C:\code\panda\.scratch\` (gitignored). Never `/tmp` for anything

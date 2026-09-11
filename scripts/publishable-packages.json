@@ -1,0 +1,15 @@
+[
+  "adapter-cli",
+  "cli",
+  "contracts",
+  "environment",
+  "kernel",
+  "lock",
+  "memory-filesystem",
+  "memory-sqlite",
+  "projection",
+  "registry",
+  "session",
+  "workspace-git-worktree",
+  "workspace-local"
+]

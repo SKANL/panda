@@ -38,6 +38,8 @@ project_key: NOKEY
 tracking_system: file-system
 story_location: C:\code\panda\_bmad-output\implementation-artifacts
 development_status:
+  m39a-method-trust-boundary: done  # Frozen trust contract: project rejection remains before import; trusted global/agent loading is documented and driven without claiming isolation. Spec: spec-m39a-method-trust-boundary.md
+  m39b-consumer-floor: done  # Local packed artifacts passed every candidate runtime (Node v20.20.0, v22.13.0, v22.18.0, v24.14.1); CI must still reproduce the matrix. Spec: spec-m39b-consumer-floor.md
   epic-1: done  # closed with the two ROADMAP-01 kernel seams (1.6, 1.7)
   1-1-plugin-manifest-foundation: done
   1-2-injection-disposal-and-atomic-swaps: done

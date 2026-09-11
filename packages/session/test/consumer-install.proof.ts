@@ -23,7 +23,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
  * Not run by `pnpm test`: the filename ends in `.proof.ts`, which vitest's
  * default `*.test.ts` include does not match, and it is reached only through
  * `vitest.consumer-install.config.ts` (`pnpm proof:consumer-install`, and the
- * `proof` job in `.github/workflows/ci.yml`).
+ * `FR-29 consumer-install proof` step in the `gates` job in
+ * `.github/workflows/ci.yml`).
  *
  * It does NOT skip itself when the environment looks unhelpful. A missing or
  * broken `pnpm` FAILS here, because the two green outcomes — "seven assertions
@@ -48,22 +49,10 @@ const RUN_TIMEOUT_MS = 120_000
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..')
 
-/** Every workspace package, in no particular order — the build sorts itself. */
-const PACKAGE_DIRS = [
-  'adapter-cli',
-  'cli',
-  'contracts',
-  'environment',
-  'kernel',
-  'lock',
-  'memory-filesystem',
-  'memory-sqlite',
-  'projection',
-  'registry',
-  'session',
-  'workspace-git-worktree',
-  'workspace-local',
-] as const
+/** Every publishable workspace package, in no particular order — the build sorts itself. */
+const PACKAGE_DIRS = JSON.parse(
+  readFileSync(join(repoRoot, 'scripts', 'publishable-packages.json'), 'utf8'),
+) as readonly string[]
 
 /**
  * The version every workspace package carries, READ rather than written.
@@ -97,27 +86,6 @@ function tarballName(packageDir: string): string {
 
 
 /**
- * The five packages `@skanl/panda-session` pulls in. Every one is declared as a DIRECT
- * `file:` dependency of the consumer project, exactly as a third party handed a
- * set of tarballs would have to declare them: the packed manifest says
- * `"@skanl/panda-contracts": "<the workspace version>"`, which for an unreleased
- * build is a version no registry has, and npm satisfies that requirement from
- * the top-level `file:` install of the same version.
- *
- * This list used to feed `pnpm.overrides`, and that is what broke CI — see the
- * Spec Change Log #26. A missing entry here fails the install loudly, which is
- * the behaviour wanted; the failure this file exists to prevent is a SILENT
- * resolution through the workspace, and a tarball cannot reach one.
- */
-const SESSION_DEPENDENCIES = [
-  'adapter-cli',
-  'contracts',
-  'kernel',
-  'workspace-git-worktree',
-  'workspace-local',
-] as const
-
-/**
  * Every workspace package `@skanl/panda-cli` needs at RUNTIME, walked from the
  * manifests rather than listed.
  *
@@ -149,6 +117,9 @@ function runtimeClosureOf(rootDir: string): readonly string[] {
   walk(rootDir)
   return [...seen].sort()
 }
+
+/** The session's panda dependency closure, derived from the packed manifests. */
+const SESSION_DEPENDENCIES = runtimeClosureOf('session').filter((packageDir) => packageDir !== 'session')
 
 /**
  * The one skip, and it announces itself. `process.stderr.write`, not
@@ -508,7 +479,7 @@ let temporaryRoot = ''
 let projectDir = ''
 let installedManifest: Record<string, unknown> = {}
 let consumer: ConsumerRun
-/** Archive path -> its complete contents, for each of the nine tarballs. */
+/** Archive path -> its complete contents, for each of the thirteen tarballs. */
 const packed = new Map<string, ReadonlyMap<string, string>>()
 
 // The installed project is EVIDENCE when something goes red, and litter when

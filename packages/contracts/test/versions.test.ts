@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { PANDA_VERSION, isSemver } from '../src'
 
 const packagesDir = join(import.meta.dirname, '..', '..')
+const repoRoot = join(packagesDir, '..')
 
 /**
  * NFR-8's FIRST clause, wired instead of written.
@@ -55,6 +56,32 @@ function packagesWithSource(): string[] {
 
 function manifestOf(packageDir: string): Manifest {
   return JSON.parse(readFileSync(join(packagesDir, packageDir, 'package.json'), 'utf8')) as Manifest
+}
+
+function publishablePackageDirs(): readonly string[] {
+  const value: unknown = JSON.parse(readFileSync(join(repoRoot, 'scripts', 'publishable-packages.json'), 'utf8'))
+  if (!Array.isArray(value) || !value.every((entry): entry is string => typeof entry === 'string')) {
+    throw new Error('scripts/publishable-packages.json must be an array of package directory names')
+  }
+  return value
+}
+
+function jobBlock(workflow: string, jobId: string): readonly string[] {
+  const lines = workflow.split(String.fromCharCode(10))
+  const start = lines.findIndex((line) => line === `  ${jobId}:`)
+  if (start === -1) throw new Error(`ci.yml has no jobs.${jobId}`)
+  const end = lines.findIndex((line, index) => index > start && /^\s{2}[^\s#][^:]*:$/.test(line))
+  return lines.slice(start, end === -1 ? lines.length : end)
+}
+
+function nodeVersionList(workflow: string, jobId: string): readonly string[] {
+  const line = jobBlock(workflow, jobId).find((candidate) => /^\s+node-version:\s*\[.*\]\s*$/.test(candidate))
+  if (line === undefined) throw new Error(`jobs.${jobId} has no node-version list`)
+  const list = line.slice(line.indexOf('[') + 1, line.lastIndexOf(']'))
+  return list
+    .split(',')
+    .map((value) => value.trim().replace(/^['"]|['"]$/g, ''))
+    .filter((value) => value.length > 0)
 }
 
 /**
@@ -240,54 +267,27 @@ describe('every published package carries the metadata npm asks for', () => {
   })
 })
 
-describe('the declared Node floor is the one CI actually runs', () => {
-  // `engines` is a promise to a CONSUMER about what their runtime must be, and
-  // the only thing that can keep it honest is a CI leg pinned to that exact
-  // version. Declaring a floor nobody runs is a guarantee in prose; declaring
-  // one CI runs is a guarantee something fails on.
-  //
-  // HOW THE NUMBER WAS FOUND, because it is not the obvious one. The floor was
-  // `>=24`, above every comparable published package measured (peer floors run
-  // 16 to 22.13; nobody declares 24). Driven, nothing in panda's source needs
-  // it. Lowering it took three measurements, and the first two failed for
-  // reasons that are not panda's code:
-  //
-  //     22.5.0   ERROR: This version of pnpm requires at least Node.js v22.13
-  //     22.13.0  ERR_UNKNOWN_FILE_EXTENSION: Unknown file extension ".ts"
-  //     22.18.0  green on every gate
-  //
-  // The first is the build toolchain, the second is two `memory-sqlite` clauses
-  // spawning a child Node that imports `.ts` before native stripping was
-  // unflagged. Both are DEVELOPER floors. A consumer runs `dist` and needs
-  // neither, so the true consumer floor is lower still and remains unproven —
-  // proving it needs a build-once-then-run-the-tarball matrix, which is
-  // recorded in deferred-work rather than guessed at here.
+describe('developer and consumer Node floors stay separate', () => {
   const workflow = readFileSync(join(packagesDir, '..', '.github', 'workflows', 'ci.yml'), 'utf8')
+  const rootManifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as Manifest
+  const publishableDirs = publishablePackageDirs()
 
-  it('pins a CI leg at exactly the version every manifest declares', () => {
-    const declared = new Set(packagesWithSource().map((name) => manifestOf(name).engines?.['node']))
-    // CONTROL: one floor across the workspace, or the question below is
-    // ambiguous and the clause would be comparing against an arbitrary member.
-    expect([...declared], 'the 13 manifests disagree about the Node floor').toHaveLength(1)
+  it('runs the exact consumer candidate matrix and builds tarballs on Node 24', () => {
+    expect(nodeVersionList(workflow, 'consumer-floor')).toEqual(['20', '22.13.0', '22.18.0', '24'])
+    expect(jobBlock(workflow, 'build-pack').some((line) => line.trim() === 'node-version: 24')).toBe(true)
+  })
 
-    const floor = [...declared][0]
-    expect(typeof floor).toBe('string')
-    const exact = String(floor).replace(/^>=/, '')
+  it('keeps the root developer floor on the build-pack Node 24 leg', () => {
+    expect(rootManifest.engines?.node).toBe('>=24')
+    expect(jobBlock(workflow, 'build-pack').some((line) => line.trim() === 'node-version: 24')).toBe(true)
+  })
 
-    // THE MATRIX LINE, NOT THE WHOLE FILE. The first draft of this clause was a
-    // `toContain` over `ci.yml`'s entire text, which a version number appearing
-    // in a COMMENT satisfies — and this workflow's comments are full of version
-    // numbers, because they record what was tried and why. A gate a comment can
-    // green is a gate that checks nothing.
-    const legs = workflow
-      .split(String.fromCharCode(10))
-      .filter((line) => line.trimStart().startsWith('node-version:'))
-    // CONTROL: the parse has to have found the list at all. A regex that matches
-    // nothing and an assertion over nothing look identical from the outside.
-    expect(legs, 'no `node-version:` list was found in ci.yml').not.toEqual([])
-    expect(
-      legs.join(String.fromCharCode(10)),
-      `every manifest declares node ${String(floor)}; a CI matrix must RUN that literal version, and a comment mentioning it does not count`,
-    ).toContain(`'${exact}'`)
+  it('keeps every publishable consumer floor at the selected >=20 candidate', () => {
+    const candidates = nodeVersionList(workflow, 'consumer-floor')
+    expect(candidates).toEqual(['20', '22.13.0', '22.18.0', '24'])
+    const floors = publishableDirs.map((name) => manifestOf(name).engines?.node)
+    expect(publishableDirs.length).toBe(13)
+    expect(floors).toEqual(Array.from({ length: 13 }, () => '>=20'))
+    expect(candidates).toContain('20')
   })
 })

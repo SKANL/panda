@@ -8,6 +8,26 @@ source to write one.
 
 Implements FR-23 / RD-3.
 
+## Trust boundary
+
+Loading a method is an execution boundary, not a validation boundary. The
+`import()` call executes the module's top-level code before panda can inspect
+its export. `validateMethodPlugin` is structural, post-load validation: it
+checks the loaded value and reports `PANDA_METHOD_INVALID_PLUGIN`, but it is not
+sandboxing and it does not undo side effects that already ran.
+
+Panda rejects a method selected by the **project** layer before calling
+`import()`. A project directory can contain a cloned or otherwise untrusted
+configuration, so its method selection is treated as a recommendation rather
+than consent to execute code. Methods selected by the **global** layer and
+methods supplied by an **agent** host are trusted code sources and may execute
+top-level code before structural validation.
+
+Panda v1 provides **no child-process or worker isolation** for MethodPlugins.
+If a method is untrusted, run it behind an isolation boundary outside panda
+before handing it to this contract. Do not treat this validator as a security
+boundary.
+
 ```ts
 import { activateMethod, validateMethodPlugin, type MethodPlugin } from '@skanl/panda-contracts'
 ```

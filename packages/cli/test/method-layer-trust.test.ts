@@ -71,6 +71,16 @@ function machineMethod(marker: string): string {
   ].join(String.fromCharCode(10))
 }
 
+/** A trusted module whose top-level code runs before its invalid shape is rejected. */
+function invalidMachineMethod(marker: string): string {
+  return [
+    "import { writeFileSync } from 'node:fs'",
+    `writeFileSync(${JSON.stringify(marker)}, 'invalid trusted method ran')`,
+    "export default { id: 'invalid', version: 'not-semver', phases: [], artifacts: [], commands: [] }",
+    '',
+  ].join(String.fromCharCode(10))
+}
+
 describe('a method the project layer named is never imported', () => {
   it('refuses before the import, and the module does not run', async () => {
     const { dir, marker } = await clonedProject({ method: './arrived.mjs' })
@@ -139,6 +149,25 @@ describe('a method the project layer named is never imported', () => {
     const said = io.err.join(' ')
     expect(said).toContain('configuration ignored')
     expect(said).toContain(mine)
+  })
+
+  it('runs trusted global method code before reporting structural invalidity', async () => {
+    const { dir } = await clonedProject({})
+    const homeDir = await mkdtemp(join(tmpdir(), 'panda-invalid-method-home-'))
+    const marker = join(homeDir, 'INVALID-METHOD-RAN.txt')
+    const method = join(homeDir, 'invalid.mjs')
+    await writeFile(method, invalidMachineMethod(marker), 'utf8')
+    await mkdir(join(homeDir, '.panda'), { recursive: true })
+    await writeFile(join(homeDir, '.panda', 'config.json'), JSON.stringify({ method }), 'utf8')
+    const io = capture()
+
+    const code = await runPanda(['run', 'hi'], { ...io, cwd: dir, homeDir, createAdapter: stubAdapter })
+
+    expect(code).toBe(2)
+    expect(existsSync(marker), 'the trusted global module did not execute').toBe(true)
+    const said = io.err.join('\n')
+    expect(said).toContain('PANDA_METHOD_INVALID_PLUGIN')
+    expect(said).not.toMatch(/sandbox|security isolation/i)
   })
 
   it('and the command that refusal names ACTUALLY WORKS, which no toContain can say', async () => {

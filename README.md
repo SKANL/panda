@@ -1,108 +1,213 @@
 # panda
 
-A microkernel that manages the environment of AI coding executors.
+**panda is an SDK-first microkernel for composing AI coding environments.** It
+turns a canonical Registry into native executor configuration, then runs an
+explicitly composed session through typed ports for executors, workspaces, and
+memory. Ownership-aware projection, coded failures, reversible lifecycle
+operations, and executable contract suites make the environment inspectable and
+replaceable without hand-wiring every vendor.
 
-You keep one canonical Registry of what you want available — skills, MCP servers.
-Panda projects it into each executor's **native** configuration, at the location
-that vendor already reads, in that vendor's own vocabulary. It tracks what it
-wrote, so it can take back exactly that and nothing else.
+The CLI is only a thin argv binding for the panda team. It composes the same session
+through the package graph, but the product's primary interface is the SDK itself.
 
-It never invents a location a vendor does not read, and it never asks you to hand-
-edit a vendor's config to finish a job it started.
+## Quick path: compose a session
+
+Install the session package in the host that owns your application, service, IDE,
+or automation:
 
 ```bash
-panda init                 # project the Registry into every executor found
-panda doctor               # what drifted, and the command that fixes each finding
-panda add / remove / list  # the Registry's own door
-panda export / import      # move an environment between machines, secrets left behind
-panda status               # what is installed, and how much quota is left where a vendor publishes it
+npm install @skanl/panda-session
 ```
 
-That binary is a thin argv binding — it reads no files at all, and `eslint` forbids
-it from importing `node:fs`. Every capability behind it is a package, so a host
-composes the same session directly and brings its own executor:
+Then read panda's configuration as data and pass that snapshot into the session:
 
 ```ts
 import { readExecutorConfigLayers, runSession } from '@skanl/panda-session'
 
-// TWO CALLS, and the first one is what makes this the same session `panda run`
-// composes. `runSession` reads no files — a session primitive that reached into
-// the running user's home would be unusable from a host that already knows what
-// it wants — so the documents are read separately and handed in. Omit them and
-// only panda's own defaults apply, which runs a different executor than the one
-// `panda swap executor` selected, and bills a different account.
-const configLayers = await readExecutorConfigLayers({ projectDir: process.cwd() })
-const envelope = await runSession({ prompt: 'list files in this workspace', configLayers })
+const configLayers = await readExecutorConfigLayers({
+  projectDir: process.cwd(),
+})
 
-// or hand panda an executor of your own, which wins over any configured selection:
-// await runSession({ prompt: '…', createAdapter: () => myAdapter })
+const result = await runSession({
+  prompt: 'List the files in this workspace',
+  configLayers,
+})
+
+console.log(result)
 ```
 
-The return value is the same `ResultEnvelope` `panda run` prints, and every port —
-executor, workspace, memory — ships a public clause suite that tells your
-implementation whether it conforms. Start at
-[`packages/contracts/README.md`](./packages/contracts/README.md), whose examples CI
-extracts and runs against the packed tarball; the block above is illustrative and
-nothing executes it.
+This is the SDK path: your host owns process lifetime, output, cancellation, and
+presentation. `runSession` returns a typed `ResultEnvelope`; it does not print
+JSON, choose an exit code, install signal handlers, or reach into your home
+directory behind your back. Pass a `createAdapter` or `createProvider` seam when
+your host owns the executor or workspace implementation. Install
+[`@skanl/panda-contracts`](./packages/contracts/README.md) when you are authoring
+one of those ports.
 
-## Install
+## Why panda exists
+
+Hand-wiring vendors makes the environment the application: every executor gets a
+different config location, every workspace implementation invents lifecycle
+rules, and every integration accumulates cleanup and drift logic. panda puts the
+stable decisions in a small kernel and leaves vendor-specific behavior at typed
+seams.
+
+| Without panda | With panda |
+| --- | --- |
+| Configuration is copied into vendor files by ad hoc scripts. | A canonical Registry is projected into each vendor's native vocabulary and location. |
+| Cleanup cannot distinguish your writes from a user's edits. | Projection ownership records what panda wrote so removal takes back exactly that. |
+| Session composition is hidden inside a command. | A host explicitly composes executor, workspace, memory, policy, logging, and lifecycle seams. |
+| Adapters drift while their interfaces still compile. | Published clause suites exercise behavior, not just types. |
+| Failures are parsed from human messages. | `PandaError` and `PANDA_ERROR_CODES` provide typed routing. |
+
+The result is a reusable foundation for hosts that need more than one command:
+long-lived services, IDE integrations, CI orchestration, agent platforms, and
+teams that want to change executors without rebuilding their environment model.
+
+## What panda composes
+
+The package graph is deliberately downward and each boundary has a job:
+
+1. **Registry** — the canonical, scoped set of skills and tools you want
+   available, with portable bundles and ingest from existing installations.
+2. **Projection** — renders Registry entries into the native configuration
+   surfaces an executor already reads, while maintaining the ownership ledger
+   needed for diagnosis and reversal.
+3. **Kernel** — mounts plugins, validates manifests and configuration, exposes
+   typed services and events, and tears them down in order.
+4. **Session** — composes the selected executor adapter and workspace provider,
+   applies policy and logging, runs the request, and returns a typed envelope.
+5. **Memory ports** — let hosts choose a filesystem or embedded-SQLite
+   `MemoryProvider`, or implement the port themselves.
+
+The seams are explicit rather than magical. A host can use panda's shipped
+implementations or bring its own adapter, workspace, or memory provider. The
+contracts package is the smallest starting point for a third-party port.
+
+## Who should use it
+
+Use panda when you are building or maintaining a host around AI coding
+executors—not merely invoking one binary once. It is a good fit when you need to:
+
+- keep one environment definition across Claude Code, Codex, opencode, or another
+  executor;
+- embed sessions in a server, desktop app, IDE, CI job, or test harness;
+- select workspaces and adapters explicitly and control their ownership;
+- inspect drift, retain a reversible ledger, and make cleanup safe; or
+- publish a port and prove it against a shared behavioral suite.
+
+If you only need a team convenience command, the CLI can still be useful, but it
+is not the architecture to build against.
+
+## Guarantees and boundaries
+
+### The guarantees panda is designed to enforce
+
+- **Native projection:** panda writes the vocabulary and locations an executor
+  actually reads; it does not invent a parallel configuration format.
+- **Ownership-aware reversal:** panda tracks its projection claims and removes
+  only what it owns.
+- **Explicit composition:** configuration snapshots, adapter/provider seams,
+  kernels, logs, policies, and lifecycle are passed as named inputs.
+- **Typed absence and coded errors:** unavailable services have an explicit
+  absence state, and callers route refusals by error code rather than message.
+- **Behavioral contracts:** port authors can run the published workspace,
+  memory, and executor clause suites against their implementations.
+
+### What panda does not claim
+
+- **No sandbox for `MethodPlugin`:** a method plugin is a trust-boundary input,
+  not a sandbox. Do not load untrusted methods expecting panda to contain their
+  commands or filesystem access.
+- **No hidden vendor abstraction:** adapters still speak vendor-specific
+  protocols and native configuration. Panda gives you seams and composition; it
+  does not pretend that all executors are interchangeable black boxes.
+- **No formal paper theorem:** the guarantees in this README are backed by
+  executable tests, contract suites, and packaging proofs. They are not a claim
+  of a formally verified theorem.
+
+## Install and version support
+
+For SDK use, install only the package(s) that own the boundary you need:
 
 ```bash
-npm i -g @skanl/panda-cli      # the binary
-npm i -D @skanl/panda-contracts # implementing a port
+npm install @skanl/panda-session
+npm install --save-dev @skanl/panda-contracts # when authoring a port
 ```
 
-Thirteen packages ship under the `@skanl` scope at one shared version. That is
-NFR-8's "Contracts semver together" taken literally: one semver decision per
-release rather than thirteen, so a breaking change is one number moving, not a
-coordination problem.
+All thirteen published packages use one shared version. The current release is
+`0.1.0`; the `0.x` range is intentional while the contracts continue to evolve.
 
-`0.x` is deliberate. Semver permits breaking changes in a `0.x` minor, and panda
-is still changing its contracts; the version says so rather than a paragraph
-promising it.
+| Consumer | Node floor |
+| --- | ---: |
+| panda repository development, build, and source checks | `>=24` |
+| published SDK packages and packed consumers | `>=20` |
 
-**The packaged artifact is proven, not assumed.** A CI job on every push to
-`main` and on every pull request packs
-all thirteen, installs them into a project **outside** this repository, offline,
-runs a real session there, installs the `@skanl/panda-cli` tarball and runs the binary
-a user would get. It also refuses to let a package stop being publishable — a
-manifest that regains `private`, drifts off the shared version, or loses
-`publishConfig.access` fails the build by name.
+The root floor is a developer/tooling floor, not a claim that the shipped `dist`
+artifacts require Node 24. CI separately exercises packed consumer candidates
+starting at Node 20.
 
-Building from source still works and needs no registry: `pnpm pack` produces the
-same tarballs the release publishes.
+## Internal/convenience binding: the CLI
 
-## Build it
+`@skanl/panda-cli` is the team's argv, JSON-output, and exit-code binding. It
+composes the same package APIs but is intentionally not the official SDK path:
+
+```bash
+npm install --global @skanl/panda-cli
+panda init
+panda doctor
+panda add <entry>
+panda status
+```
+
+The binary reads no files itself; it translates command-line input and output at
+the edge. Hosts embedding panda should import the packages above instead of
+driving the CLI or parsing its output.
+
+## Package map
+
+| Package | Role |
+| --- | --- |
+| [`@skanl/panda-contracts`](./packages/contracts/README.md) | Public ports, schemas, coded errors, and behavioral clause suites. |
+| [`@skanl/panda-kernel`](./packages/kernel/README.md) | Zero-runtime-dependency plugin kernel, services, events, and teardown. |
+| [`@skanl/panda-session`](./packages/session/README.md) | SDK session composition: executor, workspace, policy, logging, and lifecycle. |
+| [`@skanl/panda-registry`](./packages/registry/README.md) | Canonical environment Registry, scopes, bundles, and ingest. |
+| [`@skanl/panda-projection`](./packages/projection/README.md) | Native executor projection, drift diagnosis, and reversible ownership ledger. |
+| [`@skanl/panda-environment`](./packages/environment/README.md) | Environment detection and projection orchestration. |
+| [`@skanl/panda-lock`](./packages/lock/README.md) | Portable machine-scoped write serialization. |
+| [`@skanl/panda-adapter-cli`](./packages/adapter-cli/README.md) | Shipped adapters for out-of-process coding CLIs. |
+| [`@skanl/panda-workspace-local`](./packages/workspace-local/README.md) | Local-directory `WorkspaceProvider`. |
+| [`@skanl/panda-workspace-git-worktree`](./packages/workspace-git-worktree/README.md) | Git-worktree `WorkspaceProvider`. |
+| [`@skanl/panda-memory-filesystem`](./packages/memory-filesystem/README.md) | Append-only filesystem `MemoryProvider`. |
+| [`@skanl/panda-memory-sqlite`](./packages/memory-sqlite/README.md) | Embedded SQLite `MemoryProvider`. |
+| [`@skanl/panda-cli`](./packages/cli/README.md) | Internal/convenience argv binding. |
+
+## Build and verify the repository
+
+These commands are for contributors working from the repository, not the SDK
+quick path:
 
 ```bash
 pnpm install
-pnpm check                     # bytes + typecheck + test + lint
-pnpm build && pnpm proof:consumer-install   # the other half — CI runs it separately
+pnpm check
+pnpm build
+pnpm proof:consumer-install
 ```
 
-Node >= 22.18.0. CI runs that exact floor plus the 22 LTS head, 24, and a 26 canary.
-The floor was `>= 24` and nothing in the source needed it; it came down only after a
-CI leg pinned to `22.18.0` went green. Two lower attempts failed for reasons that are
-not panda's code -- pnpm needs >= 22.13, and two `memory-sqlite` clauses spawn a child
-Node that imports `.ts` before native stripping was unflagged at 22.18 -- so this is a
-DEVELOPER floor. A consumer runs `dist` and needs neither, so their real floor is lower
-and is not yet proven.
+`pnpm check` runs source-byte checks, typechecking, tests, and linting. The
+consumer proof is separate because it builds and packs the publishable artifacts:
+it installs the tarballs in a project outside this repository, imports them, runs
+a real session, and verifies that a contracts-only consumer can compile a
+`WorkspaceProvider`. Run both before publishing changes to package exports,
+engines, or documentation examples.
 
-## Extend it
+## Extend panda
 
-Third parties implement panda's ports installing only `@skanl/panda-contracts`, and each
-port ships a public suite that tells an implementation whether it conforms. Start
-at [`packages/contracts/README.md`](./packages/contracts/README.md).
-
-## The directories
-
-- **`packages/`** — the product. Thirteen packages, topology strictly downward.
-- **`_bmad/` and `_bmad-output/`** — the planning trail: roadmaps, epics, one frozen
-  spec per shipped story, and an append-only ledger of deliberate simplifications.
-  It is checked in on purpose, because the reasoning behind a decision outlives the
-  commit that made it. It is not part of the product and you can ignore it.
-- **`AGENTS.md`** — the rules an agent working in this repository must follow. Every
-  mechanically checkable one names the gate that enforces it.
+Start with the [contracts port-authoring guide](./packages/contracts/README.md).
+It explains the lease model, validation, coded errors, published clause suites,
+and the packed-declaration proof. Then choose the smallest package boundary that
+owns the behavior you need; avoid reaching through the kernel to construct vendor
+factories directly.
 
 ## License
 
