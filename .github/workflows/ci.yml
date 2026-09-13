@@ -102,5 +102,4 @@ jobs:
       - name: Run plain Node consumer smoke
         env:
           npm_config_engine_strict: 'false'
-          NPM_CONFIG_ENGINE_STRICT: 'false'
         run: node scripts/consumer-smoke.mjs "$RUNNER_TEMP/panda-tarballs"

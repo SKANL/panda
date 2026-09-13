@@ -24,10 +24,10 @@ jobs:
       matrix:
         include:
           - platform: linux
-            runner: '["ubuntu-24.04"]'
+            runner: ubuntu-24.04
           - platform: macos
-            runner: '["macos-14"]'
-    runs-on: ${{ fromJSON(matrix.runner) }}
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,8 +71,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p conformance-results
-          guard_suite="packages/sandbox-local/test/host-conformance/${{ matrix.suite || matrix.platform }}.test.ts"
-          execution_suite="test/host-conformance/${{ matrix.suite || matrix.platform }}.test.ts"
+          guard_suite="packages/sandbox-local/test/host-conformance/${{ matrix.platform }}.test.ts"
+          execution_suite="test/host-conformance/${{ matrix.platform }}.test.ts"
           test -f "$guard_suite" || {
             echo "Missing real-host conformance suite: $guard_suite" >&2
             echo "Discovery-only providers cannot be reported as fully enforced." >&2
