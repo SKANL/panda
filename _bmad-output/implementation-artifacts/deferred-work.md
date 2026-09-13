@@ -975,3 +975,10 @@ The Windows development host now has a reproducible, no-cost Linux conformance p
 ### 2026-09-12 — hosted macOS Intel recheck
 
 GitHub-hosted `macos-15-intel` was tested as a free alternative to the previously tested `macos-14` runner. The hostile suite still failed closed because `createMacosSandboxProvider()` reported `partial`, so changing runner labels cannot establish Seatbelt enforcement. The workflow remains on its documented baseline and macOS stays unclaimed until a native provider probe and hostile suite both pass.
+
+### 2026-09-13 — explicit network authority in sandbox policy
+
+source_spec: `packages/contracts/src/sandbox.ts`, `packages/sandbox-local/src/shared.ts`, and provider contract tests
+summary: Network authority is now represented explicitly and local providers fail closed for unsupported modes.
+evidence: `SandboxPolicy.networkMode` accepts `deny`, `allowlist`, and `unrestricted`; omitted legacy input normalizes to `deny`. Local providers reject `allowlist` and `unrestricted` before session creation because the implemented local substrates only prove network denial. Contracts and provider tests cover accepted modes and the fail-closed path.
+still_open: Implement and hostile-test an allowlist or unrestricted network substrate before enabling either mode in a local provider. Windows remains deferred.
