@@ -1043,7 +1043,7 @@ describe('what a consumer gets when they bundle the published packages', () => {
   const BUNDLED: Record<string, string> = {
     'adapter-cli': 'runs:19',
     cli: 'throws:Cannot find module',
-    contracts: 'runs:89',
+    contracts: 'runs:90',
     environment: 'throws:Cannot find module',
     kernel: 'runs:33',
     lock: 'runs:1',
