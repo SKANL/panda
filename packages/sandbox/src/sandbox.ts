@@ -256,6 +256,7 @@ function samePolicy(left: SandboxPolicy, right: SandboxPolicy): boolean {
     left.version !== right.version ||
     left.mode !== right.mode ||
     left.workspaceRoot !== right.workspaceRoot ||
+    (left.networkMode ?? 'deny') !== (right.networkMode ?? 'deny') ||
     left.allowDangerous !== right.allowDangerous
   ) {
     return false

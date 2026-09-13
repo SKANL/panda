@@ -14,6 +14,7 @@ const policy = {
   version: 1 as const,
   mode: 'read-only' as const,
   workspaceRoot: '/workspace',
+  networkMode: 'deny' as const,
   requiredCapabilities: { filesystem: 'full' as const, network: 'full' as const },
 }
 

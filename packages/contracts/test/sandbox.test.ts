@@ -20,6 +20,7 @@ const policy = {
   version: 1,
   mode: 'read-only',
   workspaceRoot: '/workspace',
+  networkMode: 'deny',
   requiredCapabilities: { filesystem: 'full', network: 'full', process: 'full' },
 }
 
@@ -46,6 +47,14 @@ describe('sandbox contracts', () => {
       () => validateSandboxPolicy({ ...policy, mode: 'danger-full-access' }),
       'PANDA_SANDBOX_POLICY_INVALID',
     )
+  })
+
+  it.each(['deny', 'allowlist', 'unrestricted'] as const)('accepts network mode %s as explicit policy input', (networkMode) => {
+    expect(api('validateSandboxPolicy')({ ...policy, networkMode })).toMatchObject({ networkMode })
+  })
+
+  it('rejects an unknown network mode', () => {
+    expectPandaError(() => api('validateSandboxPolicy')({ ...policy, networkMode: 'host' }), 'PANDA_SANDBOX_POLICY_INVALID')
   })
 
   it.each(['read-only', 'workspace-write'] as const)('requires full filesystem and process enforcement for %s', (mode) => {
