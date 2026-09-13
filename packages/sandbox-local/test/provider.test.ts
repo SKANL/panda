@@ -985,7 +985,7 @@ describe('@skanl/panda-sandbox-local', () => {
       policy: { ...policy, workspaceRoot: '/workspace' },
     })).toEqual([
       'bwrap', '--die-with-parent', '--new-session', '--unshare-pid', '--unshare-net', '--clearenv',
-      '--tmpfs', '/', '--dir', '/proc', '--proc', '/proc', '--dir', '/dev', '--dev', '/dev',
+      '--tmpfs', '/', '--proc', '/proc', '--dev', '/dev',
       '--dir', '/tmp', '--tmpfs', '/tmp',
       '--dir', '/usr', '--ro-bind', '/usr', '/usr', '--dir', '/bin', '--ro-bind', '/bin', '/bin',
       '--dir', '/lib', '--ro-bind', '/lib', '/lib', '--dir', '/lib64', '--ro-bind', '/lib64', '/lib64',

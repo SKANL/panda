@@ -16,7 +16,7 @@ function directoriesToCreate(path: string): string[] {
 export function buildBubblewrapArgv(request: SandboxExecutionRequest): readonly [string, ...string[]] {
   const argv: string[] = [
     'bwrap', '--die-with-parent', '--new-session', '--unshare-pid', '--unshare-net', '--clearenv',
-    '--tmpfs', '/', '--dir', '/proc', '--proc', '/proc', '--dir', '/dev', '--dev', '/dev',
+    '--tmpfs', '/', '--proc', '/proc', '--dev', '/dev',
     '--dir', '/tmp', '--tmpfs', '/tmp',
   ]
   for (const directory of RUNTIME_DIRECTORIES) argv.push('--dir', directory, '--ro-bind', directory, directory)
