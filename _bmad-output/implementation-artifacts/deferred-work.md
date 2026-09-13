@@ -971,3 +971,7 @@ half its value.
 ### 2026-09-12 — local Linux conformance on Windows via Podman
 
 The Windows development host now has a reproducible, no-cost Linux conformance path: `pnpm conformance:linux:podman` runs the Linux host suite inside a disposable privileged Debian container backed by the local Podman WSL2 VM. The suite passed workspace-only writes, secret isolation, network denial, and descendant cleanup. This is evidence for the Linux provider only; it does not establish Windows or macOS enforcement. The container is a test substrate, not a claim that ordinary same-user containers are a hostile-workload boundary.
+
+### 2026-09-12 — hosted macOS Intel recheck
+
+GitHub-hosted `macos-15-intel` was tested as a free alternative to the previously tested `macos-14` runner. The hostile suite still failed closed because `createMacosSandboxProvider()` reported `partial`, so changing runner labels cannot establish Seatbelt enforcement. The workflow remains on its documented baseline and macOS stays unclaimed until a native provider probe and hostile suite both pass.
