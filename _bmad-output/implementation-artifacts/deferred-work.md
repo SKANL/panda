@@ -967,3 +967,7 @@ half its value.
   summary: The session-level tool execution seam is implemented as explicit host-approved `executeTool`, while `runSession` remains intentionally vendor-run and does not infer tool authority from discovery.
   evidence: `executeTool` validates invocation, context, policy equivalence, provider capabilities, approval, execution, and telemetry before returning a typed result; the composition suite covers approval, denial, provider capability checks, callbacks, and caller-owned lifecycle. This supersedes the earlier statement that the tool-composition inputs are inert.
   still_open: Add a concrete remote MCP transport only as a separately specified protocol; retain discovery-only `ToolProvider` and reject arbitrary JavaScript handlers.
+
+### 2026-09-12 — local Linux conformance on Windows via Podman
+
+The Windows development host now has a reproducible, no-cost Linux conformance path: `pnpm conformance:linux:podman` runs the Linux host suite inside a disposable privileged Debian container backed by the local Podman WSL2 VM. The suite passed workspace-only writes, secret isolation, network denial, and descendant cleanup. This is evidence for the Linux provider only; it does not establish Windows or macOS enforcement. The container is a test substrate, not a claim that ordinary same-user containers are a hostile-workload boundary.

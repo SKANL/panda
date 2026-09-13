@@ -435,6 +435,7 @@ console.log('${PAYLOAD_END}')
  * empty consumer file that compiles because there is nothing in it to reject.
  */
 function fencedBlock(markdown: string, language: string): string {
+  markdown = markdown.replace(/\r\n/g, '\n')
   const opening = `\n\`\`\`${language}\n`
   const from = markdown.indexOf(opening)
   if (from === -1) throw new Error(`packages/contracts/README.md carries no \`${language}\` block`)

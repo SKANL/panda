@@ -14,6 +14,7 @@
     "test": "pnpm -r test",
     "lint": "eslint .",
     "build": "pnpm -r build",
+    "conformance:linux:podman": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-linux-conformance-podman.ps1",
     "panda": "node --conditions=panda-source packages/cli/bin/panda.ts",
     "proof:consumer-install": "pnpm --filter @skanl/panda-session exec vitest run --config vitest.consumer-install.config.ts"
   },

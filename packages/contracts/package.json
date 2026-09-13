@@ -54,6 +54,7 @@
   },
   "files": [
     "dist",
+    "README.md",
     "METHOD-PLUGIN.md"
   ]
 }
