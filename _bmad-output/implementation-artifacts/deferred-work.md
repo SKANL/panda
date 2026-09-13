@@ -962,3 +962,8 @@ half its value.
   summary: Real-host conformance was executed on GitHub-hosted Linux and macOS runners and both providers correctly failed closed as `partial`; Windows remains intentionally unimplemented until a testable host is available.
   evidence: Workflow runs `34734523986`, `34734587144`, and `34734701381` executed the hostile suites. Linux Bubblewrap and macOS Seatbelt discovery did not produce `os` enforcement, so the suites rejected the claim instead of accepting partial capability as full isolation. `main` contains the follow-up provider fixes through `8c26cf3`.
   still_open: Continue provider-specific substrate work only when it can be verified by hostile real-host tests. Do not enable Linux or macOS as a required full-enforcement gate, and do not implement Windows until a Windows Sandbox/Hyper-V test host is available.
+
+- source_spec: `packages/session/src/run-session.ts`, `packages/session/src/tool-executor.ts`, and `packages/session/test/tool-composition.test.ts`
+  summary: The session-level tool execution seam is implemented as explicit host-approved `executeTool`, while `runSession` remains intentionally vendor-run and does not infer tool authority from discovery.
+  evidence: `executeTool` validates invocation, context, policy equivalence, provider capabilities, approval, execution, and telemetry before returning a typed result; the composition suite covers approval, denial, provider capability checks, callbacks, and caller-owned lifecycle. This supersedes the earlier statement that the tool-composition inputs are inert.
+  still_open: Add a concrete remote MCP transport only as a separately specified protocol; retain discovery-only `ToolProvider` and reject arbitrary JavaScript handlers.
