@@ -26,9 +26,7 @@ jobs:
           - platform: linux
             runner: ubuntu-24.04
           - platform: macos
-            # The public Intel runner is free for public repositories and is
-            # the current candidate for validating Apple's Seatbelt backend.
-            runner: macos-15-intel
+            runner: macos-14
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
