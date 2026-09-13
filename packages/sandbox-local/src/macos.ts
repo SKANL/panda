@@ -29,6 +29,7 @@ export function buildSeatbeltArgv(request: SandboxExecutionRequest): readonly [s
   const profile = [
     '(version 1)',
     '(deny default)',
+    '(import "system.sb")',
     '(deny network*)',
     '(allow process-exec)',
     '(allow process-fork)',
