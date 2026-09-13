@@ -57,6 +57,16 @@ describe('sandbox contracts', () => {
     expectPandaError(() => api('validateSandboxPolicy')({ ...policy, networkMode: 'host' }), 'PANDA_SANDBOX_POLICY_INVALID')
   })
 
+  it('creates the safe default policy with denied network and required controls', () => {
+    expect(api('createDefaultSandboxPolicy')('/workspace')).toEqual({
+      version: 1,
+      mode: 'workspace-write',
+      workspaceRoot: '/workspace',
+      networkMode: 'deny',
+      requiredCapabilities: { filesystem: 'full', process: 'full', resources: 'full' },
+    })
+  })
+
   it.each(['read-only', 'workspace-write'] as const)('requires full filesystem and process enforcement for %s', (mode) => {
     const validateSandboxPolicy = api('validateSandboxPolicy')
     expectPandaError(

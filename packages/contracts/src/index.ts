@@ -153,6 +153,7 @@ export {
   validateSandboxExecutionRequest,
   validateSandboxExecutionResult,
   validateSandboxPolicy,
+  createDefaultSandboxPolicy,
   validateSandboxSnapshot,
   type SandboxCapabilityFacts,
   type SandboxAuditEvent,

@@ -417,6 +417,17 @@ export function validateSandboxPolicy(value: unknown): SandboxPolicy {
   return freezePolicy(value as SandboxPolicy)
 }
 
+/** Returns the conservative policy used when a host does not opt into authority. */
+export function createDefaultSandboxPolicy(workspaceRoot: string): SandboxPolicy {
+  return validateSandboxPolicy({
+    version: SANDBOX_POLICY_VERSION,
+    mode: 'workspace-write',
+    workspaceRoot,
+    networkMode: 'deny',
+    requiredCapabilities: { filesystem: 'full', process: 'full', resources: 'full' },
+  })
+}
+
 export function validateSandboxSnapshot(value: unknown): SandboxSnapshot {
   const issues = snapshotIssues(value)
   if (issues.length > 0) throwInvalid(PANDA_ERROR_CODES.sandboxSnapshotInvalid, 'invalid sandbox snapshot', issues)
