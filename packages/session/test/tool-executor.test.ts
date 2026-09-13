@@ -20,6 +20,7 @@ const enforcement: SandboxCapabilityFacts = {
 class FakeSandboxSession implements ResolvedSandboxSession {
   readonly id = 'fake-session'
   readonly providerId = 'fake'
+  readonly capabilities = enforcement
   readonly executions: SandboxExecutionRequest[] = []
   disposals = 0
   result: SandboxExecutionResult = { status: 'ok', stdout: 'ok', stderr: '', exitCode: 0, enforcement }
@@ -115,7 +116,7 @@ describe('createToolExecutor', () => {
       context,
     )
 
-    expect(result).toMatchObject({ status: 'ok', exitCode: 0 })
+    expect(result).toMatchObject({ status: 'ok', exitCode: 0, enforcement })
     expect(frames.slice(0, 3).map((frame) => JSON.parse(frame).method)).toEqual(['initialize', 'notifications/initialized', 'tools/call'])
     expect(JSON.parse(frames[2]!).params).toEqual({ name: 'greet', arguments: { who: 'Ada' } })
     expect(frames[3]).toBe('closed')
