@@ -133,15 +133,15 @@ is not the architecture to build against.
 - **No formal paper theorem:** the guarantees in this README are backed by
   executable tests, contract suites, and packaging proofs. They are not a claim
   of a formally verified theorem.
-- **No full OS isolation claim:** the current local provider discovers relevant
-  platform tools but advertises no enforced controls, so a policy requiring a
-  control fails closed. panda does not currently claim Landlock, bubblewrap,
-  Seatbelt, or Windows Hyper-V enforcement.
-- **No implied execution path:** `ToolProvider` remains a discovery/ingestion
-  port. It does not grant execution authority; `ToolExecutor` accepts no
-  arbitrary JavaScript handlers. The optional remote provider is an injected
-  adapter seam, not a shipped remote protocol. Session tool-composition inputs
-  are inert until an executor tool-call flow routes to them.
+- **Evidence-bound OS isolation:** the Linux provider can advertise OS-backed
+  filesystem, network, and process controls only after a functional bubblewrap
+  probe; Linux conformance is reproducible through the free Podman runner. macOS
+  remains unclaimed on this device, and Windows Hyper-V/Sandbox is deferred.
+- **Explicit execution path:** `ToolProvider` remains a discovery/ingestion
+  port. It does not grant execution authority; `executeTool` and `ToolExecutor`
+  route only validated invocations through a caller-owned sandbox session.
+  Arbitrary JavaScript handlers remain unsupported. The optional remote provider
+  is an injected adapter seam, not a shipped remote protocol.
 
 ## Install and version support
 
