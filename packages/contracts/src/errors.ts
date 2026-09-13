@@ -65,6 +65,17 @@ export const PANDA_ERROR_CODES = {
   // Distinct from an ABSENT store, which is not a failure at all but an empty
   // one (AD-5).
   contractMemoryStoreUnavailable: 'PANDA_CONTRACT_MEMORY_STORE_UNAVAILABLE',
+  sandboxPolicyInvalid: 'PANDA_SANDBOX_POLICY_INVALID',
+  sandboxRequestInvalid: 'PANDA_SANDBOX_REQUEST_INVALID',
+  sandboxResponseInvalid: 'PANDA_SANDBOX_RESPONSE_INVALID',
+  sandboxSnapshotInvalid: 'PANDA_SANDBOX_SNAPSHOT_INVALID',
+  sandboxCapabilityUnavailable: 'PANDA_SANDBOX_CAPABILITY_UNAVAILABLE',
+  sandboxUnavailable: 'PANDA_SANDBOX_UNAVAILABLE',
+  sandboxDenied: 'PANDA_SANDBOX_DENIED',
+  // A tool descriptor or its invocation arguments are not executable input.
+  // This remains distinct from a sandbox request because callers fix the tool
+  // declaration here; the sandbox request is assembled only after it is valid.
+  toolInvocationInvalid: 'PANDA_TOOL_INVOCATION_INVALID',
   executorUnavailable: 'PANDA_EXECUTOR_UNAVAILABLE',
   executorRunFailed: 'PANDA_EXECUTOR_RUN_FAILED',
   executorCancelled: 'PANDA_EXECUTOR_CANCELLED',

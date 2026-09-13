@@ -138,6 +138,21 @@ and its provider, so `configLayers`, `cwd`, `executorId`, `adapterOptions`,
 `createAdapter`, `createProvider`, `onSelection`, `log` and `actionPolicy` are
 **refused** beside it rather than silently ignored.
 
+## Sandbox and tool-composition seam
+
+SDK hosts may supply a `sandboxProvider`, `toolExecutor`, `toolPolicy`, approval,
+and tool/sandbox event callbacks when composing a session. `executeTool()` is the
+explicit SDK operation that validates the invocation and context, checks the
+provider's declared capability facts, requests host approval, executes through
+the supplied executor, and emits the normalized result.
+
+The boundary is explicit: bind a
+caller-owned sandbox session to `createToolExecutor`, pass `local` or
+`mcp-stdio` exact argv, and dispose the session at the host's lifecycle boundary.
+This is not an arbitrary JavaScript-handler API, and `ToolProvider` discovery is
+not execution authority. The session seam also makes no OS-isolation or concrete
+remote-protocol claim.
+
 **Read the caps honestly.** A run is ADMITTED at `SESSION_ACTION_COST` (a flat 1)
 and then SETTLED against the token figure the executor itself reported, so
 `maxTotalCost` and `maxInvocations` now refuse on **different runs**: one
@@ -158,3 +173,27 @@ The settlement is also what the record stream carries: with a policy configured,
 each admitted run emits an `action.estimated` and, if the vendor reported a
 figure, an `action.settled`, so the total is reconstructable from the records
 alone. With no policy set, the stream is exactly what it was before.
+
+### What the session seam means today
+
+The session package re-exports the SDK composition seam, but its current
+executor run path does not contain a tool-call route. Supplying
+`sandboxProvider`, `toolExecutor`, policy, approval, or callbacks therefore
+validates/configures inputs but does not itself create a sandbox or execute a
+tool. A host with an actual tool-call flow should create a provider-owned
+session, call `createToolExecutor(session)`, and dispose it at the host
+lifecycle boundary.
+
+`ToolExecutor` preserves exact argv. A local descriptor such as
+`{ kind: 'local', argv: ['node', 'server.mjs'] }` with `['--config', 'a b']`
+reaches the provider as `['node', 'server.mjs', '--config', 'a b']`; no shell
+parsing or arbitrary JavaScript handler is involved. An `mcp-stdio` descriptor
+uses the same argv and provider-owned framed stdio channel for local MCP.
+
+Policies requiring unproven controls or resource limits fail closed. The
+current local provider evidence is conservative; the remote provider is an
+injected transport adapter, not a bundled protocol. `danger-full-access`
+requires explicit acknowledgement and may emit validated start/completion
+audit events, but neither audit events nor current tests prove OS isolation.
+Repository/provider tests are current-platform evidence. The optional
+Linux/macOS/Windows host-conformance runs have not been claimed as executed.

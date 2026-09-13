@@ -17,7 +17,9 @@ import type { UsageReport } from '@skanl/panda-session'
 //
 // It costs quota, so it is a `*live.test.ts`, and it SKIPS with its reason
 // whenever claude is missing, broken, unauthenticated or refusing —
-// PANDA_LIVE_STATUS=0 forces the skip. A provider outage never fails it.
+// PANDA_LIVE_STATUS=1 enables the check. The deterministic repository gate
+// keeps it disabled by default so it never consumes credentials or depends on
+// changing vendor output. A provider outage never fails an explicitly enabled run.
 
 const PROBE_TIMEOUT_MS = 20_000
 const RUN_TIMEOUT_MS = 240_000
@@ -76,8 +78,8 @@ function capture(): RunCommandOptions & { out: string[]; err: string[] } {
  * live check proves nothing against one that cannot answer.
  */
 async function probe(): Promise<{ available: boolean; reason: string }> {
-  if (process.env['PANDA_LIVE_STATUS'] === '0') {
-    return { available: false, reason: 'PANDA_LIVE_STATUS=0 explicitly disables the live status check' }
+  if (process.env['PANDA_LIVE_STATUS'] !== '1') {
+    return { available: false, reason: 'PANDA_LIVE_STATUS=1 is required to enable the live status check' }
   }
   return await new Promise((resolve) => {
     // One string, no argv array: on win32 `claude` is a `.cmd` shim and only a

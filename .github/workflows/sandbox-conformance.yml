@@ -1,0 +1,89 @@
+name: Sandbox host conformance
+
+# This workflow is deliberately opt-in. The ordinary CI workflow must not
+# imply that discovery probes establish operating-system enforcement.
+on:
+  workflow_dispatch:
+    inputs:
+      run-real-host-conformance:
+        description: Run the real-host sandbox conformance suite.
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  host-conformance:
+    # A false input is a deliberate non-claim. When explicitly enabled, every
+    # matrix row must run on the platform it names; missing substrate is red,
+    # never a skip or a discovery-only substitute.
+    if: inputs.run-real-host-conformance
+    env:
+      PANDA_RUN_SANDBOX_CONFORMANCE: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: '["ubuntu-24.04"]'
+          - platform: macos
+            runner: '["macos-14"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Linux sandbox substrate
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes bubblewrap systemd
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Require matching host and declared substrate
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.platform }}' in
+            linux)
+              test "$RUNNER_OS" = Linux
+              command -v bwrap
+              command -v systemd-run
+              ;;
+            macos)
+              test "$RUNNER_OS" = macOS
+              command -v sandbox-exec
+              ;;
+          esac
+
+      # Presence is only admission to this job. The suite must prove that the
+      # configured substrate enforces its policy; discovery tests are not a
+      # replacement. Keep the missing-suite outcome red after an explicit run.
+      - name: Require real-host conformance clause
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p conformance-results
+          guard_suite="packages/sandbox-local/test/host-conformance/${{ matrix.suite || matrix.platform }}.test.ts"
+          execution_suite="test/host-conformance/${{ matrix.suite || matrix.platform }}.test.ts"
+          test -f "$guard_suite" || {
+            echo "Missing real-host conformance suite: $guard_suite" >&2
+            echo "Discovery-only providers cannot be reported as fully enforced." >&2
+            exit 1
+          }
+          pnpm --filter @skanl/panda-sandbox-local exec vitest run "$execution_suite" 2>&1 | tee "conformance-results/${{ matrix.platform }}.log"
+
+      - name: Upload conformance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-conformance-${{ matrix.platform }}
+          path: conformance-results/
+          if-no-files-found: warn

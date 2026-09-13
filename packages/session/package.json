@@ -44,6 +44,7 @@
     "@skanl/panda-adapter-cli": "workspace:*",
     "@skanl/panda-contracts": "workspace:*",
     "@skanl/panda-kernel": "workspace:*",
+    "@skanl/panda-sandbox": "workspace:*",
     "@skanl/panda-workspace-git-worktree": "workspace:*",
     "@skanl/panda-workspace-local": "workspace:*"
   },

@@ -673,6 +673,8 @@ describe('createSessionKernel is the only composition surface', () => {
       'createLogSink',
       'createMemoryLogSink',
       'createSessionKernel',
+      'createToolExecutor',
+      'executeTool',
       'inspectLocalWorkspaces',
       'inspectWorktrees',
       'readExecutorConfigLayers',
