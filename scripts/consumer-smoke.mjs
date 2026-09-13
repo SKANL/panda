@@ -50,7 +50,7 @@ const run = async (command, args, cwd) => {
   try {
     const result = await exec(command, args, {
       cwd,
-      env: { ...process.env, npm_config_engine_strict: 'false', NPM_CONFIG_ENGINE_STRICT: 'false' },
+      env: { ...process.env, npm_config_engine_strict: 'false' },
       shell: process.platform === 'win32',
       windowsHide: true,
       maxBuffer: 10 * 1024 * 1024,
