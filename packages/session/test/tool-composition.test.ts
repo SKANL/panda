@@ -21,6 +21,7 @@ const policy: SandboxPolicy = {
   version: 1,
   mode: 'read-only',
   workspaceRoot: '/workspace',
+  networkMode: 'deny',
   requiredCapabilities: { filesystem: 'full' },
 }
 
