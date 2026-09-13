@@ -52,9 +52,6 @@ const repoRoot = join(import.meta.dirname, '..', '..', '..')
 /** Every publishable workspace package, in no particular order — the build sorts itself. */
 const PACKAGE_DIRS = [
   ...(JSON.parse(readFileSync(join(repoRoot, 'scripts', 'publishable-packages.json'), 'utf8')) as readonly string[]),
-  'sandbox',
-  'sandbox-local',
-  'sandbox-remote',
 ] as const
 
 /**
