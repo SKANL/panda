@@ -984,7 +984,7 @@ describe('@skanl/panda-sandbox-local', () => {
       environment: { SAFE: 'yes', API_TOKEN: 'must-not-leak' },
       policy: { ...policy, workspaceRoot: '/workspace' },
     })).toEqual([
-      'bwrap', '--die-with-parent', '--new-session', '--unshare-pid', '--unshare-net', '--clearenv',
+      'bwrap', '--die-with-parent', '--new-session', '--unshare-user', '--unshare-pid', '--unshare-net', '--clearenv',
       '--tmpfs', '/', '--proc', '/proc', '--dev', '/dev',
       '--dir', '/tmp', '--tmpfs', '/tmp',
       '--dir', '/usr', '--ro-bind', '/usr', '/usr', '--dir', '/bin', '--ro-bind', '/bin', '/bin',
