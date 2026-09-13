@@ -1,8 +1,26 @@
 import { createExecutorPlugin, EXECUTOR_CONFIG_KEY, EXECUTOR_SERVICE } from '@skanl/panda-adapter-cli'
 import type { CliExecutorAdapterOptions, ExecutorService } from '@skanl/panda-adapter-cli'
-import { PandaError, PANDA_ERROR_CODES } from '@skanl/panda-contracts'
+import {
+  PandaError,
+  PANDA_ERROR_CODES,
+  validateSandboxCapabilities,
+  validateSandboxPolicy,
+  validateToolExecutionContext,
+  validateToolInvocation,
+} from '@skanl/panda-contracts'
 import type { MethodActivation } from '@skanl/panda-contracts'
-import type { ExecutorAdapter, ResultEnvelope, WorkspaceHandle, WorkspaceProvider } from '@skanl/panda-contracts'
+import type {
+  ExecutorAdapter,
+  ResultEnvelope,
+  SandboxPolicy,
+  SandboxProvider,
+  ToolExecutionContext,
+  ToolExecutor,
+  ToolInvocation,
+  ToolResult,
+  WorkspaceHandle,
+  WorkspaceProvider,
+} from '@skanl/panda-contracts'
 import {
   createKernel,
   createMemoryLogSink,
@@ -71,7 +89,95 @@ export const SESSION_ACTION_ID = 'session.executor-run'
  */
 export const SESSION_ACTION_COST = 1
 
-export interface SessionOptions {
+/** The request `executeTool` puts before the host's approval boundary. */
+export interface ToolApprovalRequest {
+  readonly invocation: ToolInvocation
+  readonly context: ToolExecutionContext
+}
+
+/** The host decides whether a normalized tool invocation may proceed. */
+export type ToolApproval = (request: ToolApprovalRequest) => boolean | Promise<boolean>
+
+/** A completed normalized tool invocation, for host-owned observation. */
+export interface ToolExecutionEvent extends ToolApprovalRequest {
+  readonly result: ToolResult
+}
+
+/** Options for one host-approved SDK tool invocation. */
+export interface ExecuteToolOptions extends ToolCompositionOptions {
+  readonly invocation: ToolInvocation
+  readonly context: ToolExecutionContext
+}
+
+function sameToolPolicy(left: SandboxPolicy, right: SandboxPolicy): boolean {
+  const canonical = (value: unknown): string => {
+    if (value === undefined) return ''
+    if (value === null || typeof value !== 'object') return JSON.stringify(value)
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+    return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
+  }
+  return left.version === right.version
+    && left.mode === right.mode
+    && left.workspaceRoot === right.workspaceRoot
+    && left.allowDangerous === right.allowDangerous
+    && canonical(left.requiredCapabilities) === canonical(right.requiredCapabilities)
+    && canonical(left.resourceLimits) === canonical(right.resourceLimits)
+}
+
+/**
+ * Executes one validated tool through the supplied ToolExecutor.
+ *
+ * This is deliberately separate from `runSession`: executor runs are vendor
+ * sessions, while tool calls are host-controlled SDK operations. The helper
+ * makes the approval boundary executable without teaching the kernel about
+ * tools, processes, filesystems, or sandbox backends.
+ */
+export async function executeTool(options: ExecuteToolOptions): Promise<ToolResult> {
+  const invocation = validateToolInvocation(options.invocation)
+  const context = validateToolExecutionContext(options.context)
+  const executor = options.toolExecutor
+  if (executor === undefined) {
+    throw new PandaError(PANDA_ERROR_CODES.sandboxUnavailable, 'tool execution requires a ToolExecutor')
+  }
+  if (options.toolPolicy !== undefined) {
+    const policy = validateSandboxPolicy(options.toolPolicy)
+    if (!sameToolPolicy(policy, context.policy)) {
+      throw new PandaError(PANDA_ERROR_CODES.sandboxRequestInvalid, 'tool policy does not match execution context')
+    }
+  }
+  if (options.sandboxProvider !== undefined) {
+    validateSandboxCapabilities(context.policy, options.sandboxProvider.capabilities)
+  }
+  if (options.approveTool !== undefined && !(await options.approveTool({ invocation, context }))) {
+    throw new PandaError(PANDA_ERROR_CODES.sandboxDenied, 'tool invocation was denied by the host')
+  }
+  const result = await executor.execute(invocation, context)
+  options.onToolExecution?.({ invocation, context, result })
+  return result
+}
+
+/** A lifecycle event emitted when a sandbox-backed SDK flow selects a provider. */
+export interface SandboxEvent {
+  readonly type: 'provider-selected' | 'session-created' | 'session-disposed'
+  readonly providerId: string
+  readonly policy: SandboxPolicy
+}
+
+/**
+ * Tool composition dependencies for the SDK execution boundary. `runSession`
+ * remains a vendor-run lifecycle; `executeTool` routes explicit host-approved
+ * invocations without making the vendor executor or kernel a tool registry.
+ */
+export interface ToolCompositionOptions {
+  readonly sandboxProvider?: SandboxProvider
+  readonly toolExecutor?: ToolExecutor
+  readonly toolPolicy?: SandboxPolicy
+  readonly approveTool?: ToolApproval
+  readonly onToolExecution?: (event: ToolExecutionEvent) => void
+  readonly onSandboxEvent?: (event: SandboxEvent) => void
+}
+
+export interface SessionOptions extends ToolCompositionOptions {
   /** Handed to the executor verbatim; rejected before anything is created if it is blank. */
   readonly prompt: string
   /** Root the mounted workspace plugin builds `.panda/workspaces` under. Defaults to `process.cwd()`. */
@@ -231,6 +337,28 @@ async function contained(action: () => unknown): Promise<void> {
 }
 
 /**
+ * Validate only the policy/capability relationship that is knowable without a
+ * tool invocation. Provider selection, session creation and execution remain
+ * absent until the session receives a tool call to route.
+ */
+function validateToolComposition(options: ToolCompositionOptions): void {
+  const { sandboxProvider, toolPolicy } = options
+  if (toolPolicy === undefined) return
+
+  const policy = validateSandboxPolicy(toolPolicy)
+  if (sandboxProvider === undefined) return
+
+  const providerId = sandboxProvider.id
+  const capabilities = validateSandboxCapabilities(policy, sandboxProvider.capabilities)
+  if (providerId !== capabilities.providerId) {
+    throw new PandaError(
+      PANDA_ERROR_CODES.sandboxCapabilityUnavailable,
+      `sandbox provider id '${providerId}' does not match its capability facts '${capabilities.providerId}'`,
+    )
+  }
+}
+
+/**
  * The sink a session-owned kernel records into.
  *
  * `SessionOptions.log` is documented — and pinned by three suites — as the
@@ -275,7 +403,7 @@ function describeFailures(failures: readonly { pluginId: string; error: Error }[
   return failures.map((failure) => `${failure.pluginId}: ${failure.error.message}`).join('; ')
 }
 
-export interface SessionKernelOptions {
+export interface SessionKernelOptions extends ToolCompositionOptions {
   /**
    * Root the workspace plugin builds `.panda/workspaces` under. NAMED or not is
    * load-bearing: named, it is this invocation's answer and wins over every
@@ -336,6 +464,8 @@ export function createSessionKernel(options: SessionKernelOptions = {}): PandaKe
     onSelection,
     onWarning,
   } = options
+
+  validateToolComposition(options)
 
   // The KERNEL's sink, unfiltered: a host that builds its own kernel is exactly
   // the caller who wants the lifecycle transitions too, and it is where the AD-4
@@ -515,6 +645,12 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
     log,
     actionPolicy,
     kernel: suppliedKernel,
+    sandboxProvider,
+    toolExecutor,
+    toolPolicy,
+    approveTool,
+    onToolExecution,
+    onSandboxEvent,
   } = options
 
   // Before anything is constructed or written: an invalid request must cost no
@@ -551,6 +687,20 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
     }
   }
 
+  // A caller-owned kernel bypasses `createSessionKernel`, so the composition
+  // boundary still validates its policy/provider pairing here. Tool calls are
+  // explicit `executeTool` operations and are not implicit side effects of a
+  // vendor session run.
+  const toolComposition: ToolCompositionOptions = {
+    ...(sandboxProvider === undefined ? {} : { sandboxProvider }),
+    ...(toolExecutor === undefined ? {} : { toolExecutor }),
+    ...(toolPolicy === undefined ? {} : { toolPolicy }),
+    ...(approveTool === undefined ? {} : { approveTool }),
+    ...(onToolExecution === undefined ? {} : { onToolExecution }),
+    ...(onSandboxEvent === undefined ? {} : { onSandboxEvent }),
+  }
+  if (suppliedKernel !== undefined) validateToolComposition(toolComposition)
+
   const kernel =
     suppliedKernel ??
     createSessionKernel({
@@ -563,6 +713,7 @@ export async function runSession(options: SessionOptions): Promise<ResultEnvelop
       actionPolicy,
       onSelection,
       onWarning,
+      ...toolComposition,
     })
 
   const stopKernel = suppliedKernel === undefined ? () => kernel.stop() : undefined

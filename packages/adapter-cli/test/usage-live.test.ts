@@ -41,7 +41,9 @@ import { FakeSpawner } from './fake-spawner.ts'
 //      charge nothing.
 //
 // A vendor that ran and answered but printed no usage field is a HARD failure
-// naming the field, not a skip. PANDA_LIVE_USAGE=0 forces a skip.
+// naming the field, not a skip. Live verification is opt-in so the deterministic
+// repository gate never spends credentials or depends on changing vendor output;
+// PANDA_LIVE_USAGE=1 enables it and PANDA_LIVE_USAGE=0 explicitly disables it.
 
 const PROBE_TIMEOUT_MS = 20_000
 const RUN_TIMEOUT_MS = 300_000
@@ -86,8 +88,8 @@ async function settleWithin(child: ReturnType<ReturnType<typeof createNodeChildS
 }
 
 async function probe(command: string): Promise<Availability> {
-  if (process.env['PANDA_LIVE_USAGE'] === '0') {
-    return { available: false, reason: 'PANDA_LIVE_USAGE=0 explicitly disables the live usage verification' }
+  if (process.env['PANDA_LIVE_USAGE'] !== '1') {
+    return { available: false, reason: 'PANDA_LIVE_USAGE=1 is required to enable live usage verification' }
   }
   const child = createNodeChildSpawner().spawn(command, ['--version'], { cwd: tmpdir() })
   child.endStdin()

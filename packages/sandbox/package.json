@@ -1,0 +1,18 @@
+{
+  "name": "@skanl/panda-sandbox",
+  "version": "0.1.0",
+  "description": "Provider-neutral sandbox selection, capability negotiation, and session lifecycle management.",
+  "keywords": ["ai-agent", "panda", "sandbox", "capability"],
+  "homepage": "https://github.com/SKANL/panda#readme",
+  "bugs": { "url": "https://github.com/SKANL/panda/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/SKANL/panda.git", "directory": "packages/sandbox" },
+  "license": "MIT",
+  "publishConfig": { "access": "public" },
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "exports": { ".": { "panda-source": "./src/index.ts", "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run", "lint": "eslint .", "prepack": "pnpm build", "build": "node ../../scripts/clean-dist.mjs && tsc -p tsconfig.build.json" },
+  "dependencies": { "@skanl/panda-contracts": "workspace:*" },
+  "devDependencies": { "@types/node": "catalog:", "typescript": "catalog:", "vitest": "catalog:" },
+  "files": ["dist"]
+}

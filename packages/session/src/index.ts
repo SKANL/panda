@@ -1,8 +1,15 @@
 export {
   createSessionKernel,
   runSession,
+  executeTool,
   SESSION_ACTION_COST,
   SESSION_ACTION_ID,
+  type SandboxEvent,
+  type ToolApproval,
+  type ToolApprovalRequest,
+  type ToolCompositionOptions,
+  type ToolExecutionEvent,
+  type ExecuteToolOptions,
   type SessionKernelOptions,
   type SessionOptions,
 } from './run-session.ts'
@@ -28,6 +35,7 @@ export {
 // first"): a host with a long-lived kernel. Unexported, the guarantee this story
 // exists to provide would be reachable only from this package's own tests.
 export { resolveMethod, swapMethod } from './methods.ts'
+export { createToolExecutor } from './tool-executor.ts'
 // The workspace selection, beside the executor one and for the same FR-29
 // reason: a consumer that imports only this package can ask which provider a
 // composed configuration names, without `@skanl/panda-cli`.
@@ -119,6 +127,9 @@ export type {
 export type {
   ExecutorAdapter,
   ResultEnvelope,
+  SandboxCapabilityFacts,
+  SandboxPolicy,
+  SandboxProvider,
   RunRequest,
   UsageAbsence,
   UsageObservation,
@@ -126,6 +137,10 @@ export type {
   UsageWindow,
   WorkspaceHandle,
   WorkspaceProvider,
+  ToolExecutionContext,
+  ToolExecutor,
+  ToolInvocation,
+  ToolResult,
 } from '@skanl/panda-contracts'
 // A VALUE, not a type: `UsageAbsence.reason` is routed on (AD-7), and a consumer
 // that cannot name the codes would have to compare the strings by hand.

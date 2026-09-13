@@ -52,6 +52,7 @@ describe('@skanl/panda-session dependency direction (AD-2)', () => {
       '@skanl/panda-adapter-cli',
       '@skanl/panda-contracts',
       '@skanl/panda-kernel',
+      '@skanl/panda-sandbox',
       '@skanl/panda-workspace-git-worktree',
       '@skanl/panda-workspace-local',
     ])

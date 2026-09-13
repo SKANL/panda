@@ -32,6 +32,29 @@ the package, that proof fails.
 run against an implementation of it. NFR-8 asks for a suite per Contract and
 this is the one that does not have one yet.
 
+## Sandbox and tool-execution contracts
+
+The contracts package also defines a provider-neutral sandbox lifecycle:
+`SandboxProvider` reports capability facts, creates a `SandboxSession` for a
+policy and validated snapshots, and owns execution and disposal. A provider
+whose evidence cannot satisfy the requested policy is rejected before it creates
+a session. This is a composition boundary for SDK hosts, not a CLI feature.
+
+`ToolExecutor` turns a `local` or `mcp-stdio` descriptor plus arguments into one
+exact argv vector. There is no shell command string, parsing, expansion, or
+arbitrary JavaScript handler. `mcp-stdio` describes a local process connected
+over stdio; network MCP transports are not represented by this contract.
+
+`ToolProvider` remains discovery/ingestion-only. Listing a tool never grants
+authority to execute it; a caller must deliberately compose a `ToolExecutor`
+with a sandbox session. The contracts do not claim an OS isolation backend or a
+remote protocol.
+
+Sandbox snapshots are file-only. A provider may create and restore snapshots
+whose content it owns for the lifetime of the session; directory metadata and
+process state are not restorable, and an unknown snapshot identity must fail
+closed.
+
 The package root exports the port types and their schemas, `PandaError` and
 `PANDA_ERROR_CODES`, the validation helpers, and the clause-suite runners. The
 `@skanl/panda-contracts/validation` subpath is also published for the shared
@@ -179,3 +202,34 @@ producing a mixed report, the packaging proof fails.
      A sentence here can go stale without anything failing. Upgrade path: none
      worth its cost yet — the claims most likely to rot are the coded-error
      names, and those are already pinned by the blocks that use them. -->
+
+## SDK execution details
+
+`ToolExecutor.execute()` accepts a validated invocation and execution context.
+For `local`, `tool.argv` is copied exactly and `arguments` are appended as
+individual tokens. For example, `['node', 'server.mjs']` plus
+`['--config', 'a b']` remains exactly `['node', 'server.mjs', '--config', 'a b']`:
+there is no shell string, quoting pass, expansion, or handler callback.
+`mcp-stdio` uses that exact argv to open a provider-owned local process and
+exchanges one complete UTF-8 frame at a time; network MCP transports are not
+part of v1.
+
+A `SandboxPolicy` records mode, workspace root, required control evidence, and
+optional positive resource limits (`wallTimeMs`, `memoryBytes`, `outputBytes`,
+`fileSizeBytes`, `processCount`). Capability evidence is checked before a
+session is created and again against execution results. Unsupported controls,
+unsupported limits, malformed responses, provider-identity mismatches, and
+missing stdio support fail closed with coded `PandaError`/sandbox statuses.
+`ToolProvider` remains discovery-only and grants no execution authority.
+
+`danger-full-access` is an explicit acknowledged mode. Local providers can
+send validated `execution-started` and `execution-completed` audit events with
+provider/session IDs and timestamps through an injected callback. This is audit
+visibility, not OS isolation.
+
+The local factories report conservative, platform-dependent evidence; the
+remote package is only a transport-injected adapter and does not define a
+remote protocol. Current tests exercise these contracts and the available
+provider paths, but the manually enabled Linux/macOS/Windows host-conformance
+runs are unavailable unless explicitly executed. Do not treat provider
+selection or substrate discovery as proof of OS enforcement.

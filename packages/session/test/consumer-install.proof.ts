@@ -50,9 +50,12 @@ const RUN_TIMEOUT_MS = 120_000
 const repoRoot = join(import.meta.dirname, '..', '..', '..')
 
 /** Every publishable workspace package, in no particular order — the build sorts itself. */
-const PACKAGE_DIRS = JSON.parse(
-  readFileSync(join(repoRoot, 'scripts', 'publishable-packages.json'), 'utf8'),
-) as readonly string[]
+const PACKAGE_DIRS = [
+  ...(JSON.parse(readFileSync(join(repoRoot, 'scripts', 'publishable-packages.json'), 'utf8')) as readonly string[]),
+  'sandbox',
+  'sandbox-local',
+  'sandbox-remote',
+] as const
 
 /**
  * The version every workspace package carries, READ rather than written.
@@ -120,6 +123,13 @@ function runtimeClosureOf(rootDir: string): readonly string[] {
 
 /** The session's panda dependency closure, derived from the packed manifests. */
 const SESSION_DEPENDENCIES = runtimeClosureOf('session').filter((packageDir) => packageDir !== 'session')
+const PACKED_CONSUMER_PACKAGE_DIRS = [
+  'session',
+  ...SESSION_DEPENDENCIES,
+  'sandbox',
+  'sandbox-local',
+  'sandbox-remote',
+] as const
 
 /**
  * The one skip, and it announces itself. `process.stderr.write`, not
@@ -373,7 +383,7 @@ export const wrong: SessionOptions = { prompt: 42 }
 /**
  * The OTHER promise, and the one nothing tested until now.
  * `ARCHITECTURE-SPINE.md` (AD-2): "Third parties implement any port installing
- * only `@skanl/panda-contracts`." The session arm above installs six tarballs, so it
+ * only `@skanl/panda-contracts`." The session arm above installs nine tarballs, so it
  * proves the session BUNDLE is installable and says nothing about this.
  *
  * BOTH HALVES ARE EXTRACTED FROM `packages/contracts/README.md`, OUT OF THE
@@ -479,7 +489,7 @@ let temporaryRoot = ''
 let projectDir = ''
 let installedManifest: Record<string, unknown> = {}
 let consumer: ConsumerRun
-/** Archive path -> its complete contents, for each of the thirteen tarballs. */
+/** Archive path -> its complete contents, for each of the sixteen tarballs. */
 const packed = new Map<string, ReadonlyMap<string, string>>()
 
 // The installed project is EVIDENCE when something goes red, and litter when
@@ -533,11 +543,11 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
           version: '0.0.0',
           private: true,
           type: 'module',
-          // Every `@skanl/panda-*` in the closure, DIRECT, each on its own tarball —
-          // and nothing else at all, so the install has no registry package to
-          // want and `--offline` is a fact rather than a hope.
+          // Every package in this consumer is DIRECT, each on its own packed
+          // tarball — and nothing else at all, so the install has no registry
+          // package to want and `--offline` is a fact rather than a hope.
           dependencies: Object.fromEntries(
-            ['session', ...SESSION_DEPENDENCIES].map((packageDir) => [
+            PACKED_CONSUMER_PACKAGE_DIRS.map((packageDir) => [
               `@skanl/panda-${packageDir}`,
               tarball(packageDir),
             ]),
@@ -564,6 +574,9 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
     // out.
     const installed = await run('npm', ['install', '--offline'], projectDir, RUN_TIMEOUT_MS)
     expect(installed.code, `npm install failed in the consumer project:\n${installed.output}`).toBe(0)
+    expect((await readdir(join(projectDir, 'node_modules', '@skanl'))).sort()).toEqual(
+      [...new Set(PACKED_CONSUMER_PACKAGE_DIRS.map((packageDir) => `panda-${packageDir}`))].sort(),
+    )
 
     installedManifest = JSON.parse(
       await readFile(join(projectDir, 'node_modules', '@skanl', 'panda-session', 'package.json'), 'utf8'),
@@ -613,7 +626,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
   // this repo's own review lens is named for.
 
   it('ships the LICENSE it declares, in every tarball', async () => {
-    // All thirteen declared `"license": "MIT"` and NONE carried the file until
+    // All sixteen declared `"license": "MIT"` and NONE carried the file until
     // M37.A. npm only auto-includes a LICENSE sitting in the packed directory,
     // so the declaration was a claim with nothing behind it in the artifact a
     // user receives.
@@ -701,6 +714,7 @@ describe.skipIf(OPT_OUT)('a project OUTSIDE the workspace that installed the pac
       '@skanl/panda-adapter-cli': WORKSPACE_VERSION,
       '@skanl/panda-contracts': WORKSPACE_VERSION,
       '@skanl/panda-kernel': WORKSPACE_VERSION,
+      '@skanl/panda-sandbox': WORKSPACE_VERSION,
       '@skanl/panda-workspace-git-worktree': WORKSPACE_VERSION,
       '@skanl/panda-workspace-local': WORKSPACE_VERSION,
     })
@@ -1031,7 +1045,7 @@ describe('what a consumer gets when they bundle the published packages', () => {
   const BUNDLED: Record<string, string> = {
     'adapter-cli': 'runs:19',
     cli: 'throws:Cannot find module',
-    contracts: 'runs:66',
+    contracts: 'runs:85',
     environment: 'throws:Cannot find module',
     kernel: 'runs:33',
     lock: 'runs:1',
@@ -1039,7 +1053,10 @@ describe('what a consumer gets when they bundle the published packages', () => {
     'memory-sqlite': 'runs:1',
     projection: 'throws:Cannot find module',
     registry: 'throws:Cannot find module',
-    session: 'runs:20',
+    sandbox: 'runs:1',
+    'sandbox-local': 'runs:4',
+    'sandbox-remote': 'runs:1',
+    session: 'runs:22',
     'workspace-git-worktree': 'runs:9',
     'workspace-local': 'runs:9',
   }
@@ -1056,7 +1073,15 @@ describe('what a consumer gets when they bundle the published packages', () => {
       // a tarball ships ARE this `dist` -- `files: ["dist"]`, rebuilt by this
       // suite's own `beforeAll`, so the trap the ledger names (a bundle proof
       // that measures the previous commit) cannot fire here.
-      const distEntry = pathToFileURL(join(repoRoot, 'packages', packageDir, 'dist', 'index.js')).href
+      const manifest = JSON.parse(packed.get(packageDir)!.get('package/package.json')!) as {
+        exports: Record<string, string | Record<string, string>>
+      }
+      const rootExport = manifest.exports['.']
+      const defaultExport = typeof rootExport === 'string' ? rootExport : rootExport?.default
+      expect(defaultExport, `@skanl/panda-${packageDir} has no default export target`).toBeDefined()
+      const distEntry = pathToFileURL(
+        join(repoRoot, 'packages', packageDir, (defaultExport ?? '').replace(/^\.\//, '')),
+      ).href
       const entry = join(outDir, packageDir + '.entry.mjs')
       const bundlePath = join(outDir, packageDir + '.bundle.mjs')
       await writeFile(

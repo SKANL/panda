@@ -61,6 +61,9 @@ const TIER: Readonly<Record<string, number>> = {
   kernel: 0,
   contracts: 0,
   lock: 1,
+  sandbox: 1,
+  'sandbox-local': 1,
+  'sandbox-remote': 1,
   'adapter-cli': 2,
   'memory-filesystem': 2,
   'memory-sqlite': 2,
@@ -189,6 +192,7 @@ describe('package topology is strictly downward (AD-2)', () => {
     // primitive may reach contracts and nothing above it, and the two packages
     // that import it are above it rather than beside it.
     expect(violationsFor('lock', ['contracts'])).toEqual([])
+    expect(violationsFor('sandbox', ['contracts'])).toEqual([])
     expect(violationsFor('lock', ['registry'])).toEqual([
       '@skanl/panda-lock (tier 1) imports @skanl/panda-registry (tier 2) — imports must be strictly downward',
     ])

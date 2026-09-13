@@ -79,6 +79,10 @@ The package graph is deliberately downward and each boundary has a job:
    applies policy and logging, runs the request, and returns a typed envelope.
 5. **Memory ports** — let hosts choose a filesystem or embedded-SQLite
    `MemoryProvider`, or implement the port themselves.
+6. **Sandbox and tool execution** — gives an embedding host portable contracts
+   for a provider-owned sandbox session and an exact-argv `ToolExecutor`. The
+   host chooses and owns the provider; panda does not hide a shell behind a
+   command string.
 
 The seams are explicit rather than magical. A host can use panda's shipped
 implementations or bring its own adapter, workspace, or memory provider. The
@@ -113,6 +117,10 @@ is not the architecture to build against.
   absence state, and callers route refusals by error code rather than message.
 - **Behavioral contracts:** port authors can run the published workspace,
   memory, and executor clause suites against their implementations.
+- **Provider-neutral tool lifecycle:** a host can select a `SandboxProvider`,
+  create a session for a policy and snapshots, execute exact argv through that
+  session, then dispose it. Capability facts are validated before a provider is
+  allowed to create the session.
 
 ### What panda does not claim
 
@@ -125,6 +133,15 @@ is not the architecture to build against.
 - **No formal paper theorem:** the guarantees in this README are backed by
   executable tests, contract suites, and packaging proofs. They are not a claim
   of a formally verified theorem.
+- **No full OS isolation claim:** the current local provider discovers relevant
+  platform tools but advertises no enforced controls, so a policy requiring a
+  control fails closed. panda does not currently claim Landlock, bubblewrap,
+  Seatbelt, or Windows Hyper-V enforcement.
+- **No implied execution path:** `ToolProvider` remains a discovery/ingestion
+  port. It does not grant execution authority; `ToolExecutor` accepts no
+  arbitrary JavaScript handlers. The optional remote provider is an injected
+  adapter seam, not a shipped remote protocol. Session tool-composition inputs
+  are inert until an executor tool-call flow routes to them.
 
 ## Install and version support
 
@@ -171,6 +188,9 @@ driving the CLI or parsing its output.
 | [`@skanl/panda-contracts`](./packages/contracts/README.md) | Public ports, schemas, coded errors, and behavioral clause suites. |
 | [`@skanl/panda-kernel`](./packages/kernel/README.md) | Zero-runtime-dependency plugin kernel, services, events, and teardown. |
 | [`@skanl/panda-session`](./packages/session/README.md) | SDK session composition: executor, workspace, policy, logging, and lifecycle. |
+| `@skanl/panda-sandbox` | Provider-neutral sandbox-session lifecycle and capability validation. |
+| `@skanl/panda-sandbox-local` | Conservative local provider discovery; unsupported required controls fail closed. |
+| `@skanl/panda-sandbox-remote` | Optional injected remote transport adapter; no concrete remote protocol is bundled. |
 | [`@skanl/panda-registry`](./packages/registry/README.md) | Canonical environment Registry, scopes, bundles, and ingest. |
 | [`@skanl/panda-projection`](./packages/projection/README.md) | Native executor projection, drift diagnosis, and reversible ownership ledger. |
 | [`@skanl/panda-environment`](./packages/environment/README.md) | Environment detection and projection orchestration. |
@@ -212,3 +232,52 @@ factories directly.
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+## SDK-first sandbox and tool execution
+
+The SDK boundary is explicit: a host selects a `SandboxProvider`, validates a
+`SandboxPolicy`, creates a provider-owned session, and passes that session to a
+`ToolExecutor`. The CLI is only a secondary binding around capabilities; it is
+not required for embedding.
+
+A local invocation is an exact vector, not a shell string:
+
+```ts
+const invocation = {
+  tool: { kind: 'local', argv: ['node', 'scripts/check.mjs'] },
+  arguments: ['--format', 'json', '--', 'workspace name'],
+}
+// The provider receives: ['node', 'scripts/check.mjs', '--format', 'json', '--', 'workspace name']
+```
+
+Tokens are not parsed, expanded, or interpreted by a shell. An `mcp-stdio`
+tool uses the same exact descriptor argv to start a local MCP server, while
+`ToolExecutor` exchanges framed UTF-8 messages through the provider-owned stdio
+session. MCP network transports and arbitrary JavaScript handlers are outside
+this contract.
+
+### Evidence, providers, and fail-closed behavior
+
+A policy can require `filesystem`, `network`, `process`, or `resources` at
+`partial` or `full` evidence, plus positive integer limits for wall time,
+memory, output, file size, and process count. The selected provider must return
+matching capability facts before session creation; missing, weaker, malformed,
+or mismatched-provider evidence fails closed with a coded error rather than
+downgrading the request.
+
+- **Local:** `local-linux`, `local-macos`, and `local-windows` are shipped
+  provider factories. Their capability report is conservative and depends on
+  the detected substrate. Unsupported controls or resource limits return an
+  `unavailable` result; they do not silently run with weaker guarantees.
+- **Remote:** `@skanl/panda-sandbox-remote` is a transport-injected adapter.
+  It validates provider/session identity, remote enforcement evidence, response
+  shapes, timeouts, cancellation, and stdio framing. It does not bundle or
+  claim a concrete remote service or protocol.
+
+`danger-full-access` requires `allowDangerous: true`. When a local provider is
+configured with an audit callback, it emits validated `execution-started` and
+`execution-completed` events containing the provider ID, session ID, mode, and
+ISO timestamp. Audit delivery is best effort and does not change execution.
+
+The repository's current evidence is source-level and automated provider/test
+coverage on the current platform. The optional Linux/macOS host-conformance matrix is manually enabled on free GitHub-hosted runners. Windows 10/11 client conformance is explicitly unavailable until a verified Windows substrate exists. No OS-isolation claim is made until real-host tests demonstrate enforcement; substrate discovery alone is not proof.
