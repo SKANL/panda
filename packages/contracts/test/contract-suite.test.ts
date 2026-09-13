@@ -10,6 +10,7 @@ import {
   PandaError,
   RESULT_ENVELOPE_SCHEMA,
   runExecutorContractSuite,
+  runToolProviderContractSuite,
 } from '../src'
 import type { ClauseResult } from '../src'
 import { validateRunRequest } from '../src'
@@ -38,6 +39,23 @@ function stubAdapter(envelope: ResultEnvelope): ExecutorAdapter {
 }
 
 const ALL_CLAUSE_NAMES = EXECUTOR_CLAUSES.map((clause) => clause.name)
+
+describe('tool provider contract suite', () => {
+  it('passes a discovery-only provider and rejects out-of-family entries', async () => {
+    const report = await runToolProviderContractSuite({
+      sourceId: 'fixture-tools',
+      list: () => [{ type: 'mcp-server', id: 'search', command: 'search-server', args: ['--stdio'] }],
+    })
+    expect(report.passed).toBe(true)
+
+    const invalid = await runToolProviderContractSuite({
+      sourceId: 'fixture-tools',
+      list: () => [{ type: 'skill', id: 'not-a-tool', entryPath: 'SKILL.md' }],
+    })
+    expect(invalid.passed).toBe(false)
+    expect(invalid.violations.map(({ clause }) => clause)).toContain('contributes-only-valid-mcp-servers')
+  })
+})
 
 describe('executor contract suite', () => {
   it('passes a compliant adapter with zero violations and reports per-clause outcomes', async () => {

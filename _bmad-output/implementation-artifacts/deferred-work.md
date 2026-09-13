@@ -967,3 +967,18 @@ half its value.
   summary: The session-level tool execution seam is implemented as explicit host-approved `executeTool`, while `runSession` remains intentionally vendor-run and does not infer tool authority from discovery.
   evidence: `executeTool` validates invocation, context, policy equivalence, provider capabilities, approval, execution, and telemetry before returning a typed result; the composition suite covers approval, denial, provider capability checks, callbacks, and caller-owned lifecycle. This supersedes the earlier statement that the tool-composition inputs are inert.
   still_open: Add a concrete remote MCP transport only as a separately specified protocol; retain discovery-only `ToolProvider` and reject arbitrary JavaScript handlers.
+
+### 2026-09-12 — local Linux conformance on Windows via Podman
+
+The Windows development host now has a reproducible, no-cost Linux conformance path: `pnpm conformance:linux:podman` runs the Linux host suite inside a disposable privileged Debian container backed by the local Podman WSL2 VM. The suite passed workspace-only writes, secret isolation, network denial, and descendant cleanup. This is evidence for the Linux provider only; it does not establish Windows or macOS enforcement. The container is a test substrate, not a claim that ordinary same-user containers are a hostile-workload boundary.
+
+### 2026-09-12 — hosted macOS Intel recheck
+
+GitHub-hosted `macos-15-intel` was tested as a free alternative to the previously tested `macos-14` runner. The hostile suite still failed closed because `createMacosSandboxProvider()` reported `partial`, so changing runner labels cannot establish Seatbelt enforcement. The workflow remains on its documented baseline and macOS stays unclaimed until a native provider probe and hostile suite both pass.
+
+### 2026-09-13 — explicit network authority in sandbox policy
+
+source_spec: `packages/contracts/src/sandbox.ts`, `packages/sandbox-local/src/shared.ts`, and provider contract tests
+summary: Network authority is now represented explicitly and local providers fail closed for unsupported modes.
+evidence: `SandboxPolicy.networkMode` accepts `deny`, `allowlist`, and `unrestricted`; omitted legacy input normalizes to `deny`. Local providers reject `allowlist` and `unrestricted` before session creation because the implemented local substrates only prove network denial. Contracts and provider tests cover accepted modes and the fail-closed path.
+still_open: Implement and hostile-test an allowlist or unrestricted network substrate before enabling either mode in a local provider. Windows remains deferred.

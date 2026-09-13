@@ -15,6 +15,7 @@ export {
 } from './executor-clauses.ts'
 export { WORKSPACE_CLAUSES, WORKSPACE_SUITE } from './workspace-clauses.ts'
 export { MEMORY_CLAUSES, MEMORY_SUITE, type MemoryContractHarness } from './memory-clauses.ts'
+export { TOOL_PROVIDER_CLAUSES, TOOL_PROVIDER_SUITE } from './tool-provider-clauses.ts'
 
 import { runClauses } from './clause.ts'
 import { EXECUTOR_CLAUSES, EXECUTOR_SUITE } from './executor-clauses.ts'
@@ -24,6 +25,8 @@ import type { ExecutorAdapter } from '../executor.ts'
 import type { RunOptions, SuiteReport } from './clause.ts'
 import type { MemoryContractHarness } from './memory-clauses.ts'
 import type { WorkspaceProvider } from '../workspace.ts'
+import type { ToolProvider } from '../providers.ts'
+import { TOOL_PROVIDER_CLAUSES, TOOL_PROVIDER_SUITE } from './tool-provider-clauses.ts'
 
 // Aggregate runners: execute every clause and report each violation by name.
 // A partially-implemented adapter fails naming EVERY violated clause.
@@ -54,4 +57,8 @@ export async function runMemoryContractSuite(
     ),
     violations: report.violations.map((violation) => ({ ...violation, detail: name(violation.detail) })),
   }
+}
+
+export function runToolProviderContractSuite(provider: ToolProvider, options?: RunOptions): Promise<SuiteReport> {
+  return runClauses(TOOL_PROVIDER_SUITE, TOOL_PROVIDER_CLAUSES, provider, options)
 }

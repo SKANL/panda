@@ -383,6 +383,22 @@ describe('@skanl/panda-sandbox-local', () => {
     expect(inspections).toBe(process.platform === 'linux' ? 2 : 0)
   })
 
+  it('fails closed for network authority the local provider does not implement', async () => {
+    const provider = createProvider(
+      'test-local',
+      { bubblewrap: true, landlock: false, cgroup: false, seatbelt: false, windowsSandboxBroker: false, jobObjectHelper: false },
+      'full',
+      1_000,
+      (request) => request.argv,
+      undefined,
+      undefined,
+      { network: 'full', process: 'full' },
+    )
+    await expect(provider.createSession({ policy: { ...policy, networkMode: 'allowlist' }, snapshots: [] })).rejects.toMatchObject({
+      code: PANDA_ERROR_CODES.sandboxCapabilityUnavailable,
+    })
+  })
+
   it('returns unavailable without spawning after session disposal', async () => {
     const fixture = await mkdtemp(join(tmpdir(), 'panda-disposed-sandbox-'))
     const marker = join(fixture, 'spawned')

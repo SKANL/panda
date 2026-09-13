@@ -75,7 +75,7 @@ function responseInvalid(message: string): PandaError {
 }
 
 function samePolicy(left: SandboxPolicy, right: SandboxPolicy): boolean {
-  if (left.version !== right.version || left.mode !== right.mode || left.workspaceRoot !== right.workspaceRoot || left.allowDangerous !== right.allowDangerous) return false
+  if (left.version !== right.version || left.mode !== right.mode || left.workspaceRoot !== right.workspaceRoot || (left.networkMode ?? 'deny') !== (right.networkMode ?? 'deny') || left.allowDangerous !== right.allowDangerous) return false
   const leftLimits = left.resourceLimits
   const rightLimits = right.resourceLimits
   if ((leftLimits === undefined) !== (rightLimits === undefined)) return false

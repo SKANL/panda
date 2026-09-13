@@ -21,6 +21,8 @@ export type SandboxControl = (typeof SANDBOX_CONTROLS)[number]
 export const SANDBOX_CONTROL_EVIDENCE = Object.freeze(['none', 'partial', 'full'] as const)
 export type SandboxControlEvidence = (typeof SANDBOX_CONTROL_EVIDENCE)[number]
 export type SandboxCapabilityRequirement = Exclude<SandboxControlEvidence, 'none'>
+export const SANDBOX_NETWORK_MODES = Object.freeze(['deny', 'allowlist', 'unrestricted'] as const)
+export type SandboxNetworkMode = (typeof SANDBOX_NETWORK_MODES)[number]
 
 export interface SandboxResourceLimits {
   readonly wallTimeMs?: number
@@ -54,6 +56,8 @@ export interface SandboxPolicy {
   readonly version: typeof SANDBOX_POLICY_VERSION
   readonly mode: SandboxMode
   readonly workspaceRoot: string
+  /** Network authority is explicit; omitted legacy policies normalize to deny. */
+  readonly networkMode?: SandboxNetworkMode
   readonly requiredCapabilities: Readonly<Partial<Record<SandboxControl, SandboxCapabilityRequirement>>>
   readonly resourceLimits?: SandboxResourceLimits
   /** Required only when deliberately requesting unrestricted host authority. */
@@ -154,6 +158,7 @@ export interface SandboxProvider {
 function freezePolicy(value: SandboxPolicy): SandboxPolicy {
   return Object.freeze({
     ...value,
+    networkMode: value.networkMode ?? 'deny',
     requiredCapabilities: Object.freeze({ ...value.requiredCapabilities }),
     ...(value.resourceLimits === undefined ? {} : { resourceLimits: Object.freeze({ ...value.resourceLimits }) }),
   })
@@ -279,10 +284,11 @@ function isSnapshotPath(value: unknown): value is string {
 
 function policyIssues(value: unknown): StandardSchemaIssue[] {
   if (!isRecord(value)) return [issue('sandbox policy must be an object')]
-  const issues = hasOnlyKeys(value, ['version', 'mode', 'workspaceRoot', 'requiredCapabilities', 'resourceLimits', 'allowDangerous'], 'sandbox policy')
+  const issues = hasOnlyKeys(value, ['version', 'mode', 'workspaceRoot', 'networkMode', 'requiredCapabilities', 'resourceLimits', 'allowDangerous'], 'sandbox policy')
   if (value['version'] !== SANDBOX_POLICY_VERSION) issues.push(issue(`'version' must be ${SANDBOX_POLICY_VERSION}`))
   if (!SANDBOX_MODES.includes(value['mode'] as SandboxMode)) issues.push(issue(`'mode' must be one of: ${SANDBOX_MODES.join(', ')}`))
   if (!parseAbsoluteSandboxPath(value['workspaceRoot'])) issues.push(issue("'workspaceRoot' must be an unambiguous absolute path without traversal segments"))
+  if (!SANDBOX_NETWORK_MODES.includes((value['networkMode'] ?? 'deny') as SandboxNetworkMode)) issues.push(issue(`'networkMode' must be one of: ${SANDBOX_NETWORK_MODES.join(', ')}`))
   if (value['allowDangerous'] !== undefined && value['allowDangerous'] !== true) issues.push(issue("'allowDangerous' must be true when present"))
   if (value['resourceLimits'] !== undefined) issues.push(...resourceLimitIssues(value['resourceLimits']))
   if (value['mode'] === 'danger-full-access' && value['allowDangerous'] !== true) {
@@ -409,6 +415,17 @@ export function validateSandboxPolicy(value: unknown): SandboxPolicy {
   const issues = policyIssues(value)
   if (issues.length > 0) throwInvalid(PANDA_ERROR_CODES.sandboxPolicyInvalid, 'invalid sandbox policy', issues)
   return freezePolicy(value as SandboxPolicy)
+}
+
+/** Returns the conservative policy used when a host does not opt into authority. */
+export function createDefaultSandboxPolicy(workspaceRoot: string): SandboxPolicy {
+  return validateSandboxPolicy({
+    version: SANDBOX_POLICY_VERSION,
+    mode: 'workspace-write',
+    workspaceRoot,
+    networkMode: 'deny',
+    requiredCapabilities: { filesystem: 'full', process: 'full', resources: 'full' },
+  })
 }
 
 export function validateSandboxSnapshot(value: unknown): SandboxSnapshot {

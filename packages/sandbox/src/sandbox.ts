@@ -10,6 +10,7 @@ import {
 import type {
   SandboxExecutionRequest,
   SandboxExecutionResult,
+  SandboxCapabilityFacts,
   SandboxPolicy,
   SandboxProvider,
   SandboxSession,
@@ -21,6 +22,7 @@ import type {
 export interface ResolvedSandboxSession {
   readonly id: string
   readonly providerId: string
+  readonly capabilities?: SandboxCapabilityFacts
   execute(request: SandboxExecutionRequest): Promise<SandboxExecutionResult>
   openStdio?(request: SandboxExecutionRequest): Promise<SandboxStdioSession>
   snapshot?(paths: readonly string[]): Promise<readonly SandboxSnapshot[]>
@@ -142,11 +144,15 @@ class ManagedSandboxSession implements ResolvedSandboxSession {
     private readonly session: SandboxSession,
     private readonly policy: SandboxPolicy,
     readonly providerId: string,
-    private readonly capabilities: ReturnType<typeof validateSandboxCapabilities>,
+    private readonly capabilitiesValue: ReturnType<typeof validateSandboxCapabilities>,
   ) {}
 
   get id(): string {
     return this.session.id
+  }
+
+  get capabilities(): SandboxCapabilityFacts {
+    return this.capabilitiesValue
   }
 
   async execute(request: SandboxExecutionRequest): Promise<SandboxExecutionResult> {
@@ -175,7 +181,7 @@ class ManagedSandboxSession implements ResolvedSandboxSession {
       }
       const result = validateSandboxExecutionResult(resultSnapshot)
       const enforcement = validateSandboxCapabilities(this.policy, result.enforcement)
-      if (enforcement.providerId !== this.capabilities.providerId) {
+      if (enforcement.providerId !== this.capabilitiesValue.providerId) {
         throw new PandaError(
           PANDA_ERROR_CODES.sandboxResponseInvalid,
           `sandbox session '${this.id}' returned enforcement for provider '${enforcement.providerId}', not selected provider '${this.providerId}'`,
@@ -250,6 +256,7 @@ function samePolicy(left: SandboxPolicy, right: SandboxPolicy): boolean {
     left.version !== right.version ||
     left.mode !== right.mode ||
     left.workspaceRoot !== right.workspaceRoot ||
+    (left.networkMode ?? 'deny') !== (right.networkMode ?? 'deny') ||
     left.allowDangerous !== right.allowDangerous
   ) {
     return false

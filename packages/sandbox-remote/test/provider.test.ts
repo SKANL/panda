@@ -9,6 +9,7 @@ const policy = Object.freeze({
   version: 1 as const,
   mode: 'workspace-write' as const,
   workspaceRoot: '/workspace',
+  networkMode: 'deny' as const,
   requiredCapabilities: Object.freeze({ filesystem: 'full' as const, network: 'partial' as const }),
 })
 const capabilities = Object.freeze({

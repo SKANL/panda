@@ -101,7 +101,7 @@ function mcpResult(session: ResolvedSandboxSession, value: unknown): ToolResult 
     stdout: JSON.stringify(value),
     stderr: '',
     exitCode: 0,
-    enforcement: {
+    enforcement: session.capabilities ?? {
       version: 1,
       providerId: session.providerId,
       enforcement: 'simulated',

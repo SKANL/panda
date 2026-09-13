@@ -533,6 +533,7 @@ function samePolicy(left: SandboxSessionRequest['policy'], right: SandboxSession
     left.version !== right.version ||
     left.mode !== right.mode ||
     left.workspaceRoot !== right.workspaceRoot ||
+    (left.networkMode ?? 'deny') !== (right.networkMode ?? 'deny') ||
     left.allowDangerous !== right.allowDangerous
   ) {
     return false
@@ -568,6 +569,9 @@ export function createProvider(
     capabilities,
     async createSession(value: SandboxSessionRequest): Promise<SandboxSession> {
       const policy = validateSandboxPolicy(value.policy)
+      if (policy.networkMode !== 'deny') {
+        throw new PandaError(PANDA_ERROR_CODES.sandboxCapabilityUnavailable, `local provider '${id}' cannot prove network mode '${policy.networkMode}'`)
+      }
       value.snapshots.forEach(validateSandboxSnapshot)
       validateSandboxCapabilities(policy, capabilities)
       sessions += 1
