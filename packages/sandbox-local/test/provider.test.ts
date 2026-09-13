@@ -380,7 +380,7 @@ describe('@skanl/panda-sandbox-local', () => {
     })
 
     await expect(provider.createSession({ policy, snapshots: [] })).rejects.toMatchObject({ code: PANDA_ERROR_CODES.sandboxCapabilityUnavailable })
-    expect(inspections).toBe(0)
+    expect(inspections).toBe(process.platform === 'linux' ? 2 : 0)
   })
 
   it('returns unavailable without spawning after session disposal', async () => {

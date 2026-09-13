@@ -10,6 +10,9 @@
   "projection",
   "registry",
   "session",
+  "sandbox",
+  "sandbox-local",
+  "sandbox-remote",
   "workspace-git-worktree",
   "workspace-local"
 ]
